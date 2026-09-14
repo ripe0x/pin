@@ -1,5 +1,4 @@
 import { ponder } from "ponder:registry"
-import { onIf, MAINNET_MODE } from "./chainMode"
 import { muriContracts, muriTokens } from "ponder:schema"
 import { muriProtocolAbi } from "../abis/MURIProtocol"
 
@@ -13,7 +12,7 @@ import { muriProtocolAbi } from "../abis/MURIProtocol"
  * The TokenDataInitialized event carries no URI count, so on each data-
  * changing event we read getArtwork() once to keep counts authoritative.
  * These reads are bounded to MURI events (low volume). We deliberately do
- * NOT catch read errors — a transient RPC failure should let Ponder retry
+ * NOT catch read errors: a transient RPC failure should let Ponder retry
  * the event rather than persist a wrong count.
  */
 
@@ -62,7 +61,7 @@ async function refreshToken(
     .onConflictDoUpdate(base)
 }
 
-onIf(MAINNET_MODE, "MURIProtocol:ContractRegistered", async ({ event, context }) => {
+ponder.on("MURIProtocol:ContractRegistered", async ({ event, context }) => {
   const { contractAddress, implementationAddress, registerer } = event.args
   await context.db
     .insert(muriContracts)
@@ -77,7 +76,7 @@ onIf(MAINNET_MODE, "MURIProtocol:ContractRegistered", async ({ event, context })
     .onConflictDoNothing()
 })
 
-onIf(MAINNET_MODE, "MURIProtocol:TokenDataInitialized", async ({ event, context }) => {
+ponder.on("MURIProtocol:TokenDataInitialized", async ({ event, context }) => {
   await refreshToken(
     context,
     event.args.creator,
@@ -87,7 +86,7 @@ onIf(MAINNET_MODE, "MURIProtocol:TokenDataInitialized", async ({ event, context 
   )
 })
 
-onIf(MAINNET_MODE, "MURIProtocol:ArtworkUrisAdded", async ({ event, context }) => {
+ponder.on("MURIProtocol:ArtworkUrisAdded", async ({ event, context }) => {
   await refreshToken(
     context,
     event.args.creator,
@@ -97,7 +96,7 @@ onIf(MAINNET_MODE, "MURIProtocol:ArtworkUrisAdded", async ({ event, context }) =
   )
 })
 
-onIf(MAINNET_MODE, "MURIProtocol:ArtworkUriRemoved", async ({ event, context }) => {
+ponder.on("MURIProtocol:ArtworkUriRemoved", async ({ event, context }) => {
   await refreshToken(
     context,
     event.args.creator,
@@ -107,7 +106,7 @@ onIf(MAINNET_MODE, "MURIProtocol:ArtworkUriRemoved", async ({ event, context }) 
   )
 })
 
-onIf(MAINNET_MODE, "MURIProtocol:SelectedArtworkUriChanged", async ({ event, context }) => {
+ponder.on("MURIProtocol:SelectedArtworkUriChanged", async ({ event, context }) => {
   const id = idOf(event.args.creator, event.args.tokenId)
   const existing = await context.db.find(muriTokens, { id })
   if (!existing) return
@@ -116,7 +115,7 @@ onIf(MAINNET_MODE, "MURIProtocol:SelectedArtworkUriChanged", async ({ event, con
     .set({ selectedIndex: Number(event.args.newIndex), updatedAtBlock: event.block.number })
 })
 
-onIf(MAINNET_MODE, "MURIProtocol:DisplayModeUpdated", async ({ event, context }) => {
+ponder.on("MURIProtocol:DisplayModeUpdated", async ({ event, context }) => {
   const id = idOf(event.args.creator, event.args.tokenId)
   const existing = await context.db.find(muriTokens, { id })
   if (!existing) return

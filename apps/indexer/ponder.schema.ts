@@ -220,7 +220,7 @@ export const fndCollections = onchainTable(
 )
 
 // Populated by FoundationNFT:Minted (shared 1/1 contract).
-// NOT populated by per-clone FoundationCollection Transfer events in v2 —
+// NOT populated by per-clone FoundationCollection Transfer events in v2:
 // that work moves to the worker's scan-fnd-collections task.
 export const fndArtistTokens = onchainTable(
   "fnd_artist_tokens",
@@ -398,12 +398,12 @@ export const muriTokens = onchainTable(
 // One row per artist collection deployed via the
 // factory (`collections`), one row per live token incl. pooled re-mints
 // (`collection_tokens`), and an append-only mint log (`collection_mints`).
-// Handlers are kept minimal per AGENTS.md — enrichment (metadata, rendered
+// Handlers are kept minimal per AGENTS.md: enrichment (metadata, rendered
 // art, etc.) is the worker's/web's job reading these rows, not Ponder's.
 //
 // Thin-token rearchitecture (docs/pnd-surface-thin-token-rearchitecture.md):
 // the token no longer carries sale economics (price, window, referral,
-// value custody, SurfaceStatus) — that moved to the per-collection
+// value custody, SurfaceStatus): that moved to the per-collection
 // FixedPriceMinter clone `createSurface` wires. `Minted` dropped
 // referrer/statusAtMint/mintBlock and gained `minter` (the calling minter,
 // cross-minter attribution). `collections.primaryMinter` is the collection's
@@ -419,11 +419,13 @@ export const muriTokens = onchainTable(
 //
 // Surface v2 (contracts/src/surface/v2/, docs/pnd-surface-v2-plan.md)
 // shares this table with v1: `protocolVersion` records which factory
-// created the collection (1 or 2). v2 adds a one-way royalty lock and a
-// seal (ownership renounced) that v1 has no equivalent of, so
-// `royaltyLocked`/`sealed` are v2-only in practice: a v1 row keeps both
-// false for the life of the row, since v1 has no lockRoyalty/seal
-// function to ever change them.
+// created the collection (1 or 2). `ownerRenounced` tracks
+// OwnershipTransferred to address(0) for both versions: v2 reaches it
+// through seal(), v1 has no seal() but its OZ Ownable2Step base still
+// exposes renounceOwnership() directly, so a v1 owner can renounce the
+// same way. `royaltyLocked` (RoyaltyLocked engaged, setRoyalty reverts)
+// is v2 only; v1 has no lockRoyalty function, so a v1 row stays false
+// for the life of the row.
 
 export const collections = onchainTable(
   "collections",
@@ -434,12 +436,13 @@ export const collections = onchainTable(
     // Which Surface factory created this collection: 1 (SurfaceFactory)
     // or 2 (SurfaceFactoryV2).
     protocolVersion: t.integer().notNull(),
-    // v2 only: RoyaltyLocked engaged (setRoyalty now reverts). Stays
-    // false for a v1 row.
+    // v2 only: RoyaltyLocked engaged (setRoyalty now reverts). v1 has no
+    // lockRoyalty function, so a v1 row stays false.
     royaltyLocked: t.boolean().notNull(),
-    // v2 only: owner() == address(0), from seal() or a direct
-    // renounceOwnership. Stays false for a v1 row.
-    sealed: t.boolean().notNull(),
+    // owner() == address(0), from OwnershipTransferred(to: address(0)).
+    // Tracked for both versions: v2's seal() reaches it, and v1's OZ
+    // Ownable2Step base still allows a direct renounceOwnership() call.
+    ownerRenounced: t.boolean().notNull(),
     // ERC721 identity from the SurfaceCreated event (fixed at initialize,
     // no setter). Nullable only for rows indexed before the event carried
     // these fields; mainnet deploys always populate them.
@@ -447,7 +450,7 @@ export const collections = onchainTable(
     symbol: t.text(),
     // Frontend-discovery default: mirrors the collection's own
     // primaryMinter(), null when unset. Seeded from SurfaceCreated and kept
-    // live by the Surface:PrimaryMinterSet handler — there is no minterOf
+    // live by the Surface:PrimaryMinterSet handler: there is no minterOf
     // storage mapping onchain, so this column IS the discovery record.
     primaryMinter: t.hex(),
     // Structural id mode from SurfaceCreated (0 = Sequential, 1 = Pooled;
@@ -475,7 +478,7 @@ export const minters = onchainTable("minters", (t) => ({
 }))
 
 // Current state per token. Pooled collections can burn-then-remint the
-// same tokenId as a new instance (see IPooledSurface.mintToId) — a
+// same tokenId as a new instance (see IPooledSurface.mintToId): a
 // re-mint UPDATEs this row in place (fresh mark fields, burned reset to
 // false) rather than inserting a new one, so `id` stays the durable
 // per-(collection,tokenId) identity across the token's burn/remint cycles.
@@ -490,14 +493,14 @@ export const collectionTokens = onchainTable(
     // concern the web/worker layer can add via Transfer if/when needed).
     mintedTo: t.hex().notNull(),
     // The minter contract that issued this token (Minted event's `minter`,
-    // i.e. msg.sender on the token) — cross-minter attribution with no
+    // i.e. msg.sender on the token): cross-minter attribution with no
     // trace lookup. referrer/statusAtMint/mintBlock no longer exist: the
     // token no longer sees value (referral is the minter's own event), and
     // the mint block is this row's own updatedAtBlock/updatedAtTime.
     minter: t.hex().notNull(),
     // Offset of this tokenId within its own Minted call's
     // [firstTokenId, firstTokenId + quantity - 1] range (0 for a single-id
-    // pooled mint). NOT the contract's global per-collection mint order —
+    // pooled mint). NOT the contract's global per-collection mint order:
     // that value isn't emitted by Minted and reading it back onchain per
     // event would mean an extra RPC call per mint, which these handlers
     // deliberately avoid (see AGENTS.md: worker/web enrich, Ponder stays
@@ -514,7 +517,7 @@ export const collectionTokens = onchainTable(
 )
 
 // Append-only: one row per Minted event, including every re-mint of a
-// previously-burned pooled id. Never updated — the immutable mint history
+// previously-burned pooled id. Never updated: the immutable mint history
 // that `collection_tokens` (current state) is derived from.
 export const collectionMints = onchainTable(
   "collection_mints",
@@ -536,7 +539,7 @@ export const collectionMints = onchainTable(
 )
 
 // Append-only: one row per FixedPriceMinter Sold event (the canonical
-// minter's own sale record — price, referrer, payer, distinct from the
+// minter's own sale record: price, referrer, payer, distinct from the
 // token's Minted event, which carries no economics). `collection` is
 // resolved via the `minters` reverse index since Sold is emitted by the
 // minter clone, not the collection.
@@ -590,11 +593,11 @@ export const collectionReferrals = onchainTable(
 // (see HOMAGE_WIRED in ponder.config.ts and src/Homage.ts). Tables exist
 // regardless; they stay empty until the env wires the contracts in.
 //
-//   homage_tokens    — per-punkId current state. Ids CHURN (redeem returns
+//   homage_tokens   : per-punkId current state. Ids CHURN (redeem returns
 //                      an id to the pool); `outstanding` + `holder` carry
 //                      the live state, one row per punkId ever seen.
-//   homage_activity  — append-only mint/claim/redeem/transfer log.
-//   homage_config    — one row per minter contract mirroring the owner-set
+//   homage_activity : append-only mint/claim/redeem/transfer log.
+//   homage_config   : one row per minter contract mirroring the owner-set
 //                      schedule + fee knobs (all null until each setter's
 //                      event is indexed).
 

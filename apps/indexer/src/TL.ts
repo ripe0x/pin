@@ -1,4 +1,4 @@
-import { onIf, MAINNET_MODE } from "./chainMode"
+import { ponder } from "ponder:registry"
 import { tlCreators } from "ponder:schema"
 
 /**
@@ -12,13 +12,12 @@ import { tlCreators } from "ponder:schema"
  * needs to know WHICH clones to scan.
  */
 
-onIf(
-  MAINNET_MODE,
+ponder.on(
   "TLUniversalDeployer:ContractDeployed",
   async ({ event, context }) => {
     const { sender, deployedContract, implementation, cType, version } =
       event.args
-    // ERC-721 clones only — matches the worker's scan scope.
+    // ERC-721 clones only: matches the worker's scan scope.
     if (!cType.startsWith("ERC721")) return
 
     await context.db

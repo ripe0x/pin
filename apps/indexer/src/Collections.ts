@@ -1,3 +1,5 @@
+import { ponder } from "ponder:registry"
+import type { Virtual } from "ponder"
 import {
   collections,
   collectionMints,
@@ -6,7 +8,6 @@ import {
   collectionSales,
   minters,
 } from "ponder:schema"
-import { onIf, MAINNET_MODE, SURFACE_V2_WIRED } from "./chainMode"
 
 /**
  * PND Surface System (contracts/src/surface/, contracts/src/surface/v2/)
@@ -16,19 +17,33 @@ import { onIf, MAINNET_MODE, SURFACE_V2_WIRED } from "./chainMode"
  * `collections` / `collection_tokens` / `collection_mints` /
  * `collection_sales` / `collection_referrals` / `minters`. Metadata
  * enrichment, rendering, and anything beyond raw event data is out of
- * scope here — that's the worker's/web's job reading these rows.
+ * scope here: that's the worker's/web's job reading these rows.
  *
  * v1 (SurfaceFactory/Surface/FixedPriceMinter) and v2
  * (SurfaceFactoryV2/SurfaceV2/FixedPriceMinterV2, see
  * docs/pnd-surface-v2-plan.md) emit byte-identical event shapes for
  * every function below, so one function registers under both contract
  * names: only `makeSurfaceCreatedHandler`'s `protocolVersion` argument
- * differs. v1 registers unconditionally (MAINNET_MODE); v2 registers
- * only once its factory is wired into the active network's config
- * (SURFACE_V2_WIRED, see src/chainMode.ts). Omitting the v2
- * registration when its contracts are absent from `contracts` avoids
- * the Ponder build error a handler for an unregistered contract causes.
+ * differs. Both are unconditionally present in ponder.config.ts's
+ * `contracts` (v2 falls back to the zero address on a network with no
+ * deployment yet), so every registration below is a plain, always-on
+ * `ponder.on(...)` call.
+ *
+ * `HandlerFor<Name>` pins each shared function's parameter type to one
+ * canonical event name's real inferred type (ponder.on's own generic),
+ * rather than writing the shape out by hand or typing it `any`. Passing
+ * that same function to the sibling event name below then typechecks
+ * because the two events are byte-identical, so the sibling's inferred
+ * handler type is structurally the same.
  */
+
+type PonderConfig = typeof import("../ponder.config").default
+type PonderSchema = typeof import("../ponder.schema")
+type EventName = Virtual.EventNames<PonderConfig>
+type HandlerFor<Name extends EventName> = (args: {
+  event: Virtual.Event<PonderConfig, Name>
+  context: Virtual.Context<PonderConfig, PonderSchema, Name>
+}) => Promise<void> | void
 
 const tokenRowId = (collection: string, tokenId: bigint) =>
   `${collection.toLowerCase()}-${tokenId.toString()}`
@@ -37,8 +52,8 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
 // ─── Factory discovery ────────────────────────────────────────────────────
 
-function makeSurfaceCreatedHandler(protocolVersion: 1 | 2) {
-  return async ({ event, context }: any) => {
+function makeSurfaceCreatedHandler(protocolVersion: 1 | 2): HandlerFor<"SurfaceFactoryV2:SurfaceCreated"> {
+  return async ({ event, context }) => {
     const { owner, collection, primaryMinter, idMode, name, symbol } = event.args
     const hasPrimaryMinter = primaryMinter.toLowerCase() !== ZERO_ADDRESS
     await context.db
@@ -48,7 +63,7 @@ function makeSurfaceCreatedHandler(protocolVersion: 1 | 2) {
         owner,
         protocolVersion,
         royaltyLocked: false,
-        sealed: false,
+        ownerRenounced: false,
         name,
         symbol,
         primaryMinter: hasPrimaryMinter ? primaryMinter : null,
@@ -62,7 +77,7 @@ function makeSurfaceCreatedHandler(protocolVersion: 1 | 2) {
     // Reverse index for FixedPriceMinter:Sold/ReferralPaid, which are emitted
     // by the minter clone and carry no collection field of their own. Fixed
     // at creation time (see ponder.config.ts's FixedPriceMinter factory()
-    // binding) — a later primaryMinter repoint doesn't add/remove rows here.
+    // binding): a later primaryMinter repoint doesn't add/remove rows here.
     // createSurfaceCustom/createPooledSurface with no primary supplied emit
     // primaryMinter = address(0), so there's nothing to index here.
     if (hasPrimaryMinter) {
@@ -74,16 +89,16 @@ function makeSurfaceCreatedHandler(protocolVersion: 1 | 2) {
   }
 }
 
-onIf(MAINNET_MODE, "SurfaceFactory:SurfaceCreated", makeSurfaceCreatedHandler(1))
-onIf(SURFACE_V2_WIRED, "SurfaceFactoryV2:SurfaceCreated", makeSurfaceCreatedHandler(2))
+ponder.on("SurfaceFactory:SurfaceCreated", makeSurfaceCreatedHandler(1))
+ponder.on("SurfaceFactoryV2:SurfaceCreated", makeSurfaceCreatedHandler(2))
 
 // Keeps collections.primaryMinter current after deploy: a sequential
 // collection's owner/admin can repoint it (setPrimaryMinter), and either
 // form clears it to zero when the current primary is revoked. Pooled
 // collections emit this automatically as their sole minter changes. Does
-// NOT touch the `minters` reverse index — that stays keyed to the
+// NOT touch the `minters` reverse index: that stays keyed to the
 // SurfaceCreated-time canonical clone regardless of later repoints.
-async function primaryMinterSetHandler({ event, context }: any) {
+const primaryMinterSetHandler: HandlerFor<"SurfaceV2:PrimaryMinterSet"> = async ({ event, context }) => {
   const { minter } = event.args
   const collection = event.log.address
   const existing = await context.db.find(collections, { collection })
@@ -94,45 +109,46 @@ async function primaryMinterSetHandler({ event, context }: any) {
     .set({ primaryMinter: hasPrimaryMinter ? minter : null })
 }
 
-onIf(MAINNET_MODE, "Surface:PrimaryMinterSet", primaryMinterSetHandler)
-onIf(SURFACE_V2_WIRED, "SurfaceV2:PrimaryMinterSet", primaryMinterSetHandler)
+ponder.on("Surface:PrimaryMinterSet", primaryMinterSetHandler)
+ponder.on("SurfaceV2:PrimaryMinterSet", primaryMinterSetHandler)
 
 // v2 only: royalty gets a one-way lock (setRoyalty reverts once engaged).
 // v1 has no lockRoyalty, so collections.royaltyLocked stays false there.
-async function royaltyLockedHandler({ event, context }: any) {
+// Registered only for SurfaceV2 (v1 has no matching event), so this one
+// is typed directly against its own event, no shared HandlerFor needed.
+ponder.on("SurfaceV2:RoyaltyLocked", async ({ event, context }) => {
   const collection = event.log.address
   const existing = await context.db.find(collections, { collection })
   if (!existing) return
   await context.db.update(collections, { collection }).set({ royaltyLocked: true })
-}
+})
 
-onIf(SURFACE_V2_WIRED, "SurfaceV2:RoyaltyLocked", royaltyLockedHandler)
-
-// v2 only: owner() reaching address(0), from seal() or a direct
-// renounceOwnership. v1 has no seal(), so collections.sealed stays false
-// there (a v1 owner renouncing ownership directly is not tracked).
-async function ownershipTransferredHandler({ event, context }: any) {
+// owner() reaching address(0). v2's seal() reaches it, and v1's OZ
+// Ownable2Step base still allows a direct renounceOwnership call, so
+// this registers for both versions.
+const ownershipTransferredHandler: HandlerFor<"SurfaceV2:OwnershipTransferred"> = async ({ event, context }) => {
   const { newOwner } = event.args
   const collection = event.log.address
   const existing = await context.db.find(collections, { collection })
   if (!existing) return
-  const sealed = newOwner.toLowerCase() === ZERO_ADDRESS
-  await context.db.update(collections, { collection }).set({ sealed })
+  const ownerRenounced = newOwner.toLowerCase() === ZERO_ADDRESS
+  await context.db.update(collections, { collection }).set({ ownerRenounced })
 }
 
-onIf(SURFACE_V2_WIRED, "SurfaceV2:OwnershipTransferred", ownershipTransferredHandler)
+ponder.on("Surface:OwnershipTransferred", ownershipTransferredHandler)
+ponder.on("SurfaceV2:OwnershipTransferred", ownershipTransferredHandler)
 
 // ─── Per-collection state machine (via factory() child indexing) ────────
 
 // One event per mint call. mintTo covers the contiguous range
 // [firstTokenId, firstTokenId + quantity - 1]; mintToId always emits
 // quantity 1. A pooled collection may re-mint a previously burned tokenId
-// (mintToId) — same id, new instance: the row is UPDATEd in place with
+// (mintToId): same id, new instance: the row is UPDATEd in place with
 // fresh mark fields and burned reset to false, not inserted as a second
 // row (there is exactly one live row per (collection, tokenId) at any
 // time; collection_mints is the immutable history of every mint call,
 // including re-mints).
-async function mintedHandler({ event, context }: any) {
+const mintedHandler: HandlerFor<"SurfaceV2:Minted"> = async ({ event, context }) => {
   const { minter, to, firstTokenId, quantity, firstMintIndex } = event.args
   const collection = event.log.address
 
@@ -183,8 +199,8 @@ async function mintedHandler({ event, context }: any) {
   }
 }
 
-onIf(MAINNET_MODE, "Surface:Minted", mintedHandler)
-onIf(SURFACE_V2_WIRED, "SurfaceV2:Minted", mintedHandler)
+ponder.on("Surface:Minted", mintedHandler)
+ponder.on("SurfaceV2:Minted", mintedHandler)
 
 // ─── Canonical minter sale record (via factory() child indexing) ────────
 //
@@ -193,10 +209,10 @@ onIf(SURFACE_V2_WIRED, "SurfaceV2:Minted", mintedHandler)
 // resolve the owning collection via the `minters` reverse index populated
 // in SurfaceCreated above. A minter row always exists for any minter Ponder
 // is subscribed to (they're the same factory() child set), so a miss here
-// means an event arrived before its own SurfaceCreated indexed — not
+// means an event arrived before its own SurfaceCreated indexed: not
 // expected, but handled by skipping the row rather than throwing.
 
-async function soldHandler({ event, context }: any) {
+const soldHandler: HandlerFor<"FixedPriceMinterV2:Sold"> = async ({ event, context }) => {
   const minter = event.log.address
   const row = await context.db.find(minters, { minter })
   if (!row) return
@@ -220,10 +236,10 @@ async function soldHandler({ event, context }: any) {
     .onConflictDoNothing()
 }
 
-onIf(MAINNET_MODE, "FixedPriceMinter:Sold", soldHandler)
-onIf(SURFACE_V2_WIRED, "FixedPriceMinterV2:Sold", soldHandler)
+ponder.on("FixedPriceMinter:Sold", soldHandler)
+ponder.on("FixedPriceMinterV2:Sold", soldHandler)
 
-async function referralPaidHandler({ event, context }: any) {
+const referralPaidHandler: HandlerFor<"FixedPriceMinterV2:ReferralPaid"> = async ({ event, context }) => {
   const minter = event.log.address
   const row = await context.db.find(minters, { minter })
   if (!row) return
@@ -243,10 +259,10 @@ async function referralPaidHandler({ event, context }: any) {
     .onConflictDoNothing()
 }
 
-onIf(MAINNET_MODE, "FixedPriceMinter:ReferralPaid", referralPaidHandler)
-onIf(SURFACE_V2_WIRED, "FixedPriceMinterV2:ReferralPaid", referralPaidHandler)
+ponder.on("FixedPriceMinter:ReferralPaid", referralPaidHandler)
+ponder.on("FixedPriceMinterV2:ReferralPaid", referralPaidHandler)
 
-async function burnedHandler({ event, context }: any) {
+const burnedHandler: HandlerFor<"SurfaceV2:Burned"> = async ({ event, context }) => {
   const { tokenId } = event.args
   const collection = event.log.address
   const id = tokenRowId(collection, tokenId)
@@ -259,5 +275,5 @@ async function burnedHandler({ event, context }: any) {
   })
 }
 
-onIf(MAINNET_MODE, "Surface:Burned", burnedHandler)
-onIf(SURFACE_V2_WIRED, "SurfaceV2:Burned", burnedHandler)
+ponder.on("Surface:Burned", burnedHandler)
+ponder.on("SurfaceV2:Burned", burnedHandler)

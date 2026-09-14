@@ -7,10 +7,14 @@ import { fileURLToPath } from "node:url"
  * out of the repo's deploy record (contracts/deployments.<network>.json,
  * written by contracts/script/DeploySurfaceV2.s.sol on a real broadcast).
  *
- * Returns null when v2 has no factory recorded for that network yet, so
- * callers can omit the v2 contracts/handlers instead of indexing a zero
- * address. Both ponder.config.ts and the v2 handler file read through this
- * function so the "is v2 wired" condition can't drift between the two.
+ * Returns null when v2 has no factory recorded for that network yet.
+ * ponder.config.ts calls this once per network (mainnet, sepolia) and
+ * falls back to the zero address when null, so the SurfaceFactoryV2/
+ * SurfaceV2/FixedPriceMinterV2 contracts stay unconditionally present
+ * in `contracts` on every network: the zero address never emits a log,
+ * so an undeployed network costs one empty eth_getLogs range, not a
+ * missing key. See ponder.config.ts's per-chain `chain: {mainnet, sepolia}`
+ * declarations for those three contracts.
  */
 
 export type SurfaceV2Deployment = {
@@ -24,7 +28,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..")
 
 export function readSurfaceV2Deployment(
-  network: "mainnet" | "sepolia" | "anvil",
+  network: "mainnet" | "sepolia",
 ): SurfaceV2Deployment | null {
   const path = resolve(repoRoot, `contracts/deployments.${network}.json`)
   if (!existsSync(path)) return null

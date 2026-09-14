@@ -11,32 +11,35 @@ specific to the v4 change: Surface v2 support.
 ## What changed
 
 - `apps/indexer/ponder.config.ts` adds `SurfaceFactoryV2`, `SurfaceV2`,
-  and `FixedPriceMinterV2` to `contracts`, sourced from
-  `contracts/deployments.mainnet.json`'s `surfaceFactoryV2` and
-  `factoryDeployBlock` keys. If that file has no `surfaceFactoryV2` yet
-  (the mainnet v2 broadcast has not happened), these three contracts are
-  omitted and ponder_v4 indexes Surface v1 only, same as ponder_v3.
+  and `FixedPriceMinterV2` to `contracts`. Each is declared once, with
+  Ponder's per-chain `chain: { mainnet: {...}, sepolia: {...} }`
+  override: the address comes from `contracts/deployments.mainnet.json`
+  and `contracts/deployments.sepolia.json`'s `surfaceFactoryV2`/
+  `factoryDeployBlock` keys, and falls back to the zero address on
+  whichever network has no deployment recorded yet. The zero address
+  never emits a log, so an undeployed network costs one empty
+  `eth_getLogs` range, never a missing contract. `chains.sepolia` is
+  always configured too (`SEPOLIA_RPC_URL`, falling back to a free
+  public RPC when unset), so the sepolia rehearsal deploy is indexed by
+  the same `ponder_v4` schema as mainnet, not a separate run.
 - `apps/indexer/ponder.schema.ts` adds three columns to `collections`:
   `protocolVersion` (integer, 1 for a v1 factory collection, 2 for v2),
-  `royaltyLocked` (boolean), `sealed` (boolean). Every existing
+  `royaltyLocked` (boolean), `ownerRenounced` (boolean). Every existing
   Surface v1 row gets `protocolVersion = 1`, `royaltyLocked = false`,
-  `sealed = false` on replay, since `apps/indexer/src/Collections.ts`
-  writes them explicitly on every `SurfaceCreated` insert (Ponder's
-  onchain tables have no column defaults). `royaltyLocked`/`sealed` stay
-  false for v1 rows for the life of the row: v1 has no `lockRoyalty` or
-  `seal` function, so nothing ever flips them.
+  `ownerRenounced = false` on replay, since `apps/indexer/src/
+  Collections.ts` writes them explicitly on every `SurfaceCreated`
+  insert (Ponder's onchain tables have no column defaults).
+  `royaltyLocked` stays false for v1 rows for the life of the row: v1
+  has no `lockRoyalty` function, so nothing ever flips it.
+  `ownerRenounced` tracks `OwnershipTransferred` to the zero address for
+  BOTH versions (v2's `seal()` reaches it, and v1's OZ Ownable2Step base
+  still allows a direct `renounceOwnership` call).
 - `apps/indexer/src/Collections.ts` shares its handler functions between
   v1 and v2 contract names (byte-identical event shapes; see
-  `docs/pnd-surface-v2-plan.md`), and adds two v2-only handlers
-  (`SurfaceV2:RoyaltyLocked`, `SurfaceV2:OwnershipTransferred`) that
-  update `royaltyLocked`/`sealed`.
-- Also new: `apps/indexer/ponder.config.ts` accepts
-  `PONDER_CHAIN_ID=11155111` with `SEPOLIA_RPC_URL` to run a
-  sepolia-only instance indexing just the Surface v2 deploy there, for
-  pre-mainnet verification. This mode is unrelated to the maglev
-  `ponder_v3`/`ponder_v4` schemas and does not affect the mainnet
-  cutover; every v1-only handler file gates on `MAINNET_MODE` (see
-  `apps/indexer/src/chainMode.ts`) so it is a no-op outside mainnet mode.
+  `docs/pnd-surface-v2-plan.md`), and adds one v2-only handler
+  (`SurfaceV2:RoyaltyLocked`) plus one shared handler registered for
+  both `Surface:OwnershipTransferred` and
+  `SurfaceV2:OwnershipTransferred`.
 
 ## Parity checks before flipping INDEXER_SCHEMA
 
@@ -65,18 +68,23 @@ must match.
 select protocol_version, count(*) from ponder_v4.collections group by 1;
 ```
 
-Expect every row at `protocol_version = 1` until the mainnet v2 factory
-is deployed and `contracts/deployments.mainnet.json` is updated with
-its `surfaceFactoryV2`/`factoryDeployBlock`; after that deploy and the
-next `ponder_v4` replay, expect `protocol_version = 2` rows for every
-collection created through the v2 factory, with zero rows at any other
-value.
+Expect every mainnet row at `protocol_version = 1` until the mainnet v2
+factory is deployed and `contracts/deployments.mainnet.json` is updated
+with its `surfaceFactoryV2`/`factoryDeployBlock`; after that deploy and
+the next `ponder_v4` replay, expect `protocol_version = 2` rows for
+every collection created through the mainnet v2 factory. A sepolia
+rehearsal deploy also produces `protocol_version = 2` rows; distinguish
+mainnet from sepolia collections by joining `collection_mints.block_number`
+against each chain's known block ranges, or by the collection address
+against the two deploy records, since `collections` does not carry a
+chain id column.
 
-`royaltyLocked`/`sealed` sanity (only meaningful once v2 has live
-collections; both columns are false on every v1 row by construction):
+`royaltyLocked`/`ownerRenounced` sanity (only meaningful once v2 has
+live collections; both columns are false on every v1 row by
+construction):
 
 ```sql
-select protocol_version, royalty_locked, sealed, count(*)
+select protocol_version, royalty_locked, owner_renounced, count(*)
 from ponder_v4.collections
 group by 1, 2, 3
 order by 1, 2, 3;
@@ -86,28 +94,49 @@ order by 1, 2, 3;
 
 Per `AGENTS.md`'s factory watch-set trap: confirm Ponder actually added
 every v2 clone to its watch set, not just wrote the discovery row.
+`ponder_sync.factories.id` is a Ponder-assigned integer, not stable
+across a replay, so resolve it the same way
+`apps/worker/src/tasks/ponder-drift-check.ts` does: match the factory's
+own address (recorded as `surfaceFactoryV2` in the relevant
+`contracts/deployments.<network>.json`) and, for Surface's two child
+streams off the same `SurfaceCreated` log, the `childAddressLocation`
+that distinguishes them (`topic2` for the collection stream matching
+`parameter: "collection"`, `offset0` for the minter stream matching
+`parameter: "primaryMinter"`):
+
+```sql
+select id, factory->>'childAddressLocation' as child_address_location
+from ponder_sync.factories
+where lower(factory->>'address') = lower('<surfaceFactoryV2 from deployments.mainnet.json>');
+```
+
+Take the two returned ids (one per `child_address_location`) and count
+their watched addresses:
 
 ```sql
 select factory_id, count(*)
 from ponder_sync.factory_addresses
-where factory_id ilike '%SurfaceFactoryV2%'
-   or factory_id ilike '%SurfaceV2%'
-   or factory_id ilike '%FixedPriceMinterV2%'
+where chain_id = 1
+  and factory_id in (<collection_stream_id>, <minter_stream_id>)
 group by 1;
 ```
 
-Compare the `SurfaceV2`/`FixedPriceMinterV2` counts against
-`select count(*) from ponder_v4.collections where protocol_version = 2`:
-they should match (one clone address per v2 collection, one minter
-address per v2 collection with a canonical primary minter). A mismatch
-means the same decayed-watch-set failure mode the v1 factories can hit:
-run `apps/worker/src/tasks/ponder-drift-check.ts`'s repair path (see
-`AGENTS.md`) before trusting the count.
+Compare the `topic2` (collection stream) count against
+`select count(*) from ponder_v4.collections where protocol_version = 2`
+for mainnet collections only, and the `offset0` (minter stream) count
+against
+`select count(*) from ponder_v4.minters m join ponder_v4.collections c on c.collection = m.collection where c.protocol_version = 2`,
+scoped the same way. They should match exactly. A mismatch means the
+same decayed-watch-set failure mode the v1 factories can hit: run
+`ponder-drift-check.ts`'s repair path (see `AGENTS.md`) before trusting
+the count. Repeat the same two queries with the sepolia deploy record
+and `chain_id = 11155111` to check the rehearsal deploy's watch set too.
 
-Until the mainnet v2 factory is deployed, this section has nothing to
-check: `contracts/deployments.mainnet.json` has no `surfaceFactoryV2`,
-so `ponder.config.ts` omits `SurfaceFactoryV2`/`SurfaceV2`/
-`FixedPriceMinterV2` from `ponder_v4` entirely and no v2 rows exist.
+Until a network's deploy record has no `surfaceFactoryV2`, its
+`ponder_sync.factories` row still exists (Ponder always configures the
+contract, per the always-declared design above) but points at the zero
+address, so its `factory_addresses` count is always 0 and there is
+nothing to compare there yet.
 
 ## Readiness check
 

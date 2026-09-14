@@ -1,15 +1,15 @@
-import { onIf, MAINNET_MODE } from "./chainMode"
+import { ponder } from "ponder:registry"
 import { srv2ArtistTokens } from "ponder:schema"
 
 /**
  * SuperRare V2 shared 1/1 NFT contract. Mint = Transfer(from=0x0).
- * SR mints directly to the artist, so `to` IS the creator — no follow-
+ * SR mints directly to the artist, so `to` IS the creator: no follow-
  * up read.
  */
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
-onIf(MAINNET_MODE, "SuperRareNFT:Transfer", async ({ event, context }) => {
+ponder.on("SuperRareNFT:Transfer", async ({ event, context }) => {
   const { from, to, tokenId } = event.args
   if (from !== ZERO_ADDRESS) return
   const contract = event.log.address

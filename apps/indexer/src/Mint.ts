@@ -1,4 +1,4 @@
-import { onIf, MAINNET_MODE } from "./chainMode"
+import { ponder } from "ponder:registry"
 import { mintCreators } from "ponder:schema"
 
 /**
@@ -14,7 +14,7 @@ import { mintCreators } from "ponder:schema"
  * `mint_creators.address` to auto-promote Mint deployers).
  */
 
-onIf(MAINNET_MODE, "MintFactory:Created", async ({ event, context }) => {
+ponder.on("MintFactory:Created", async ({ event, context }) => {
   const { ownerAddress, contractAddress } = event.args
   await context.db
     .insert(mintCreators)
