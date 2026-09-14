@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { isAddress, type Address } from "viem"
-import { useBytecode, useWaitForTransactionReceipt, useWriteContract } from "wagmi"
+import { useAccount, useBytecode, useWaitForTransactionReceipt, useWriteContract } from "wagmi"
 import { surfaceAbi, surfaceV2Abi, renderAssetsAbi } from "@pin/abi"
 import { formatWriteError } from "@/components/tx/tx-ui"
 import { BTN, BTN_SECONDARY, ERROR, HELP, INPUT, LABEL } from "@/components/studio/create/wizard-ui"
@@ -263,6 +263,8 @@ function SealControl({ collection, s, onDone }: { collection: Address; s: Settin
   const [confirm, setConfirm] = useState("")
   const setter = useSetter(collection, surfaceV2Abi, onDone)
   const matches = confirm.trim() === s.name
+  const { address: connected } = useAccount()
+  const isOwner = !!connected && connected.toLowerCase() === s.owner.toLowerCase()
 
   if (s.sealed) {
     return (
@@ -294,12 +296,13 @@ function SealControl({ collection, s, onDone }: { collection: Address; s: Settin
       />
       <button
         type="button"
-        disabled={!matches || setter.busy}
+        disabled={!matches || !isOwner || setter.busy}
         onClick={() => setter.run("seal", [])}
         className={BTN}
       >
         {setter.label ?? "Seal permanently"}
       </button>
+      {!isOwner && <p className={ERROR}>Only the collection owner can seal.</p>}
       {setter.error && <p className={ERROR}>{formatWriteError(setter.error, "seal")}</p>}
     </div>
   )
@@ -382,12 +385,12 @@ function SupplySection({
   const setter = useSetter(collection, collectionAbi(s.protocolVersion), onDone)
   const current = s.supplyCap === "0" ? "Open (no cap)" : s.supplyCap
   const parsed = cap.trim() === "" ? null : (() => { try { return BigInt(cap.trim()) } catch { return null } })()
-  const valid = parsed !== null && parsed >= BigInt(s.minted)
+  const valid = parsed !== null && (parsed === 0n || parsed >= BigInt(s.minted))
 
   return (
     <Section
       title="Supply cap"
-      help="The maximum tokens this collection can ever mint. 0 means open. Cannot be set below what is already minted."
+      help="The maximum tokens this collection can ever mint. 0 means unlimited, at any minted count. A nonzero cap cannot be set below what is already minted."
     >
       <p className="text-[11px] font-mono text-gray-500">
         Current: {current} · {s.minted} minted
@@ -436,12 +439,12 @@ function RoyaltySection({
   const setter = useSetter(collection, collectionAbi(s.protocolVersion), onDone)
   const bpsNum = Number(bps || "0")
   const receiverAddr = receiver.trim() === "" ? s.owner : receiver.trim()
-  const valid = bpsNum >= 0 && bpsNum <= 10_000 && isAddress(receiverAddr)
+  const valid = bpsNum >= 0 && bpsNum <= 5_000 && isAddress(receiverAddr)
 
   return (
     <Section
       title="Royalty"
-      help="The EIP-2981 secondary royalty: basis points (100 = 1%) and the receiver. Empty receiver defaults to the collection owner."
+      help="The EIP-2981 secondary royalty: basis points (100 = 1%) up to 50%, and the receiver. Empty receiver defaults to the collection owner."
     >
       <p className="text-[11px] font-mono text-gray-500">
         Current: {s.royaltyBps / 100}% to{" "}
@@ -474,7 +477,7 @@ function RoyaltySection({
           />
         </label>
       </div>
-      {bpsNum > 10_000 && <p className={ERROR}>Basis points cannot exceed 10000 (100%).</p>}
+      {bpsNum > 5_000 && <p className={ERROR}>Basis points cannot exceed 5000 (50%).</p>}
       <button
         type="button"
         disabled={!valid || setter.busy || s.sealed}
@@ -643,7 +646,10 @@ function CreatorsSection({
           ))}
         </ul>
       ) : (
-        <p className="text-xs text-gray-500">No creators listed yet.</p>
+        <p className="text-xs text-gray-500">
+          Listed creators are not shown here yet. Listing or removing a
+          creator below writes that one address onchain.
+        </p>
       )}
       <div className="space-y-2">
         <input
