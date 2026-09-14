@@ -62,12 +62,16 @@
   var owner = (typeof td.owner === "string" ? td.owner : "0x0000000000000000000000000000000000000000").toLowerCase();
   var params = td.params || {};
   var backgroundOnly = params.bgOnly === true || params.bgOnly === 1 || params.bgOnly === "1";
+  // Diagnostic view: 0 normal render, 1 shape (warp boundary only), 2 colour
+  // (the three mass colours as flat bands). Selected via params.view.
+  var viewMode = params.view === "shape" ? 1 : params.view === "colour" ? 2 : 0;
+  var viewLabel = viewMode === 1 ? "shape" : viewMode === 2 ? "colour" : "full";
 
   // ── host notification ───────────────────────────────────────────────────────
   // Posts a message to window.parent at the frame a shape morph or a mass
   // colour shift begins, and once on the first live frame. Message shape:
   // { source: "anton", kind, tokenId, at, ...detail }. kind is "ready"
-  // (detail: openingTime, firstEventLead, warpPeriod), "shape" (detail: from,
+  // (detail: openingTime, firstEventLead, warpPeriod, view), "shape" (detail: from,
   // to, warp mode indices) or "colour" (detail: mass, from, to, each an
   // [r, g, b] triple rounded to 3 decimals). Runs only in an embedded frame
   // (window.parent !== window) and only outside the capture context. Rendering
@@ -168,6 +172,7 @@
     "uniform vec3 u_staticCols[3];" +
     "uniform vec3 u_paletteA;" +
     "uniform float u_bgOnly;" +
+    "uniform int u_view;" +
     "vec3 palette(in float t){" +
     "vec3 a=u_paletteA;" +
     "vec3 b=vec3(0.151,0.1349,0.255);" +
@@ -234,6 +239,8 @@
     "float r=length(rxy-center);" +
     "float h0r=cos((3.2)*r);" +
     "h00=h0r;" +
+    "if(u_view==1){gl_FragColor=vec4(vec3(step(h00,xy.y)),1.0);return;}" +
+    "if(u_view==2){vec3 band=u_staticCols[2];if(xy.x<1.0/3.0){band=u_staticCols[0];}else if(xy.x<2.0/3.0){band=u_staticCols[1];}gl_FragColor=vec4(band,1.0);return;}" +
     "float h=0.085;" +
     "vec3 cmix=mix(bg1,cm,xy.x/h);" +
     "vec3 cmixA=mix(cd,bg1,xy.x);" +
@@ -329,6 +336,7 @@
     staticCols: gl.getUniformLocation(prg, "u_staticCols[0]"),
     paletteA: gl.getUniformLocation(prg, "u_paletteA"),
     bgOnly: gl.getUniformLocation(prg, "u_bgOnly"),
+    view: gl.getUniformLocation(prg, "u_view"),
     colAAPhase: gl.getUniformLocation(prg, "u_colAAPhase"),
     rxyWarpModeA: gl.getUniformLocation(prg, "u_rxyWarpModeA"),
     rxyWarpModeB: gl.getUniformLocation(prg, "u_rxyWarpModeB"),
@@ -687,6 +695,7 @@
     gl.uniform3fv(u.staticCols, staticCols);
     gl.uniform3fv(u.paletteA, new Float32Array(paletteABase));
     gl.uniform1f(u.bgOnly, backgroundOnly ? 1 : 0);
+    gl.uniform1i(u.view, viewMode);
     gl.uniform1i(u.colAAPhase, colAAPhase);
     gl.uniform1i(u.rxyWarpModeA, warp.a);
     gl.uniform1i(u.rxyWarpModeB, warp.b);
@@ -714,7 +723,7 @@
   function reportLiveEvents(warp, bgResults) {
     if (!hostReadySent) {
       hostReadySent = true;
-      notifyHost("ready", { openingTime: openingTime, firstEventLead: FIRST_EVENT_LEAD, warpPeriod: WARP_PERIOD });
+      notifyHost("ready", { openingTime: openingTime, firstEventLead: FIRST_EVENT_LEAD, warpPeriod: WARP_PERIOD, view: viewLabel });
       lastWarpTick = warp.k;
       for (var i = 0; i < bgResults.length; i++) lastBgTick[i] = bgResults[i].j;
       return;
