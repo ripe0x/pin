@@ -33,9 +33,9 @@ names so Foundry artifacts never collide. v1 files are not edited.
 
 1. `_update` override rejecting `to == address(this)`
    (`SelfCustodyRejected(tokenId)`). Closes the permanent-stranding trap.
-2. `lockRoyalty()` — royalty gets the same one-way lock the other knobs
+2. `lockRoyalty()`: royalty gets the same one-way lock the other knobs
    have. `setRoyalty` reverts `RoyaltyIsLocked` once engaged.
-3. `seal()` — owner-only, one transaction: engages any un-engaged lock
+3. `seal()`, owner-only, one transaction: engages any un-engaged lock
    (renderer, supply, minter, royalty) and then `_transferOwnership(address(0))`
    (renounce). Sealing with zero granted minters permanently ends
    minting; keep v1's lockMinter NatSpec warning.
@@ -48,7 +48,7 @@ names so Foundry artifacts never collide. v1 files are not edited.
    default for that token"). `mintTo(address,uint256)` keeps deriving
    for every token. Both gated on `_minters[msg.sender]`, both
    `nonReentrant`, both respect the cap and emit the same event.
-6. `seedSource`: an init-only address (no setter, no lock needed — it
+6. `seedSource`: an init-only address (no setter, no lock needed since it
    can never change after `initialize`). When set, `mintTo` skips the
    seed SSTORE entirely and `tokenSeed(id)` falls back to
    `ISeedSourceV2(seedSource).seedOf(address(this), id)` for tokens with
@@ -56,7 +56,7 @@ names so Foundry artifacts never collide. v1 files are not edited.
    wins over the source for that token. `tokenSeed` reverts
    `NeverMinted` for `id == 0 || id > _mintedEver`.
    `ISeedSourceV2`: `function seedOf(address collection, uint256 tokenId)
-   external view returns (bytes32);` — may revert (e.g. a reveal-based
+   external view returns (bytes32);` (may revert, e.g. a reveal-based
    source before its epoch resolves).
 
 ## What v2 keeps unchanged (do not redesign)
@@ -87,7 +87,7 @@ names so Foundry artifacts never collide. v1 files are not edited.
   modification. Therefore v2 keeps the exact `ISurfaceView` read
   selectors and return shapes: `config()` returns the v1
   `SurfaceConfig` struct unmodified (import it from
-  `../SurfaceTypes.sol`; do NOT add fields to it — `royaltyLocked`
+  `../SurfaceTypes.sol`; do NOT add fields to it, `royaltyLocked`
   lives in a separate variable), and `idMode()` stays as a compat shim
   returning `IdMode.Sequential` (import the v1 enum). `tokenSeed`,
   `name`, `contractURI`, `tokenURI` keep their v1 signatures.
@@ -138,7 +138,7 @@ existing creator/msg.sender attribution.
 ## FixedPriceMinterV2
 
 v1 minus: `priceStrategy` (field, init param, setter, quote branch,
-overpay/refund accrual — payment is exactly `price * quantity` or
+overpay/refund accrual: payment is exactly `price * quantity` or
 `WrongPayment`). Changed: `referralShareBps` initializes to 0
 (`MAX_REFERRAL_SHARE_BPS = 1_000` cap stays; owner/admin can raise it).
 Kept verbatim: mint window, `maxMints`, Merkle allowlist (leaf =
@@ -153,27 +153,27 @@ borrowed `onlyCollectionOwnerOrAdmin` auth, `rescueStrayETH` netting
 Port the v1 sequential coverage and add coverage for every new
 behavior. Suites:
 
-- `SurfaceV2.t.sol` — mint/burn/auth/cap/locks/admin/creators/royalty,
+- `SurfaceV2.t.sol`: mint/burn/auth/cap/locks/admin/creators/royalty,
   ported from the v1 tests, pooled cases dropped.
-- `SurfaceV2Seal.t.sol` — lockRoyalty one-way; seal() engages all locks
+- `SurfaceV2Seal.t.sol`: lockRoyalty one-way; seal() engages all locks
   + renounces; post-seal every mutator reverts; permanence() truth
   table before/after each lock.
-- `SurfaceV2Seed.t.sol` — default derivation shape; mintToSeeded mixed
+- `SurfaceV2Seed.t.sol`: default derivation shape; mintToSeeded mixed
   zero/nonzero entries; seedSource fallback via a mock source
   (including a reverting "pending" mock); stored-seed-wins-over-source;
   NeverMinted bounds; seed skip-write when source set (assert
   tokenSeed still serves via source).
-- `SurfaceV2Transfer.t.sol` — SelfCustodyRejected on transferFrom to
+- `SurfaceV2Transfer.t.sol`: SelfCustodyRejected on transferFrom to
   the collection; safeTransferFrom unaffected otherwise; normal
   transfers/approvals intact.
-- `SurfaceFactoryV2.t.sol` — create paths, canonical wiring,
+- `SurfaceFactoryV2.t.sol`: create paths, canonical wiring,
   deprecate/pause, seedSource pass-through, primary-minter validation.
-- `FixedPriceMinterV2.t.sol` — exact payment only (over/underpay
+- `FixedPriceMinterV2.t.sol`: exact payment only (over/underpay
   revert), window/allowlist/walletCap/maxMints, referral defaults to 0
   and pays when raised + referrer set, pull payment, payout snapshot.
-- `SurfaceV2Size.t.sol` — same gate as v1's size test
+- `SurfaceV2Size.t.sol`: same gate as v1's size test
   (runtime <= 23,576 bytes) for `SurfaceV2` and `SurfaceFactoryV2`.
-- `SurfaceV2Invariants.t.sol` — port the v1 invariant handler's
+- `SurfaceV2Invariants.t.sol`: port the v1 invariant handler's
   sequential probes: cap never exceeded, ids monotonic + never reused,
   burn only by owner-or-approved, locks are one-way, seed immutable
   once stored.

@@ -93,7 +93,7 @@ contract SurfaceV2Handler is StdInvariant, Test {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Actor helper — a small bounded universe so collisions happen often.
+    // Actor helper: a small bounded universe so collisions happen often.
     // ─────────────────────────────────────────────────────────────────────
 
     function _actor(uint256 seed) internal pure returns (address payable) {
@@ -246,7 +246,7 @@ contract SurfaceV2Handler is StdInvariant, Test {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // NEGATIVE PROBES — every one of these MUST revert. Wrapped in try/catch
+    // NEGATIVE PROBES: every one of these MUST revert. Wrapped in try/catch
     // so an unexpected success flips a ghost flag instead of killing the run.
     // ─────────────────────────────────────────────────────────────────────
 

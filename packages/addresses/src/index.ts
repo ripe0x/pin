@@ -193,7 +193,7 @@ export const SURFACE_FACTORY: Record<number, Address> = {
   [SEPOLIA_CHAIN_ID]: "0xAB8F7b96e6c8f850B6089447F903dbC4aE6e4ac0",
 }
 
-// SurfaceFactoryV2 — art-only core beside v1 (sequential ids only, no
+// SurfaceFactoryV2: art-only core beside v1 (sequential ids only, no
 // pooled mode; see docs/pnd-surface-v2-plan.md). Not yet deployed to
 // either network; fill from contracts/deployments.<network>.json once
 // the deploy lands. For local Anvil dev, set
