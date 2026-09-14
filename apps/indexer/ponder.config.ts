@@ -14,8 +14,12 @@ import { muriProtocolAbi } from "./abis/MURIProtocol"
 import { surfaceAbi } from "./abis/Surface"
 import { surfaceFactoryAbi } from "./abis/SurfaceFactory"
 import { fixedPriceMinterAbi } from "./abis/FixedPriceMinter"
+import { surfaceV2Abi } from "./abis/SurfaceV2"
+import { surfaceFactoryV2Abi } from "./abis/SurfaceFactoryV2"
+import { fixedPriceMinterV2Abi } from "./abis/FixedPriceMinterV2"
 import { homageCollectionAbi } from "./abis/HomageCollection"
 import { homageMinterAbi } from "./abis/HomageMinter"
+import { readSurfaceV2Deployment } from "./src/surfaceV2Deployment"
 
 /**
  * PND v2 Ponder scope — REDUCED from v1.
@@ -123,40 +127,112 @@ export const SOVEREIGN_V2_WIRED = Boolean(
     process.env.SOVEREIGN_V2_FACTORY_START_BLOCK,
 )
 
-// drpc.org free tier handles multi-address eth_getLogs for the PND
-// factory pattern. See docs/RPC-strategy.md for why publicnode /
-// llamarpc / ankr / Alchemy don't.
-const RPC_URL = process.env.PONDER_RPC_URL_1
-if (!RPC_URL) {
+// Surface v2 (contracts/src/surface/v2/): same factory + factory()
+// clone pattern as v1's SurfaceFactory/Surface/FixedPriceMinter below, on
+// its own factory address. Event shapes are byte-identical to v1's (see
+// docs/pnd-surface-v2-plan.md); the handlers sharing code with v1 live in
+// src/Collections.ts. Wired only once
+// contracts/deployments.<network>.json carries a surfaceFactoryV2 address
+// for the selected chain (readSurfaceV2Deployment); absent, these
+// contracts are omitted and the indexer starts Surface-v1-only.
+const surfaceCreatedEvent = parseAbiItem(
+  "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)",
+)
+
+// Each key is its own conditional spread against the SAME `deployment`
+// check (rather than one `if (!deployment) return {}` early return) so
+// the function's return type merges to "each key optional", matching
+// the SOVEREIGN_V2_WIRED/HOMAGE_WIRED spreads above. An early return
+// giving two structurally different shapes would union the whole
+// `contracts` type and break every ponder.on(...) event name below.
+function surfaceV2Contracts(
+  chain: "mainnet" | "sepolia",
+  deployment: ReturnType<typeof readSurfaceV2Deployment>,
+) {
+  return {
+    ...(deployment
+      ? {
+          SurfaceFactoryV2: {
+            chain,
+            abi: surfaceFactoryV2Abi,
+            address: deployment.surfaceFactoryV2,
+            startBlock: deployment.factoryDeployBlock,
+          },
+        }
+      : {}),
+    ...(deployment
+      ? {
+          SurfaceV2: {
+            chain,
+            abi: surfaceV2Abi,
+            address: factory({
+              address: deployment.surfaceFactoryV2,
+              event: surfaceCreatedEvent,
+              parameter: "collection",
+            }),
+            startBlock: deployment.factoryDeployBlock,
+          },
+        }
+      : {}),
+    ...(deployment
+      ? {
+          FixedPriceMinterV2: {
+            chain,
+            abi: fixedPriceMinterV2Abi,
+            address: factory({
+              address: deployment.surfaceFactoryV2,
+              event: surfaceCreatedEvent,
+              parameter: "primaryMinter",
+            }),
+            startBlock: deployment.factoryDeployBlock,
+          },
+        }
+      : {}),
+  }
+}
+
+// Network selection. Mainnet (PONDER_CHAIN_ID unset or 1) is the default
+// and every contract below stays mainnet-only and unaffected. Setting
+// PONDER_CHAIN_ID=11155111 with SEPOLIA_RPC_URL switches to a sepolia-only
+// instance that indexes just the Surface v2 deploy there, to verify v2
+// indexing ahead of the mainnet v2 broadcast, see
+// docs/ponder-schema-cutover.md. One createConfig call either way, with
+// the chain and contract set swapped by plain object spreads (same
+// technique as SOVEREIGN_V2_WIRED/HOMAGE_WIRED above) rather than two
+// separate createConfig calls: two calls behind a ternary would give
+// the exported config a union type and break every ponder.on(...) event
+// name below.
+const PONDER_CHAIN_ID = Number(process.env.PONDER_CHAIN_ID ?? 1)
+const SEPOLIA_MODE = PONDER_CHAIN_ID === 11_155_111
+const NETWORK: "mainnet" | "sepolia" = SEPOLIA_MODE ? "sepolia" : "mainnet"
+
+const surfaceV2Deployment = readSurfaceV2Deployment(NETWORK)
+if (SEPOLIA_MODE && !surfaceV2Deployment) {
   throw new Error(
-    "PONDER_RPC_URL_1 is required. drpc.org free tier works: " +
-      "https://eth.drpc.org",
+    "PONDER_CHAIN_ID=11155111 has no surfaceFactoryV2 in " +
+      "contracts/deployments.sepolia.json. This mode exists only to " +
+      "verify a sepolia Surface v2 deploy, deploy it first.",
   )
 }
 
-export default createConfig({
-  chains: {
-    mainnet: {
-      id: 1,
-      rpc: http(RPC_URL),
-      // 15s poll. Per-poll work scales linearly with the indexed-
-      // contract surface, and a head-follow poll is one small getLogs
-      // batch per filter over a few blocks — free-RPC cheap. The old
-      // 300s setting predates the Surface launch; a live mint feed
-      // (homage mint history reads collection_mints) needs rows within
-      // seconds, not minutes.
-      pollingInterval: 15_000,
-      // drpc free tier caps eth_getLogs at 10K blocks per request and
-      // throttles at ~100 RPS. Hard limit, not soft throttle — requests
-      // over 10K return error code 35. Ponder auto-chunks on errors so
-      // backfill still completes; setting maxRequestsPerSecond keeps
-      // us comfortably under the rate limit so the auto-chunk loop
-      // doesn't burn cycles on retries. Steady-state head-following
-      // polls are tiny (<100 blocks per call) and unaffected.
-      maxRequestsPerSecond: 25,
-    },
-  },
-  contracts: {
+const CHAIN_RPC_URL = SEPOLIA_MODE
+  ? process.env.SEPOLIA_RPC_URL
+  : process.env.PONDER_RPC_URL_1
+if (!CHAIN_RPC_URL) {
+  throw new Error(
+    SEPOLIA_MODE
+      ? "SEPOLIA_RPC_URL is required when PONDER_CHAIN_ID=11155111"
+      : "PONDER_RPC_URL_1 is required. drpc.org free tier works: " +
+          "https://eth.drpc.org",
+  )
+}
+
+// All the mainnet-only v1 contracts (SovereignAuctionHouse, Foundation,
+// Catalog, SuperRare, discovery factories, MURI, Surface v1, and the
+// ENV-GATED SovereignAuctionHouseV2/Homage pairs). Called only in mainnet
+// mode; the sepolia mode below indexes Surface v2 alone.
+function mainnetV1Contracts() {
+  return {
     // ── PND (Sovereign Auction House) — state-machine ─────────────────
     SovereignAuctionHouseFactory: {
       chain: "mainnet",
@@ -359,5 +435,55 @@ export default createConfig({
           },
         }
       : {}),
+  }
+}
+
+export default createConfig({
+  chains: {
+    // Two independent conditional spreads (each falling back to `{}`),
+    // not a ternary between two chain shapes — a ternary here would give
+    // `chains` a union type and break every ponder.on(...) event name
+    // typed against it below.
+    ...(SEPOLIA_MODE
+      ? {
+          sepolia: {
+            id: 11_155_111 as const,
+            rpc: http(CHAIN_RPC_URL),
+            pollingInterval: 15_000,
+          },
+        }
+      : {}),
+    ...(SEPOLIA_MODE
+      ? {}
+      : {
+          mainnet: {
+            id: 1 as const,
+            rpc: http(CHAIN_RPC_URL),
+            // 15s poll. Per-poll work scales linearly with the indexed-
+            // contract surface, and a head-follow poll is one small
+            // getLogs batch per filter over a few blocks — free-RPC
+            // cheap. The old 300s setting predates the Surface launch;
+            // a live mint feed (homage mint history reads
+            // collection_mints) needs rows within seconds, not minutes.
+            pollingInterval: 15_000,
+            // drpc free tier caps eth_getLogs at 10K blocks per request
+            // and throttles at ~100 RPS. Hard limit, not soft throttle —
+            // requests over 10K return error code 35. Ponder auto-chunks
+            // on errors so backfill still completes; setting
+            // maxRequestsPerSecond keeps us comfortably under the rate
+            // limit so the auto-chunk loop doesn't burn cycles on
+            // retries. Steady-state head-following polls are tiny
+            // (<100 blocks per call) and unaffected.
+            maxRequestsPerSecond: 25,
+          },
+        }),
+  },
+  contracts: {
+    ...(SEPOLIA_MODE ? {} : mainnetV1Contracts()),
+    // Called once with NETWORK so SurfaceFactoryV2/SurfaceV2/
+    // FixedPriceMinterV2 have one shape (not two alternating `chain`
+    // literals across separate calls, which would union the whole
+    // `contracts` type and break every ponder.on(...) below).
+    ...surfaceV2Contracts(NETWORK, surfaceV2Deployment),
   },
 })

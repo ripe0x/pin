@@ -1,4 +1,4 @@
-import { ponder } from "ponder:registry"
+import { onIf, MAINNET_MODE } from "./chainMode"
 import { tlCreators } from "ponder:schema"
 
 /**
@@ -12,7 +12,8 @@ import { tlCreators } from "ponder:schema"
  * needs to know WHICH clones to scan.
  */
 
-ponder.on(
+onIf(
+  MAINNET_MODE,
   "TLUniversalDeployer:ContractDeployed",
   async ({ event, context }) => {
     const { sender, deployedContract, implementation, cType, version } =

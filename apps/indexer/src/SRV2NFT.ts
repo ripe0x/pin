@@ -1,4 +1,4 @@
-import { ponder } from "ponder:registry"
+import { onIf, MAINNET_MODE } from "./chainMode"
 import { srv2ArtistTokens } from "ponder:schema"
 
 /**
@@ -9,7 +9,7 @@ import { srv2ArtistTokens } from "ponder:schema"
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
-ponder.on("SuperRareNFT:Transfer", async ({ event, context }) => {
+onIf(MAINNET_MODE, "SuperRareNFT:Transfer", async ({ event, context }) => {
   const { from, to, tokenId } = event.args
   if (from !== ZERO_ADDRESS) return
   const contract = event.log.address

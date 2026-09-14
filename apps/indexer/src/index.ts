@@ -1,4 +1,4 @@
-import { ponder } from "ponder:registry"
+import { onIf, MAINNET_MODE } from "./chainMode"
 import {
   pndAuctions,
   pndBids,
@@ -33,7 +33,8 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
 // ─── PND: SovereignAuctionHouseFactory ───────────────────────────────────
 
-ponder.on(
+onIf(
+  MAINNET_MODE,
   "SovereignAuctionHouseFactory:AuctionHouseCreated",
   async ({ event, context }) => {
     const { owner, house, feeRecipient, protocolFeeBps } = event.args
@@ -52,7 +53,7 @@ ponder.on(
 
 // ─── PND: SovereignAuctionHouse (per-clone via factory pattern) ──────────
 
-ponder.on("SovereignAuctionHouse:AuctionCreated", async ({ event, context }) => {
+onIf(MAINNET_MODE, "SovereignAuctionHouse:AuctionCreated", async ({ event, context }) => {
   const { auctionId, tokenId, tokenContract, duration, reservePrice, tokenOwner } =
     event.args
   const house = event.log.address
@@ -86,7 +87,7 @@ ponder.on("SovereignAuctionHouse:AuctionCreated", async ({ event, context }) => 
 // preserved in pnd_bids (immutable history). The worker's
 // ponder-drift-check task forward-fixes the underlying gap.
 
-ponder.on("SovereignAuctionHouse:AuctionBid", async ({ event, context }) => {
+onIf(MAINNET_MODE, "SovereignAuctionHouse:AuctionBid", async ({ event, context }) => {
   const { auctionId, bidder, amount, firstBid, extended } = event.args
   const house = event.log.address
   const id = compositeId(house, auctionId)
@@ -106,7 +107,7 @@ ponder.on("SovereignAuctionHouse:AuctionBid", async ({ event, context }) => {
   const existing = await context.db.find(pndAuctions, { id })
   if (!existing) return
 
-  await context.db.update(pndAuctions, { id }).set((row) => {
+  await context.db.update(pndAuctions, { id }).set((row: typeof pndAuctions.$inferSelect) => {
     const firstBidTime = firstBid ? event.block.timestamp : row.firstBidTime
     const endTime = firstBid
       ? firstBidTime + row.duration
@@ -117,7 +118,8 @@ ponder.on("SovereignAuctionHouse:AuctionBid", async ({ event, context }) => {
   })
 })
 
-ponder.on(
+onIf(
+  MAINNET_MODE,
   "SovereignAuctionHouse:AuctionEndTimeUpdated",
   async ({ event, context }) => {
     const { auctionId, newEndTime } = event.args
@@ -128,7 +130,8 @@ ponder.on(
   },
 )
 
-ponder.on(
+onIf(
+  MAINNET_MODE,
   "SovereignAuctionHouse:AuctionReservePriceUpdated",
   async ({ event, context }) => {
     const { auctionId, reservePrice } = event.args
@@ -139,7 +142,7 @@ ponder.on(
   },
 )
 
-ponder.on("SovereignAuctionHouse:AuctionEnded", async ({ event, context }) => {
+onIf(MAINNET_MODE, "SovereignAuctionHouse:AuctionEnded", async ({ event, context }) => {
   const { auctionId, winner, sellerProceeds, protocolFee } = event.args
   const id = compositeId(event.log.address, auctionId)
   const existing = await context.db.find(pndAuctions, { id })
@@ -155,7 +158,8 @@ ponder.on("SovereignAuctionHouse:AuctionEnded", async ({ event, context }) => {
   })
 })
 
-ponder.on(
+onIf(
+  MAINNET_MODE,
   "SovereignAuctionHouse:AuctionCanceled",
   async ({ event, context }) => {
     const { auctionId } = event.args
@@ -173,7 +177,7 @@ ponder.on(
 
 // ─── Foundation shared 1/1 (FoundationNFT) ───────────────────────────────
 
-ponder.on("FoundationNFT:Minted", async ({ event, context }) => {
+onIf(MAINNET_MODE, "FoundationNFT:Minted", async ({ event, context }) => {
   const { creator, tokenId } = event.args
   const contract = event.log.address
   await context.db
@@ -192,7 +196,7 @@ ponder.on("FoundationNFT:Minted", async ({ event, context }) => {
 
 // ─── Foundation NFTMarket — reserve auctions ────────────────────────────
 
-ponder.on("NFTMarket:ReserveAuctionCreated", async ({ event, context }) => {
+onIf(MAINNET_MODE, "NFTMarket:ReserveAuctionCreated", async ({ event, context }) => {
   const { seller, nftContract, tokenId, duration, reservePrice, auctionId } =
     event.args
   await context.db.insert(fndAuctions).values({
@@ -211,7 +215,7 @@ ponder.on("NFTMarket:ReserveAuctionCreated", async ({ event, context }) => {
   })
 })
 
-ponder.on("NFTMarket:ReserveAuctionBidPlaced", async ({ event, context }) => {
+onIf(MAINNET_MODE, "NFTMarket:ReserveAuctionBidPlaced", async ({ event, context }) => {
   const { auctionId, bidder, amount, endTime } = event.args
   const auction = await context.db.find(fndAuctions, { auctionId })
   if (!auction) return
@@ -232,7 +236,7 @@ ponder.on("NFTMarket:ReserveAuctionBidPlaced", async ({ event, context }) => {
   })
 })
 
-ponder.on("NFTMarket:ReserveAuctionFinalized", async ({ event, context }) => {
+onIf(MAINNET_MODE, "NFTMarket:ReserveAuctionFinalized", async ({ event, context }) => {
   const { auctionId, seller, bidder, totalFees, creatorRev, sellerRev } =
     event.args
   const auction = await context.db.find(fndAuctions, { auctionId })
@@ -261,7 +265,7 @@ ponder.on("NFTMarket:ReserveAuctionFinalized", async ({ event, context }) => {
     .onConflictDoNothing()
 })
 
-ponder.on("NFTMarket:ReserveAuctionCanceled", async ({ event, context }) => {
+onIf(MAINNET_MODE, "NFTMarket:ReserveAuctionCanceled", async ({ event, context }) => {
   const { auctionId } = event.args
   const auction = await context.db.find(fndAuctions, { auctionId })
   if (!auction) return
@@ -272,14 +276,15 @@ ponder.on("NFTMarket:ReserveAuctionCanceled", async ({ event, context }) => {
   })
 })
 
-ponder.on("NFTMarket:ReserveAuctionUpdated", async ({ event, context }) => {
+onIf(MAINNET_MODE, "NFTMarket:ReserveAuctionUpdated", async ({ event, context }) => {
   const { auctionId, reservePrice } = event.args
   const auction = await context.db.find(fndAuctions, { auctionId })
   if (!auction) return
   await context.db.update(fndAuctions, { auctionId }).set({ reservePrice })
 })
 
-ponder.on(
+onIf(
+  MAINNET_MODE,
   "NFTMarket:ReserveAuctionInvalidated",
   async ({ event, context }) => {
     const { auctionId } = event.args
@@ -295,7 +300,7 @@ ponder.on(
 
 // ─── Foundation NFTMarket — buy now ──────────────────────────────────────
 
-ponder.on("NFTMarket:BuyPriceSet", async ({ event, context }) => {
+onIf(MAINNET_MODE, "NFTMarket:BuyPriceSet", async ({ event, context }) => {
   const { nftContract, tokenId, seller, price } = event.args
   const id = `${nftContract.toLowerCase()}-${tokenId.toString()}`
   const existing = await context.db.find(fndBuyNows, { id })
@@ -318,7 +323,7 @@ ponder.on("NFTMarket:BuyPriceSet", async ({ event, context }) => {
   }
 })
 
-ponder.on("NFTMarket:BuyPriceCanceled", async ({ event, context }) => {
+onIf(MAINNET_MODE, "NFTMarket:BuyPriceCanceled", async ({ event, context }) => {
   const { nftContract, tokenId } = event.args
   const id = `${nftContract.toLowerCase()}-${tokenId.toString()}`
   const existing = await context.db.find(fndBuyNows, { id })
@@ -329,7 +334,7 @@ ponder.on("NFTMarket:BuyPriceCanceled", async ({ event, context }) => {
   })
 })
 
-ponder.on("NFTMarket:BuyPriceAccepted", async ({ event, context }) => {
+onIf(MAINNET_MODE, "NFTMarket:BuyPriceAccepted", async ({ event, context }) => {
   const { nftContract, tokenId, seller, buyer, totalFees, creatorRev, sellerRev } =
     event.args
   const id = `${nftContract.toLowerCase()}-${tokenId.toString()}`
@@ -358,7 +363,7 @@ ponder.on("NFTMarket:BuyPriceAccepted", async ({ event, context }) => {
     .onConflictDoNothing()
 })
 
-ponder.on("NFTMarket:BuyPriceInvalidated", async ({ event, context }) => {
+onIf(MAINNET_MODE, "NFTMarket:BuyPriceInvalidated", async ({ event, context }) => {
   const { nftContract, tokenId } = event.args
   const id = `${nftContract.toLowerCase()}-${tokenId.toString()}`
   const existing = await context.db.find(fndBuyNows, { id })
@@ -374,7 +379,8 @@ ponder.on("NFTMarket:BuyPriceInvalidated", async ({ event, context }) => {
 // task `scan-fnd-collections` reads these rows and scans the clones
 // itself, cursor-bounded, gated by known_artists.
 
-ponder.on(
+onIf(
+  MAINNET_MODE,
   "NFTCollectionFactoryV1:NFTCollectionCreated",
   async ({ event, context }) => {
     const { collection, creator, name, symbol } = event.args
@@ -391,7 +397,8 @@ ponder.on(
   },
 )
 
-ponder.on(
+onIf(
+  MAINNET_MODE,
   "NFTCollectionFactoryV2:NFTCollectionCreated",
   async ({ event, context }) => {
     const { collection, creator, name, symbol } = event.args

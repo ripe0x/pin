@@ -1,4 +1,5 @@
 import { ponder } from "ponder:registry"
+import { onIf, MAINNET_MODE } from "./chainMode"
 import { muriContracts, muriTokens } from "ponder:schema"
 import { muriProtocolAbi } from "../abis/MURIProtocol"
 
@@ -61,7 +62,7 @@ async function refreshToken(
     .onConflictDoUpdate(base)
 }
 
-ponder.on("MURIProtocol:ContractRegistered", async ({ event, context }) => {
+onIf(MAINNET_MODE, "MURIProtocol:ContractRegistered", async ({ event, context }) => {
   const { contractAddress, implementationAddress, registerer } = event.args
   await context.db
     .insert(muriContracts)
@@ -76,7 +77,7 @@ ponder.on("MURIProtocol:ContractRegistered", async ({ event, context }) => {
     .onConflictDoNothing()
 })
 
-ponder.on("MURIProtocol:TokenDataInitialized", async ({ event, context }) => {
+onIf(MAINNET_MODE, "MURIProtocol:TokenDataInitialized", async ({ event, context }) => {
   await refreshToken(
     context,
     event.args.creator,
@@ -86,7 +87,7 @@ ponder.on("MURIProtocol:TokenDataInitialized", async ({ event, context }) => {
   )
 })
 
-ponder.on("MURIProtocol:ArtworkUrisAdded", async ({ event, context }) => {
+onIf(MAINNET_MODE, "MURIProtocol:ArtworkUrisAdded", async ({ event, context }) => {
   await refreshToken(
     context,
     event.args.creator,
@@ -96,7 +97,7 @@ ponder.on("MURIProtocol:ArtworkUrisAdded", async ({ event, context }) => {
   )
 })
 
-ponder.on("MURIProtocol:ArtworkUriRemoved", async ({ event, context }) => {
+onIf(MAINNET_MODE, "MURIProtocol:ArtworkUriRemoved", async ({ event, context }) => {
   await refreshToken(
     context,
     event.args.creator,
@@ -106,7 +107,7 @@ ponder.on("MURIProtocol:ArtworkUriRemoved", async ({ event, context }) => {
   )
 })
 
-ponder.on("MURIProtocol:SelectedArtworkUriChanged", async ({ event, context }) => {
+onIf(MAINNET_MODE, "MURIProtocol:SelectedArtworkUriChanged", async ({ event, context }) => {
   const id = idOf(event.args.creator, event.args.tokenId)
   const existing = await context.db.find(muriTokens, { id })
   if (!existing) return
@@ -115,7 +116,7 @@ ponder.on("MURIProtocol:SelectedArtworkUriChanged", async ({ event, context }) =
     .set({ selectedIndex: Number(event.args.newIndex), updatedAtBlock: event.block.number })
 })
 
-ponder.on("MURIProtocol:DisplayModeUpdated", async ({ event, context }) => {
+onIf(MAINNET_MODE, "MURIProtocol:DisplayModeUpdated", async ({ event, context }) => {
   const id = idOf(event.args.creator, event.args.tokenId)
   const existing = await context.db.find(muriTokens, { id })
   if (!existing) return

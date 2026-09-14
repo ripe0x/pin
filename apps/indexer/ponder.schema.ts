@@ -416,6 +416,14 @@ export const muriTokens = onchainTable(
 // collection. The `minters` reverse index is keyed off SurfaceCreated's
 // primaryMinter too (the canonical clone createSurface wires), independent
 // of later primaryMinter repoints.
+//
+// Surface v2 (contracts/src/surface/v2/, docs/pnd-surface-v2-plan.md)
+// shares this table with v1: `protocolVersion` records which factory
+// created the collection (1 or 2). v2 adds a one-way royalty lock and a
+// seal (ownership renounced) that v1 has no equivalent of, so
+// `royaltyLocked`/`sealed` are v2-only in practice: a v1 row keeps both
+// false for the life of the row, since v1 has no lockRoyalty/seal
+// function to ever change them.
 
 export const collections = onchainTable(
   "collections",
@@ -423,6 +431,15 @@ export const collections = onchainTable(
     // The deployed Collection clone address.
     collection: t.hex().primaryKey(),
     owner: t.hex().notNull(),
+    // Which Surface factory created this collection: 1 (SurfaceFactory)
+    // or 2 (SurfaceFactoryV2).
+    protocolVersion: t.integer().notNull(),
+    // v2 only: RoyaltyLocked engaged (setRoyalty now reverts). Stays
+    // false for a v1 row.
+    royaltyLocked: t.boolean().notNull(),
+    // v2 only: owner() == address(0), from seal() or a direct
+    // renounceOwnership. Stays false for a v1 row.
+    sealed: t.boolean().notNull(),
     // ERC721 identity from the SurfaceCreated event (fixed at initialize,
     // no setter). Nullable only for rows indexed before the event carried
     // these fields; mainnet deploys always populate them.
