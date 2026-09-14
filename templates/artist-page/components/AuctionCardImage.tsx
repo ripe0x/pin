@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMediaFallback } from "@/lib/use-media-fallback"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
@@ -43,8 +43,52 @@ export function AuctionCardImage({
   // real image to show, so an extension-less <img> that fails to load is
   // escalated to <video>.
   const [escalated, setEscalated] = useState(false)
+  const imageRef = useRef<HTMLImageElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const loadFinished = useRef(false)
   // Rotate IPFS/Arweave gateways on load error before escalating.
   const media = useMediaFallback(src)
+  const ext = src ? extOf(src) : ""
+  const ambiguous = !VIDEO_EXTENSIONS.includes(ext) && !IMAGE_EXTENSIONS.includes(ext)
+  const video = VIDEO_EXTENSIONS.includes(ext) || escalated
+
+  // A gateway can fail before hydration or hang without firing an error.
+  // Once the card is near the viewport, give images and videos the same
+  // seven-second recovery window.
+  useEffect(() => {
+    loadFinished.current = false
+    const img = imageRef.current
+    const videoElement = videoRef.current
+    if (img?.complete) {
+      if (img.naturalWidth > 0) loadFinished.current = true
+      else media.onError()
+    }
+    if (videoElement) {
+      if (videoElement.readyState >= 1) loadFinished.current = true
+      else if (videoElement.error) media.onError()
+    }
+    const element = img ?? videoElement
+    if (!element || typeof IntersectionObserver === "undefined") return
+
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        observer.disconnect()
+        fallbackTimer = setTimeout(() => {
+          if (!loadFinished.current) media.onError()
+        }, 7_000)
+      },
+      { rootMargin: "400px" },
+    )
+    observer.observe(element)
+    return () => {
+      observer.disconnect()
+      if (fallbackTimer) clearTimeout(fallbackTimer)
+    }
+    // Restart the timeout for each rotated gateway URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [media.src, video])
   if (!src) {
     return (
       <div
@@ -55,9 +99,6 @@ export function AuctionCardImage({
       </div>
     )
   }
-  const ext = extOf(src)
-  const ambiguous = !VIDEO_EXTENSIONS.includes(ext) && !IMAGE_EXTENSIONS.includes(ext)
-  const video = VIDEO_EXTENSIONS.includes(ext) || escalated
   const url = media.src ?? src
   return (
     <div
@@ -65,8 +106,8 @@ export function AuctionCardImage({
       style={{ aspectRatio: ratio ?? 1 }}
     >
       {video ? (
-        // eslint-disable-next-line jsx-a11y/media-has-caption
         <video
+          ref={videoRef}
           src={url}
           className="block w-full h-auto"
           muted
@@ -74,6 +115,7 @@ export function AuctionCardImage({
           preload="metadata"
           onLoadedMetadata={(e) => {
             const v = e.currentTarget
+            loadFinished.current = true
             if (v.videoWidth && v.videoHeight) {
               setRatio(v.videoWidth / v.videoHeight)
             }
@@ -85,12 +127,14 @@ export function AuctionCardImage({
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
         <img
+          ref={imageRef}
           src={url}
           alt={alt}
           className="block w-full h-auto"
           loading="lazy"
           onLoad={(e) => {
             const img = e.currentTarget
+            loadFinished.current = true
             if (img.naturalWidth && img.naturalHeight) {
               setRatio(img.naturalWidth / img.naturalHeight)
             }

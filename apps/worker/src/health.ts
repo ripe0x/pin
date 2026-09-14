@@ -9,10 +9,11 @@
  *                                     scanning. Dedup'd by the scheduler.
  *
  * No auth on /health and /metrics (Railway-internal). The /jobs endpoint
- * checks REVALIDATE_SECRET so the web app can forward the existing
- * "Refresh my work" button calls.
+ * checks a bearer token so the web app can forward the existing "Refresh my
+ * work" button calls without leaking the shared secret into request URLs.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
+import { timingSafeEqual } from "node:crypto"
 import {
   enqueueRefreshArtist,
   enqueueRefreshToken,
@@ -23,7 +24,7 @@ import { sql } from "./db.ts"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 const TOKEN_ID_RE = /^[0-9]+$/
-const SECRET = process.env.REVALIDATE_SECRET ?? ""
+const SECRET = process.env.WORKER_SECRET ?? process.env.REVALIDATE_SECRET ?? ""
 
 export async function startHealthServer(port: number): Promise<void> {
   const server = createServer(async (req, res) => {
@@ -84,9 +85,7 @@ async function metrics(res: ServerResponse): Promise<void> {
 }
 
 async function jobsRefreshArtist(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const url = new URL(req.url ?? "", "http://localhost")
-  const secretParam = url.searchParams.get("secret")
-  if (!SECRET || secretParam !== SECRET) {
+  if (!hasValidBearerToken(req)) {
     res.statusCode = 401
     res.setHeader("content-type", "application/json")
     res.end(JSON.stringify({ ok: false, error: "unauthorized" }))
@@ -109,8 +108,7 @@ async function jobsRefreshArtist(req: IncomingMessage, res: ServerResponse): Pro
 
 async function jobsRefreshToken(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "", "http://localhost")
-  const secretParam = url.searchParams.get("secret")
-  if (!SECRET || secretParam !== SECRET) {
+  if (!hasValidBearerToken(req)) {
     res.statusCode = 401
     res.setHeader("content-type", "application/json")
     res.end(JSON.stringify({ ok: false, error: "unauthorized" }))
@@ -132,4 +130,16 @@ async function jobsRefreshToken(req: IncomingMessage, res: ServerResponse): Prom
   res.statusCode = 202
   res.setHeader("content-type", "application/json")
   res.end(JSON.stringify({ ok: true, enqueued }))
+}
+
+function hasValidBearerToken(req: IncomingMessage): boolean {
+  const authorization = req.headers.authorization
+  if (!SECRET || !authorization?.startsWith("Bearer ")) return false
+  const provided = authorization.slice("Bearer ".length)
+  const expectedBytes = Buffer.from(SECRET)
+  const providedBytes = Buffer.from(provided)
+  return (
+    expectedBytes.length === providedBytes.length &&
+    timingSafeEqual(expectedBytes, providedBytes)
+  )
 }

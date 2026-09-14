@@ -4,6 +4,11 @@
 
 `0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f` · [view on evm.now](https://evm.now/address/0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f?chainId=1) · Ethereum mainnet
 
+Superseded by
+[SovereignAuctionHouseV2Factory](/docs/auctions/contracts/auction-house-v2-factory).
+Existing V1 houses keep working and stay indexed; new houses deploy from the
+V2 factory.
+
 SovereignAuctionHouseFactory deploys one
 [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house) per
 owner as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no

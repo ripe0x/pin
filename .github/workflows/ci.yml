@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.14.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Ponder type declarations
+        run: pnpm --filter @pin/indexer codegen
+
+      - name: Lint workspace packages
+        run: pnpm lint
+
+      - name: Typecheck workspace packages
+        run: pnpm typecheck
+
+      - name: Smoke-test worker module startup
+        env:
+          DATABASE_URL: postgres://127.0.0.1:1/pnd
+          ALCHEMY_MAINNET_URL: http://127.0.0.1:8545
+          INDEXER_SCHEMA: ponder_v1
+        run: node --import tsx -e "import('./apps/worker/src/scheduler.ts')"
+
+      - name: Run unit tests
+        run: pnpm test
+
+      - name: Build workspace packages
+        run: pnpm build
+
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install contract dependencies
+        run: |
+          forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 --no-git
+          forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v5.1.0 --no-git
+          forge install foundry-rs/forge-std@v1.16.1 --no-git
+          forge install Vectorized/solady@v0.1.26 --no-git
+
+      - name: Run contract tests
+        run: forge test
+
+  deployment-drift:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.14.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Set up Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install contract dependencies
+        working-directory: contracts
+        run: |
+          forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 --no-git
+          forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v5.1.0 --no-git
+          forge install foundry-rs/forge-std@v1.16.1 --no-git
+          forge install Vectorized/solady@v0.1.26 --no-git
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @pin/web exec playwright install --with-deps chromium
+
+      - name: Run Surface create-and-mint browser flow
+        env:
+          E2E_FORK_RPC: https://ethereum-rpc.publicnode.com
+        run: pnpm --filter @pin/web test:e2e
+
+      - name: Check deployed ABIs
+        run: pnpm --filter @pin/web check:abi
+
+      - name: Check mainnet Surface wiring
+        working-directory: contracts
+        env:
+          RUN_MAINNET_FORK_TESTS: "true"
+          MAINNET_RPC_URL: https://ethereum-rpc.publicnode.com
+        run: forge test --match-contract SurfaceMainnetDeploymentTest
+
+      - name: Exercise auction house on a mainnet fork
+        working-directory: contracts
+        env:
+          RUN_MAINNET_FORK_TESTS: "true"
+          MAINNET_RPC_URL: https://ethereum-rpc.publicnode.com
+        run: forge test --match-contract SovereignAuctionHouseForkTest

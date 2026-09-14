@@ -21,7 +21,8 @@ apps/indexer  Ponder. DISCOVERY ONLY for the long tail (which artist
               deployed which contract): mint_creators, tl_creators,
               fnd_collections — plus fully-indexed fixed contracts
               (pnd_*, fnd_*, srv2_artist_tokens, catalog_*). Writes the
-              ponder_v1 schema.
+              schema named by INDEXER_SCHEMA (currently ponder_v2, see
+              "Production database" below, never hardcode a schema name).
 ```
 
 `git log` shows the v2 rebuild that established this split: PR #69
@@ -85,19 +86,59 @@ Full notes: `docs/muri-integration.md`.
 
 ## Production database
 
-- **Prod = the `maglev` Railway DB** (`maglev.proxy.rlwy.net`). Schemas:
-  `public` + `ponder_sync` + `ponder_v1`, with **`INDEXER_SCHEMA=ponder_v1`**.
-- `apps/web/.env.local` MUST point at maglev with `INDEXER_SCHEMA=ponder_v1`.
-  (Verified current: it does.)
-- **Dead stack — do not trust:** an OLD `switchback` Railway DB had
+- **Prod = the `maglev` Railway DB** (`maglev.proxy.rlwy.net`). Schemas on
+  maglev today: `public` + `ponder_sync` + `ponder_v1` + `ponder_v2` +
+  `ponder_v3`, with **`INDEXER_SCHEMA=ponder_v3`** (current as of
+  2026-09-04). The live indexer is the `indexer-v3` service in the
+  `pnd-v2` Railway project.
+- `apps/web/.env.local` should point at maglev with `INDEXER_SCHEMA=ponder_v3`.
+- **`ponder_v1` is dead.** It stopped receiving new blocks around
+  2026-07-15 (`_ponder_checkpoint.latest_checkpoint` decodes to block
+  25535538) when the indexer cut over to `ponder_v2`. It is kept only for
+  forensic comparison, never point `INDEXER_SCHEMA` at it. Netlify's
+  production context carried a stale `INDEXER_SCHEMA=ponder_v1` override
+  for weeks after this cutover with no error, silently serving frozen
+  auction/house/sale data. That incident is why `INDEXER_SCHEMA` now has a
+  single source of truth (`apps/web/src/lib/indexer-schema.ts`), a
+  freshness check (`GET /api/health/indexer`, also a banner in
+  `/studio/[address]` when the schema is over an hour stale), and a build
+  guard (`scripts/check-indexer-schema.mjs`, wired as the first step of
+  `apps/web`'s build script) that fails the Netlify build outright if the
+  configured schema does not exist or has not been written to in the last
+  6 hours.
+- **`ponder_v2` is kept as a rollback schema**, not deleted, until the old
+  `indexer` Railway service (the one writing `ponder_v2`) is retired.
+  Do not point new work at it.
+- **Bumping the schema again:** a schema-changing indexer release bumps
+  the version (`ponder_v3` to `ponder_v4`, next time), and the version
+  must be flipped in Netlify's production context specifically (not just
+  local `.env.local`), followed by a redeploy. Confirm the flip actually
+  applied by hitting `/api/health/indexer` on the deployed site, do not
+  assume the env var took effect from the Netlify UI alone.
+- **Railway indexer deploys are manual**, not on a git push trigger:
+  `railway up --service <name>` from the repo root. Each service's build
+  and start commands come from its own `RAILPACK_*_CMD` variables, set in
+  the Railway service settings, not from a committed config file. The
+  `pnd-v2` Railway project also has an unrelated stray project called
+  `wholesome-creation` whose builds fail; it is not part of this system
+  and must not be confused with `pnd-v2`.
+- **After any fresh schema replay** (a new `ponder_vN` schema built from
+  genesis), verify row parity against the previous schema table by table
+  before flipping `INDEXER_SCHEMA` to it. Also check
+  `ponder_sync.factory_addresses` row counts per `factory_id` against the
+  matching source table (`pnd_houses`, `collections`, `minters`): a fresh
+  replay can land with a decayed watch set (Ponder indexing a clone's
+  creation event but never adding the clone to `factory_addresses`), which
+  silently drops every per-clone subscription for the missing addresses.
+  `apps/worker/src/tasks/ponder-drift-check.ts` runs this check and
+  repairs it hourly, but confirm it before cutover rather than relying on
+  the next scheduled tick.
+- **Dead stack, do not trust:** an OLD `switchback` Railway DB had its own
   `ponder_v2`/`ponder_v3` schemas and `lazy_*` public tables. That is the
-  pre-rebuild stack. maglev has **no** `lazy_*` tables and no v2/v3
-  schemas. If your local env points anywhere but maglev, you will
-  reconstruct the architecture wrong — this exact mistake cost a prior
-  session hours.
-- `ponder_v2`/`ponder_v3` would only ever be empty Ponder safe-redeploy
-  namespaces if they existed; they don't exist on maglev. The live
-  Ponder data is `ponder_v1`.
+  pre-rebuild stack and is unrelated to maglev's `ponder_v2`/`ponder_v3`
+  above. maglev has no `lazy_*` tables. If your local env points anywhere
+  but maglev, you will reconstruct the architecture wrong, this exact
+  mistake cost a prior session hours.
 
 ## STALE TRAP: untracked `ponder/` directory
 

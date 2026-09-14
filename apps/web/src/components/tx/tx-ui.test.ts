@@ -112,6 +112,53 @@ test("WalletCapExceeded maps to a per-wallet-cap explanation", () => {
   )
 })
 
+// ─── Sovereign Auction House V2 custom-error reverts (data.errorName) ──────
+
+test("UnwindTooEarly maps to the 30-day-window explanation", () => {
+  const err = {
+    shortMessage: "reverted",
+    cause: { data: { errorName: "UnwindTooEarly" }, cause: undefined },
+  }
+  assert.equal(
+    formatWriteError(err, "Unwind"),
+    "The 30-day delivery window has not passed yet.",
+  )
+})
+
+test("NotWinner maps to the redirect-restriction explanation", () => {
+  const err = {
+    shortMessage: "reverted",
+    cause: { data: { errorName: "NotWinner" }, cause: undefined },
+  }
+  assert.equal(
+    formatWriteError(err, "Claim"),
+    "Only the winning bidder can redirect delivery.",
+  )
+})
+
+test("InsufficientGas maps to the retry-with-more-gas explanation", () => {
+  const err = {
+    shortMessage: "reverted",
+    cause: { data: { errorName: "InsufficientGas" }, cause: undefined },
+  }
+  assert.equal(
+    formatWriteError(err, "Settle"),
+    "Not enough gas was provided to attempt delivery; retry with a higher gas limit.",
+  )
+})
+
+test("UnwindTooEarly still maps via literal text when undecoded", () => {
+  const err = {
+    shortMessage:
+      'The contract function "unwindStuckLot" reverted with the following reason:\nUnwindTooEarly()',
+    cause: undefined,
+  }
+  assert.equal(
+    formatWriteError(err, "Unwind"),
+    "The 30-day delivery window has not passed yet.",
+  )
+})
+
 // ─── undecoded fallback: name appears only as text ─────────────────────────
 
 test("undecoded revert still maps via literal text in shortMessage", () => {

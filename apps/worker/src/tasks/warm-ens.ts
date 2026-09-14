@@ -11,11 +11,9 @@ import { client } from "../rpc.ts"
 import type { TaskResult } from "../scheduler.ts"
 import { getAddress, type Address } from "viem"
 import { normalize } from "viem/ens"
+import { INDEXER_SCHEMA } from "../indexer-schema.ts"
 
 const BATCH_SIZE = 20
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g, "",
-)
 
 export async function warmEns(): Promise<TaskResult> {
   const rows = (await sql.unsafe(

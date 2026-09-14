@@ -2,6 +2,7 @@ import "server-only"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { sql } from "./db"
 import { surfaceFactory } from "./collection"
+import { INDEXER_SCHEMA } from "./indexer-schema"
 
 /** Foundation NFTMarket address — used as the `[house]` segment for FND auctions. */
 const FND_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
@@ -49,9 +50,10 @@ const QUERY_TIMEOUT_MS = 500
 /**
  * Race a query against a timeout. Returns `null` if the query exceeds
  * `timeoutMs` so we don't add latency to renders when the indexer is
- * slow / unreachable / not yet synced.
+ * slow / unreachable / not yet synced. Exported for reuse by
+ * `indexer-health.ts`, which needs the same fail-soft behavior.
  */
-async function withTimeout<T>(
+export async function withTimeout<T>(
   fn: () => Promise<T>,
   timeoutMs = QUERY_TIMEOUT_MS,
 ): Promise<T | null> {
@@ -68,6 +70,63 @@ async function withTimeout<T>(
   } finally {
     if (timer) clearTimeout(timer)
   }
+}
+
+export type HouseUpgradeListing = {
+  auctionId: string
+  tokenContract: string
+  tokenId: string
+  reservePrice: string
+  duration: string
+  hasBid: boolean
+}
+
+/**
+ * Active listings on one sovereign house, for the V1 to V2 upgrade flow.
+ * `hasBid: false` rows are movable (cancel on V1, relist on V2);
+ * `hasBid: true` rows must settle on the V1 house first. bigint columns
+ * come back as decimal strings so the API route can JSON them untouched.
+ * 2s timeout: this backs an explicit user action on the upgrade page,
+ * not a primary render.
+ */
+export async function getHouseUpgradeListings(
+  house: string,
+): Promise<HouseUpgradeListing[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const schema = INDEXER_SCHEMA
+    const rows = (await db.unsafe(
+      `SELECT auction_id::text AS auction_id,
+              lower(token_contract) AS token_contract,
+              token_id::text AS token_id,
+              reserve_price::text AS reserve_price,
+              duration::text AS duration,
+              first_bid_time::text AS first_bid_time
+       FROM ${schema}.pnd_auctions
+       WHERE lower(house) = $1
+         AND status = 'active'
+       ORDER BY auction_id ASC`,
+      [house.toLowerCase()],
+    )) as Array<{
+      auction_id: string
+      token_contract: string
+      token_id: string
+      reserve_price: string
+      duration: string
+      first_bid_time: string
+    }>
+
+    return rows.map((r) => ({
+      auctionId: r.auction_id,
+      tokenContract: r.token_contract,
+      tokenId: r.token_id,
+      reservePrice: r.reserve_price,
+      duration: r.duration,
+      hasBid: r.first_bid_time !== "0",
+    }))
+  }, 2_000)
 }
 
 /**
@@ -93,6 +152,35 @@ export type SettledAuction = {
   amount: bigint
   settledAtTime: number
   bids: SettledAuctionBid[]
+  // V2 only; erc721 / 1n for every V1 row.
+  tokenStandard: "erc721" | "erc1155"
+  quantity: bigint
+}
+
+// pnd_auctions gained version/standard/quantity/funds_recipient/
+// listing_expiry with the V2 indexer schema. Mirrors the same probe in
+// lib/auctions.ts (kept separate, that module's promise cache is private)
+// so a database not yet migrated to those columns degrades to V1 defaults
+// instead of erroring the whole query.
+let v2ColumnsPromise: Promise<boolean> | null = null
+function hasV2AuctionColumns(schema: string): Promise<boolean> {
+  if (!sql) return Promise.resolve(false)
+  const db = sql
+  if (!v2ColumnsPromise) {
+    v2ColumnsPromise = db
+      .unsafe(
+        `SELECT 1 FROM information_schema.columns
+         WHERE table_schema = $1 AND table_name = 'pnd_auctions'
+           AND column_name = 'version'`,
+        [schema],
+      )
+      .then((rows) => (rows as unknown[]).length > 0)
+      .catch(() => {
+        v2ColumnsPromise = null
+        return false
+      })
+  }
+  return v2ColumnsPromise
 }
 
 export async function getSettledAuctionForToken(
@@ -104,14 +192,13 @@ export async function getSettledAuctionForToken(
 
   return withTimeout(async () => {
     const contract = tokenContract.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
+    const v2Cols = await hasV2AuctionColumns(schema)
 
     const rows = (await db.unsafe(
       `SELECT id, seller, winner, amount::text AS amount,
               settled_at_time::text AS settled_at_time
+              ${v2Cols ? ", standard, quantity::text AS quantity" : ""}
        FROM ${schema}.pnd_auctions
        WHERE token_contract = $1
          AND token_id = $2::numeric
@@ -125,6 +212,8 @@ export async function getSettledAuctionForToken(
       winner: string
       amount: string
       settled_at_time: string
+      standard: string | null
+      quantity: string | null
     }>
 
     if (rows.length === 0) return null
@@ -158,6 +247,8 @@ export async function getSettledAuctionForToken(
         blockTime: Number(b.block_time),
         txHash: b.tx_hash,
       })),
+      tokenStandard: row.standard === "erc1155" ? "erc1155" : "erc721",
+      quantity: BigInt(row.quantity ?? "1"),
     }
   })
 }
@@ -196,10 +287,7 @@ export async function getTokenAuctionSales(
 
   const result = await withTimeout(async () => {
     const contract = tokenContract.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
 
     // settled_at stays a bigint (NOT cast to text) so the UNION's final
     // ORDER BY sorts numerically, not lexicographically.
@@ -247,6 +335,7 @@ export async function getTokenAuctionSales(
 
 export type ActivePndAuction = {
   house: string
+  auctionId: string
   tokenContract: string
   tokenId: string
   seller: string
@@ -255,6 +344,9 @@ export type ActivePndAuction = {
   endTime: number
   firstBidTime: number
   createdAtTime: number
+  // V2-only; "erc721" / 1n for every V1 row (see hasV2AuctionColumns).
+  tokenStandard: "erc721" | "erc1155"
+  quantity: bigint
 }
 
 /**
@@ -272,17 +364,17 @@ export async function getActivePndAuctions(
   // in a Suspense boundary below the hero, so paying ~700ms-1s on the
   // first uncached load is fine. The hero still streams immediately.
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
+    const v2Cols = await hasV2AuctionColumns(schema)
 
     const rows = (await db.unsafe(
-      `SELECT house, token_contract, token_id::text AS token_id, seller,
+      `SELECT auction_id::text AS auction_id, house, token_contract,
+              token_id::text AS token_id, seller,
               amount::text AS amount, reserve_price::text AS reserve_price,
               end_time::text AS end_time,
               first_bid_time::text AS first_bid_time,
               created_at_time::text AS created_at_time
+              ${v2Cols ? ", standard, quantity::text AS quantity" : ""}
        FROM ${schema}.pnd_auctions
        WHERE status = 'active'
        ORDER BY
@@ -291,6 +383,7 @@ export async function getActivePndAuctions(
        LIMIT $1`,
       [limit],
     )) as Array<{
+      auction_id: string
       house: string
       token_contract: string
       token_id: string
@@ -300,10 +393,13 @@ export async function getActivePndAuctions(
       end_time: string
       first_bid_time: string
       created_at_time: string
+      standard: string | null
+      quantity: string | null
     }>
 
     return rows.map((r) => ({
       house: r.house,
+      auctionId: r.auction_id,
       tokenContract: r.token_contract,
       tokenId: r.token_id,
       seller: r.seller,
@@ -312,6 +408,8 @@ export async function getActivePndAuctions(
       endTime: Number(r.end_time),
       firstBidTime: Number(r.first_bid_time),
       createdAtTime: Number(r.created_at_time),
+      tokenStandard: r.standard === "erc1155" ? "erc1155" : "erc721",
+      quantity: BigInt(r.quantity ?? "1"),
     }))
   }, 2_000)
 }
@@ -351,10 +449,7 @@ export async function getSrv2TokensFromIndexer(
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const rows = (await db.unsafe(
       `SELECT contract,
               token_id::text AS token_id,
@@ -401,10 +496,7 @@ export async function getPndHouses(limit = 24): Promise<PndHouse[] | null> {
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
 
     const rows = (await db.unsafe(
       `SELECT house, owner, created_at_time::text AS created_at_time
@@ -476,10 +568,7 @@ export async function getPlatformStats(): Promise<PlatformStats | null> {
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const surfaceLive =
       surfaceFactory() !== null && (await surfaceTablesExist(db, schema))
 
@@ -558,10 +647,7 @@ export async function getFoundationTokensFromIndexer(
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const rows = (await db.unsafe(
       `SELECT contract,
               token_id::text AS token_id,
@@ -600,7 +686,6 @@ export type ActivityKind =
   | "auction.firstBid"
   | "auction.bid"
   | "auction.settled"
-  | "auction.cancelled"
   | "sale.buyNow"
   | "mint"
 
@@ -662,15 +747,17 @@ export async function getActivityFeed(
   limit = 50,
   cursor: ActivityCursor | null = null,
   timeoutMs = 3_000,
+  // "pnd" keeps only PND's own contracts (auction houses and Surface
+  // collections) and drops the Foundation and Mint protocol branches.
+  // "all" (default) keeps the full record.
+  sources: "pnd" | "all" = "all",
 ): Promise<ActivityEvent[] | null> {
   if (INDEXER_DISABLED || !sql) return null
   const db = sql
+  const includeThirdParty = sources !== "pnd"
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
 
     type Row = {
       kind: ActivityKind
@@ -700,14 +787,15 @@ export async function getActivityFeed(
     const surfaceLive =
       surfaceFactory() !== null && (await surfaceTablesExist(db, schema))
 
-    // Filter listing/cancellation pairs that happened within 15 minutes
-    // of each other. Treated as noise (test mints, mistaken listings)
-    // rather than signal. Both events filter together so the feed
-    // doesn't show one half of the pair.
+    // Drop quick list/cancel pairs (listed then cancelled within 15
+    // minutes: test mints, mistaken listings) from the "listed" rows so
+    // the feed doesn't surface a half-second-lived listing. Cancellation
+    // itself is not a feed event — a delist is not a sovereign action
+    // worth a headline, and a bulk delist floods the feed — so there is
+    // no cancelled-listing branch.
     const SHORT_LIFE_SECONDS = 900
     const PND_NOT_QUICK_CANCEL = `NOT (status = 'cancelled' AND settled_at_time IS NOT NULL AND settled_at_time - created_at_time < ${SHORT_LIFE_SECONDS})`
     const FND_NOT_QUICK_CANCEL = `NOT (status = 'canceled' AND finalized_at_time IS NOT NULL AND finalized_at_time - created_at_time < ${SHORT_LIFE_SECONDS})`
-    const PND_LONG_LIVED_CANCEL = `status = 'cancelled' AND settled_at_time IS NOT NULL AND settled_at_time - created_at_time >= ${SHORT_LIFE_SECONDS}`
 
     // Hide "minted" rows whose tokenURI is broken. Three states, keyed on
     // the LEFT-JOINed token_metadata row (alias `m`):
@@ -747,9 +835,12 @@ export async function getActivityFeed(
       return existing ? `WHERE ${existing} ${branch}` : `WHERE 1=1 ${branch}`
     }
 
-    const rows = (await db.unsafe(
-      `WITH events AS (
-         (SELECT
+    // Each branch is built independently, then joined with UNION ALL.
+    // Third-party branches are conditionally omitted (sources: "pnd") without
+    // fragile leading/trailing separator bookkeeping.
+    const branches: string[] = []
+
+    branches.push(`(SELECT
             'house.deployed'::text AS kind,
             ('house:' || house)::text AS id,
             created_at_time::text AS block_time,
@@ -768,11 +859,10 @@ export async function getActivityFeed(
           FROM ${schema}.pnd_houses
           ${where(null, "created_at_time")}
           ORDER BY created_at_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
 
-         UNION ALL
-
-         (SELECT
+    if (includeThirdParty) {
+      branches.push(`(SELECT
             'collection.deployed'::text,
             ('coll:' || collection)::text,
             created_at_time::text,
@@ -791,11 +881,10 @@ export async function getActivityFeed(
           FROM ${schema}.fnd_collections
           ${where(null, "created_at_time")}
           ORDER BY created_at_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
+    }
 
-         UNION ALL
-
-         (SELECT
+    branches.push(`(SELECT
             'auction.opened'::text,
             ('pnd-open:' || id)::text,
             created_at_time::text,
@@ -814,11 +903,10 @@ export async function getActivityFeed(
           FROM ${schema}.pnd_auctions
           ${where(PND_NOT_QUICK_CANCEL, "created_at_time")}
           ORDER BY created_at_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
 
-         UNION ALL
-
-         (SELECT
+    if (includeThirdParty) {
+      branches.push(`(SELECT
             'auction.opened'::text,
             ('fnd-open:' || auction_id)::text,
             created_at_time::text,
@@ -837,11 +925,10 @@ export async function getActivityFeed(
           FROM ${schema}.fnd_auctions
           ${where(FND_NOT_QUICK_CANCEL, "created_at_time")}
           ORDER BY created_at_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
+    }
 
-         UNION ALL
-
-         (SELECT
+    branches.push(`(SELECT
             'auction.settled'::text,
             ('pnd-settle:' || id)::text,
             settled_at_time::text,
@@ -860,34 +947,10 @@ export async function getActivityFeed(
           FROM ${schema}.pnd_auctions
           ${where("status = 'settled' AND settled_at_time IS NOT NULL", "settled_at_time")}
           ORDER BY settled_at_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
 
-         UNION ALL
-
-         (SELECT
-            'auction.cancelled'::text,
-            ('pnd-cancel:' || id)::text,
-            settled_at_time::text,
-            seller::text,
-            NULL::text,
-            token_contract::text,
-            token_id::text,
-            NULL::text,
-            reserve_price::text,
-            NULL::text,
-            house::text,
-            NULL::text,
-            NULL::text,
-            lifecycle_tx_hash::text,
-            NULL::text
-          FROM ${schema}.pnd_auctions
-          ${where(PND_LONG_LIVED_CANCEL, "settled_at_time")}
-          ORDER BY settled_at_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
-
-         UNION ALL
-
-         (SELECT
+    if (includeThirdParty) {
+      branches.push(`(SELECT
             CASE WHEN source = 'auction'
                  THEN 'auction.settled'
                  ELSE 'sale.buyNow' END,
@@ -908,11 +971,9 @@ export async function getActivityFeed(
           FROM ${schema}.fnd_sales
           ${where(null, "block_time")}
           ORDER BY block_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
 
-         UNION ALL
-
-         (SELECT
+      branches.push(`(SELECT
             'mint'::text,
             ('mint:' || t.id)::text,
             t.block_time::text,
@@ -933,20 +994,19 @@ export async function getActivityFeed(
             ON m.contract = lower(t.contract) AND m.token_id = t.token_id::text
           ${where(mintNotBroken("t.block_time"), "t.block_time")}
           ORDER BY t.block_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
+    }
 
-         UNION ALL
-
-         -- Mint protocol (mint.vv.xyz) editions. Worker-scanned into
-         -- public.artist_tokens (platform='mint'), gated on known_artists. Same
-         -- connection reaches public directly; mint_time is the first mint's
-         -- block time (precomputed so this branch is a partial-index scan). The
-         -- lateral join surfaces the first mint's recipient as the counterparty
-         -- (the collector who minted) — the row reads "<minter> minted <token>
-         -- by <artist>", with the artist (creator) as the trailing credit. The
-         -- lateral is a single indexed lookup per row (token_1155_mints is keyed
-         -- on (contract, token_id, block_number)).
-         (SELECT
+    // Mint protocol (mint.vv.xyz) editions. Worker-scanned into
+    // public.artist_tokens (platform='mint'), gated on known_artists. Same
+    // connection reaches public directly; mint_time is the first mint's
+    // block time (precomputed so this branch is a partial-index scan). The
+    // lateral join surfaces the first mint's recipient as the counterparty
+    // (the collector who minted), so the row reads "<minter> minted <token>
+    // by <artist>", with the artist (creator) as the trailing credit. The
+    // lateral is a single indexed lookup per row (token_1155_mints is keyed
+    // on (contract, token_id, block_number)).
+    if (includeThirdParty) branches.push(`(SELECT
             'mint'::text,
             ('vvmint:' || at.contract || ':' || at.token_id)::text,
             at.mint_time::text,
@@ -976,11 +1036,9 @@ export async function getActivityFeed(
             AND ${mintNotBroken("at.mint_time")}
             ${branchFilter("at.mint_time")}
           ORDER BY at.mint_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
 
-         UNION ALL
-
-         (SELECT
+    branches.push(`(SELECT
             (CASE WHEN pb.first_bid THEN 'auction.firstBid'
                   ELSE 'auction.bid' END)::text,
             ('pnd-bid:' || pb.id)::text,
@@ -1001,11 +1059,10 @@ export async function getActivityFeed(
           JOIN ${schema}.pnd_auctions pa ON pa.id = pb.auction_id
           ${where(null, "pb.block_time")}
           ORDER BY pb.block_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
 
-         UNION ALL
-
-         (SELECT
+    if (includeThirdParty) {
+      branches.push(`(SELECT
             (CASE WHEN sub.rn = 1 THEN 'auction.firstBid'
                   ELSE 'auction.bid' END)::text,
             ('fnd-bid:' || sub.id)::text,
@@ -1032,15 +1089,13 @@ export async function getActivityFeed(
           JOIN ${schema}.fnd_auctions fa ON fa.auction_id = sub.auction_id
           ${where(null, "sub.block_time")}
           ORDER BY sub.block_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
-${
-  surfaceLive
-    ? `
-         UNION ALL
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
+    }
 
-         -- Surface collection deploys. Name/symbol are on the row (from the
-         -- SurfaceCreated event), so no contract read is needed to render.
-         (SELECT
+    if (surfaceLive) {
+      // Surface collection deploys. Name/symbol are on the row (from the
+      // SurfaceCreated event), so no contract read is needed to render.
+      branches.push(`(SELECT
             'collection.deployed'::text,
             ('surf:' || collection)::text,
             created_at_time::text,
@@ -1059,19 +1114,17 @@ ${
           FROM ${schema}.collections
           ${where(null, "created_at_time")}
           ORDER BY created_at_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
 
-         UNION ALL
-
-         -- Surface mints: one row per Minted call (a call can cover a
-         -- contiguous range, carried in quantity). Indexed for every
-         -- factory-deployed collection regardless of which interface drove
-         -- the mint, so self-hosted activity appears here too. The lateral
-         -- pulls the canonical minter's Sold record from the same tx for
-         -- the paid amount ((collection, block_number) is indexed on
-         -- collection_sales); free mints and custom minters have no Sold
-         -- row and surface with a null amount.
-         (SELECT
+      // Surface mints: one row per Minted call (a call can cover a
+      // contiguous range, carried in quantity). Indexed for every
+      // factory-deployed collection regardless of which interface drove
+      // the mint, so self-hosted activity appears here too. The lateral
+      // pulls the canonical minter's Sold record from the same tx for
+      // the paid amount ((collection, block_number) is indexed on
+      // collection_sales); free mints and custom minters have no Sold
+      // row and surface with a null amount.
+      branches.push(`(SELECT
             'mint'::text,
             ('surfmint:' || cm.id)::text,
             cm.block_time::text,
@@ -1099,9 +1152,12 @@ ${
           ) cs ON true
           ${where(null, "cm.block_time")}
           ORDER BY cm.block_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})`
-    : ""
-}
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
+    }
+
+    const rows = (await db.unsafe(
+      `WITH events AS (
+         ${branches.join("\n\n         UNION ALL\n\n         ")}
        )
        SELECT * FROM events
        ${
@@ -1135,6 +1191,109 @@ ${
   }, timeoutMs)
 }
 
+/**
+ * Postgres-only per-token images for feed rows, keyed
+ * `${contract}:${tokenId}`. Reads the worker-populated `token_metadata`
+ * cache for the given pairs and returns only non-empty images on
+ * non-burned tokens. Never touches the chain: a miss means no cached
+ * image yet (the caller falls back to the collection cover), so a
+ * generative token's onchain HTML document is never fetched at render
+ * time. Used to give Surface mint rows a per-token thumbnail once the
+ * worker has warmed the token's small onchain `image` (an SVG data URI).
+ */
+/**
+ * Latest non-burned token id per Surface collection, keyed by lowercase
+ * collection address. One query over collection_tokens; collections with
+ * no live token are absent from the map.
+ */
+export async function getLatestCollectionTokenIds(
+  collections: string[],
+): Promise<Map<string, string>> {
+  if (INDEXER_DISABLED || !sql || collections.length === 0) return new Map()
+  const db = sql
+  const schema = INDEXER_SCHEMA
+  const addrs = collections.map((c) => c.toLowerCase())
+  const rows = (await db.unsafe(
+    `SELECT DISTINCT ON (lower(collection)) lower(collection) AS collection,
+            token_id::text AS token_id
+       FROM ${schema}.collection_tokens
+      WHERE lower(collection) = ANY($1::text[]) AND burned = false
+      ORDER BY lower(collection), updated_at_time DESC, token_id DESC`,
+    [addrs],
+  )) as Array<{ collection: string; token_id: string }>
+  return new Map(rows.map((r) => [r.collection, r.token_id]))
+}
+
+export async function getTokenImagesFromMetadata(
+  pairs: Array<{ contract: string; tokenId: string }>,
+): Promise<Map<string, string>> {
+  if (INDEXER_DISABLED || !sql || pairs.length === 0) return new Map()
+  const contracts = pairs.map((p) => p.contract.toLowerCase())
+  const tokenIds = pairs.map((p) => p.tokenId)
+  const rows = (await sql`
+    SELECT contract, token_id, image_url
+      FROM token_metadata
+     WHERE (contract, token_id) IN (
+       SELECT * FROM unnest(${contracts}::text[], ${tokenIds}::text[])
+     )
+       AND image_url IS NOT NULL
+       AND COALESCE(burned, false) = false
+  `.catch(() => [])) as Array<{
+    contract: string
+    token_id: string
+    image_url: string
+  }>
+  const map = new Map<string, string>()
+  for (const r of rows) {
+    map.set(`${r.contract.toLowerCase()}:${r.token_id}`, r.image_url)
+  }
+  return map
+}
+
+export type TokenMetadataMedia = {
+  name: string | null
+  description: string | null
+  imageUrl: string | null
+  animationUrl: string | null
+}
+
+/** Batch read of `token_metadata.image_url` + `animation_url`, unlike
+ * `getTokenImagesFromMetadata` this keeps rows whose only media is an
+ * `animation_url` so callers can fall back to it. */
+export async function getTokenMediaFromMetadata(
+  pairs: Array<{ contract: string; tokenId: string }>,
+): Promise<Map<string, TokenMetadataMedia>> {
+  if (INDEXER_DISABLED || !sql || pairs.length === 0) return new Map()
+  const contracts = pairs.map((p) => p.contract.toLowerCase())
+  const tokenIds = pairs.map((p) => p.tokenId)
+  const rows = (await sql`
+    SELECT contract, token_id, name, description, image_url, animation_url
+      FROM token_metadata
+     WHERE (contract, token_id) IN (
+       SELECT * FROM unnest(${contracts}::text[], ${tokenIds}::text[])
+     )
+       AND (image_url IS NOT NULL OR animation_url IS NOT NULL)
+       AND COALESCE(burned, false) = false
+  `.catch(() => [])) as Array<{
+    contract: string
+    token_id: string
+    name: string | null
+    description: string | null
+    image_url: string | null
+    animation_url: string | null
+  }>
+  const map = new Map<string, TokenMetadataMedia>()
+  for (const r of rows) {
+    map.set(`${r.contract.toLowerCase()}:${r.token_id}`, {
+      name: r.name,
+      description: r.description,
+      imageUrl: r.image_url,
+      animationUrl: r.animation_url,
+    })
+  }
+  return map
+}
+
 // ─── Dependency-check helpers ────────────────────────────────────────────
 //
 // Used by `apps/web/src/lib/dependency-check.ts` to assemble the scan
@@ -1150,10 +1309,7 @@ export async function getActiveFndAuctionCount(
   const db = sql
   return withTimeout(async () => {
     const seller = sellerAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const rows = (await db.unsafe(
       `SELECT COUNT(*)::text AS count
          FROM ${schema}.fnd_auctions
@@ -1171,10 +1327,7 @@ export async function getActiveFndBuyNowCount(
   const db = sql
   return withTimeout(async () => {
     const seller = sellerAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const rows = (await db.unsafe(
       `SELECT COUNT(*)::text AS count
          FROM ${schema}.fnd_buy_nows
@@ -1203,10 +1356,7 @@ export async function getFoundationCreatorSummary(
   const db = sql
   return withTimeout(async () => {
     const creator = artistAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const [tokenRows, collectionRows] = await Promise.all([
       db.unsafe(
         `SELECT COUNT(*)::text AS count
@@ -1247,10 +1397,7 @@ export async function getFoundationSalesSummary(
   const db = sql
   return withTimeout(async () => {
     const seller = sellerAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const rows = (await db.unsafe(
       `SELECT COUNT(*)::text AS count
          FROM ${schema}.fnd_sales
@@ -1291,10 +1438,7 @@ export async function getArtistContractMap(
   const db = sql
   return withTimeout(async () => {
     const creator = artistAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const rows = (await db.unsafe(
       `SELECT
          t.contract,
@@ -1376,10 +1520,7 @@ export async function getCatalogFromIndexer(
 
   return withTimeout(async () => {
     const artist = artistAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
 
     const [contractRows, tokenRows, rangeRows] = await Promise.all([
       db.unsafe(
@@ -1448,13 +1589,10 @@ export async function getActiveAuctionCountFromIndexer(
     // release so the indexer can run zero-downtime cutovers; see
     // ponder/README.md for the full upgrade flow. Override the default
     // here via INDEXER_SCHEMA when the indexer's schema name changes.
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
-    // Schema name comes from a controlled env var and is sanitized above
-    // (postgres.js can't parameterize identifiers, only values), so the
-    // unsafe-template usage is fine here.
+    const schema = INDEXER_SCHEMA
+    // Schema name comes from a controlled env var and is sanitized in
+    // indexer-schema.ts (postgres.js can't parameterize identifiers, only
+    // values), so the unsafe-template usage is fine here.
     const rows = (await db.unsafe(
       `SELECT COUNT(*)::text AS count
        FROM ${schema}.pnd_auctions
@@ -1485,10 +1623,7 @@ export async function getCollectionPrimaryMinterFromIndexer(
   const db = sql
   return withTimeout(async () => {
     const addr = collection.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const rows = (await db.unsafe(
       `SELECT primary_minter FROM ${schema}.collections WHERE collection = $1 LIMIT 1`,
       [addr],
@@ -1511,7 +1646,7 @@ export async function getCollectionCreatedBlockFromIndexer(
   const db = sql
   return withTimeout(async () => {
     const rows = (await db.unsafe(
-      `SELECT created_at_block FROM ${indexerSchema()}.collections WHERE collection = $1 LIMIT 1`,
+      `SELECT created_at_block FROM ${INDEXER_SCHEMA}.collections WHERE collection = $1 LIMIT 1`,
       [collection.toLowerCase()],
     )) as Array<{ created_at_block: string | number | bigint | null }>
     const raw = rows[0]?.created_at_block
@@ -1519,8 +1654,7 @@ export async function getCollectionCreatedBlockFromIndexer(
   })
 }
 
-const indexerSchema = () =>
-  (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(/[^a-zA-Z0-9_]/g, "")
+const indexerSchema = () => INDEXER_SCHEMA
 
 /**
  * Newest-first collection addresses from the SurfaceCreated discovery

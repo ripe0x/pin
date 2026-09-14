@@ -14,6 +14,8 @@ import { sql } from "./db"
 import { pgCache } from "./pg-cache"
 import { loggingFallbackTransport } from "./rpc-log"
 import { resolveDisplayNames } from "./artist-queries"
+import { toFndAuctionLite } from "./fnd-auction-lite"
+import { INDEXER_SCHEMA as schema } from "./indexer-schema"
 
 /**
  * v2 auctions module. The v1 file (1134 lines) probed both Foundation
@@ -33,10 +35,6 @@ const SOVEREIGN_FACTORY = getAddressOrNull(
 )
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
-
-const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g, "",
-)
 
 function getClient(route?: string) {
   return createPublicClient({
@@ -82,6 +80,16 @@ export type AuctionState = {
   awaitingSettlement: boolean
   fees: AuctionFees | null
   bidHistory: BidHistoryEntry[]
+  // Sovereign house generation behind marketAddress; selects the write ABI
+  // (V2 decodes its own custom errors). Always 1 for non-sovereign sources.
+  houseVersion: 1 | 2
+  tokenStandard: "erc721" | "erc1155"
+  // ERC1155 lot size; 1 for ERC721.
+  quantity: bigint
+  // V2 only: proceeds recipient recorded at listing time. Null for V1.
+  fundsRecipient: Address | null
+  // V2 only: no-bid listing close date (0n = none). 0n for V1.
+  listingExpiry: bigint
 }
 
 export type FoundationAuctionState = AuctionState & { source: "foundation" }
@@ -97,6 +105,79 @@ export type SovereignAuctionLite = {
 
 export function auctionTokenTag(nftContract: string, tokenId: string): string {
   return `auction:${nftContract.toLowerCase()}:${tokenId}`
+}
+
+// pnd_auctions gained version/standard/quantity with the V2 indexer
+// schema. Until that schema bump reaches prod, selecting them errors the
+// whole query, so probe once per process and degrade to V1 defaults.
+let v2ColumnsPromise: Promise<boolean> | null = null
+function hasV2AuctionColumns(): Promise<boolean> {
+  if (!sql) return Promise.resolve(false)
+  const db = sql
+  if (!v2ColumnsPromise) {
+    v2ColumnsPromise = db
+      .unsafe(
+        `SELECT 1 FROM information_schema.columns
+         WHERE table_schema = $1 AND table_name = 'pnd_auctions'
+           AND column_name = 'version'`,
+        [schema],
+      )
+      .then((rows) => (rows as unknown[]).length > 0)
+      .catch(() => {
+        v2ColumnsPromise = null
+        return false
+      })
+  }
+  return v2ColumnsPromise
+}
+
+type V2Cols = {
+  version?: number
+  standard?: string
+  quantity?: string
+  funds_recipient?: string | null
+  listing_expiry?: string | null
+}
+function v2ColFields(r: V2Cols): {
+  houseVersion: 1 | 2
+  tokenStandard: "erc721" | "erc1155"
+  quantity: bigint
+  fundsRecipient: Address | null
+  listingExpiry: bigint
+} {
+  return {
+    houseVersion: r.version === 2 ? 2 : 1,
+    tokenStandard: r.standard === "erc1155" ? "erc1155" : "erc721",
+    quantity: BigInt(r.quantity ?? "1"),
+    fundsRecipient:
+      r.funds_recipient && r.funds_recipient !== ZERO_ADDRESS
+        ? (r.funds_recipient as Address)
+        : null,
+    listingExpiry: BigInt(r.listing_expiry ?? "0"),
+  }
+}
+
+// Detail-only V2 columns: only meaningful on the by-id lookup, since a
+// deferred/unwound row is never returned by the `status = 'active'`
+// token readers above.
+type V2DetailCols = {
+  deferred_at_time?: string | null
+  refund_amount?: string | null
+  claim_recipient?: string | null
+}
+function v2DetailColFields(r: V2DetailCols): {
+  deferredAtTime: number | null
+  refundAmount: bigint | null
+  claimRecipient: Address | null
+} {
+  return {
+    deferredAtTime: r.deferred_at_time ? Number(r.deferred_at_time) : null,
+    refundAmount: r.refund_amount ? BigInt(r.refund_amount) : null,
+    claimRecipient:
+      r.claim_recipient && r.claim_recipient !== ZERO_ADDRESS
+        ? (r.claim_recipient as Address)
+        : null,
+  }
 }
 
 // ─── getAuctionForToken: lookup-by-token ─────────────────────────────────
@@ -124,12 +205,15 @@ async function readPndAuctionForToken(
   contract: string, tokenId: string,
 ): Promise<AuctionState | null> {
   if (!sql) return null
+  const v2Cols = await hasV2AuctionColumns()
   const rows = (await sql.unsafe(
     `SELECT id, lower(house) AS house, auction_id::text AS auction_id,
             lower(seller) AS seller, lower(bidder) AS bidder,
             amount::text AS amount, reserve_price::text AS reserve,
             duration::text AS duration, end_time::text AS end_time,
             first_bid_time::text AS first_bid_time, status
+            ${v2Cols ? `, version, standard, quantity::text AS quantity,
+            funds_recipient, listing_expiry::text AS listing_expiry` : ""}
      FROM ${schema}.pnd_auctions
      WHERE lower(token_contract) = $1 AND token_id::text = $2
        AND status = 'active'
@@ -140,7 +224,7 @@ async function readPndAuctionForToken(
     seller: string; bidder: string;
     amount: string; reserve: string; duration: string;
     end_time: string; first_bid_time: string; status: string
-  }>
+  } & V2Cols>
   if (rows.length === 0) return null
   const r = rows[0]
   const awaitingFirstBid = r.first_bid_time === "0"
@@ -171,6 +255,7 @@ async function readPndAuctionForToken(
     awaitingSettlement,
     fees: { platformLabel: "PND", protocolFeeBps: 0, creatorRoyaltyBps: 0, sellerBps: 10000 },
     bidHistory,
+    ...v2ColFields(r),
   }
 }
 
@@ -226,6 +311,11 @@ async function readFndAuctionForToken(
     awaitingSettlement,
     fees,
     bidHistory,
+    houseVersion: 1 as const,
+    tokenStandard: "erc721" as const,
+    quantity: 1n,
+    fundsRecipient: null,
+    listingExpiry: 0n,
   }
 }
 
@@ -302,6 +392,11 @@ async function readFndSeedAuctionForToken(
     awaitingSettlement,
     fees,
     bidHistory: [],
+    houseVersion: 1 as const,
+    tokenStandard: "erc721" as const,
+    quantity: 1n,
+    fundsRecipient: null,
+    listingExpiry: 0n,
   }
 }
 
@@ -336,7 +431,20 @@ export async function getSovereignAuctionByHouse(
 
 // ─── AuctionDetail: status-agnostic by-id lookup (per-auction page) ──────
 
-export type AuctionDetailStatus = "active" | "settled" | "cancelled"
+// V2-only statuses beyond the v1 set (active/settled/cancelled):
+// "deferred", delivery to the winner failed at settlement; nobody is
+//   paid yet, and the lot is retryable via claimLot.
+// "unwound", unwindStuckLot unwound the sale (winner refunded, lot back
+//   with the seller); terminal.
+// "unwound_return_pending", unwound, but the lot's return to the seller
+//   also failed; awaiting returnUnwoundLot.
+export type AuctionDetailStatus =
+  | "active"
+  | "settled"
+  | "cancelled"
+  | "deferred"
+  | "unwound"
+  | "unwound_return_pending"
 
 /**
  * Full state of ONE auction, looked up by its on-chain identity (house +
@@ -367,10 +475,30 @@ export type AuctionDetail = {
   status: AuctionDetailStatus
   bids: BidHistoryEntry[]
   live: AuctionState | null
+  houseVersion: 1 | 2
+  tokenStandard: "erc721" | "erc1155"
+  quantity: bigint
+  fundsRecipient: Address | null
+  listingExpiry: bigint
+  // V2 only: when this row is "deferred", the block time DeliveryDeferred
+  // fired.
+  deferredAtTime: number | null
+  // V2 only: when this row is "unwound" or "unwound_return_pending", the
+  // winner's bid amount credited to pendingRefunds.
+  refundAmount: bigint | null
+  // V2 only: set once claimLot/unwindStuckLot's retry delivers a
+  // previously deferred lot; the address delivery actually reached.
+  claimRecipient: Address | null
 }
 
 function mapPndStatus(s: string): AuctionDetailStatus {
-  return s === "settled" ? "settled" : s === "cancelled" ? "cancelled" : "active"
+  return s === "settled" ||
+    s === "cancelled" ||
+    s === "deferred" ||
+    s === "unwound" ||
+    s === "unwound_return_pending"
+    ? s
+    : "active"
 }
 function mapFndStatus(s: string): AuctionDetailStatus {
   return s === "finalized"
@@ -406,6 +534,7 @@ async function getPndAuctionDetailById(
   auctionId: string,
 ): Promise<AuctionDetail | null> {
   if (!sql) return null
+  const v2Cols = await hasV2AuctionColumns()
   const rows = (await sql.unsafe(
     `SELECT id, lower(house) AS house, auction_id::text AS auction_id,
             lower(token_contract) AS contract, token_id::text AS token_id,
@@ -415,6 +544,10 @@ async function getPndAuctionDetailById(
             protocol_fee::text AS protocol_fee,
             settled_at_time::text AS settled_at_time,
             lifecycle_tx_hash, status
+            ${v2Cols ? `, version, standard, quantity::text AS quantity,
+            funds_recipient, listing_expiry::text AS listing_expiry,
+            deferred_at_time::text AS deferred_at_time,
+            refund_amount::text AS refund_amount, claim_recipient` : ""}
      FROM ${schema}.pnd_auctions
      WHERE lower(house) = $1 AND auction_id::text = $2 LIMIT 1`,
     [house.toLowerCase(), auctionId],
@@ -423,7 +556,7 @@ async function getPndAuctionDetailById(
     token_id: string; seller: string; winner: string | null;
     amount: string; seller_proceeds: string | null; protocol_fee: string | null;
     settled_at_time: string | null; lifecycle_tx_hash: string | null; status: string
-  }>
+  } & V2Cols & V2DetailCols>
   if (rows.length === 0) return null
   const r = rows[0]
   const status = mapPndStatus(r.status)
@@ -463,6 +596,8 @@ async function getPndAuctionDetailById(
     status,
     bids,
     live,
+    ...v2ColFields(r),
+    ...v2DetailColFields(r),
   }
 }
 
@@ -525,6 +660,14 @@ async function getFndAuctionDetailById(
     status,
     bids,
     live,
+    houseVersion: 1 as const,
+    tokenStandard: "erc721" as const,
+    quantity: 1n,
+    fundsRecipient: null,
+    listingExpiry: 0n,
+    deferredAtTime: null,
+    refundAmount: null,
+    claimRecipient: null,
   }
 }
 
@@ -612,6 +755,108 @@ const getArtistSovereignAuctionMapCached = unstable_cache(
   },
   ["artist-sovereign-auction-map-v2"],
   { revalidate: 30, tags: ["artist-sovereign-auction-map"] },
+)
+
+// ─── getArtistFndAuctionMap ──────────────────────────────────────────────
+
+/**
+ * Active Foundation reserve auctions where this artist is the seller,
+ * keyed `${contract}:${tokenId}` — the Foundation counterpart to
+ * getArtistSovereignAuctionMap, so the gallery badges/sorts FND listings
+ * the same way it does Sovereign ones. Two sources, same as the token
+ * page (readFndSeedAuctionForToken): Ponder `fnd_auctions` for auctions
+ * inside the indexer window, and the full-history seed
+ * (`fnd_cancellable_listings`) for older ones, each confirmed live via
+ * getReserveAuction (chain is ground truth; settled/cancelled drop out).
+ */
+export async function getArtistFndAuctionMap(
+  artistAddress: string,
+): Promise<Record<string, SovereignAuctionLite>> {
+  if (!sql) return {}
+  return getArtistFndAuctionMapCached(artistAddress.toLowerCase())
+}
+
+const getArtistFndAuctionMapCached = unstable_cache(
+  async (lower: string): Promise<Record<string, SovereignAuctionLite>> => {
+    return pgCache<Record<string, SovereignAuctionLite>>(
+      `artist-fnd-auction-map:${lower}`,
+      30,
+      async () => {
+        if (!sql) return {}
+        const now = Math.floor(Date.now() / 1000)
+        const map: Record<string, SovereignAuctionLite> = {}
+
+        // 1. Indexer-window auctions (fresh, no chain read needed).
+        const ponderRows = (await sql.unsafe(
+          `SELECT auction_id::text AS auction_id,
+                  lower(nft_contract) AS contract, token_id::text AS token_id,
+                  reserve_price::text AS reserve, highest_bid::text AS bid,
+                  lower(highest_bidder) AS bidder, end_time::text AS end_time
+           FROM ${schema}.fnd_auctions
+           WHERE lower(seller) = $1 AND status = 'active'`,
+          [lower],
+        )) as Array<{
+          auction_id: string; contract: string; token_id: string;
+          reserve: string; bid: string; bidder: string | null; end_time: string
+        }>
+        for (const r of ponderRows) {
+          map[`${r.contract}:${r.token_id}`] = toFndAuctionLite({
+            auctionId: r.auction_id,
+            reserveWei: r.reserve,
+            highestBidWei: r.bid,
+            hasBidder: !!r.bidder && r.bidder !== ZERO_ADDRESS,
+            endTime: Number(r.end_time),
+            nowSec: now,
+          })
+        }
+
+        // 2. Older auctions from the full-history seed, confirmed on-chain.
+        const seedRows = (await sql.unsafe(
+          `SELECT auction_id, lower(contract) AS contract, token_id,
+                  price_wei AS reserve
+           FROM public.fnd_cancellable_listings
+           WHERE kind = 'auction' AND lower(seller) = $1 AND auction_id IS NOT NULL`,
+          [lower],
+        )) as Array<{
+          auction_id: string; contract: string; token_id: string; reserve: string
+        }>
+        const need = seedRows.filter(
+          (r) => !map[`${r.contract}:${r.token_id}`],
+        )
+        if (need.length > 0) {
+          const results = await getClient("artist-fnd-auction-map").multicall({
+            allowFailure: true,
+            contracts: need.map((r) => ({
+              address: FND_MARKET,
+              abi: nftMarketAbi,
+              functionName: "getReserveAuction" as const,
+              args: [BigInt(r.auction_id)] as const,
+            })),
+          })
+          results.forEach((res, i) => {
+            if (res.status !== "success") return
+            const a = res.result as {
+              seller: Address; endTime: bigint; bidder: Address; amount: bigint
+            }
+            if (a.seller.toLowerCase() === ZERO_ADDRESS) return
+            const r = need[i]
+            map[`${r.contract}:${r.token_id}`] = toFndAuctionLite({
+              auctionId: r.auction_id,
+              reserveWei: r.reserve,
+              highestBidWei: a.amount.toString(),
+              hasBidder: a.bidder.toLowerCase() !== ZERO_ADDRESS,
+              endTime: Number(a.endTime),
+              nowSec: now,
+            })
+          })
+        }
+
+        return map
+      },
+    )
+  },
+  ["artist-fnd-auction-map-v1"],
+  { revalidate: 30, tags: ["artist-fnd-auction-map"] },
 )
 
 // ─── Bid history (from Ponder) ───────────────────────────────────────────

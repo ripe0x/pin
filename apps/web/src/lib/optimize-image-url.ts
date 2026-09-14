@@ -13,6 +13,8 @@ import { isVideoUrl } from "./media-url"
 const PROXYABLE_HOST_SUFFIXES = [
   "nftstorage.link",
   "dweb.link",
+  "ipfs.filebase.io",
+  "gateway.pinata.cloud",
   "ipfs.io",
   "w3s.link",
   "cloudflare-ipfs.com",

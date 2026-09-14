@@ -79,6 +79,11 @@ cast send <AUCTION_HOUSE_ADDRESS> "endAuction(uint256)" 0 \
 Calling it before the timer runs out reverts `AuctionNotEnded`; calling it on an
 auction that never received a bid reverts `AuctionHasNoBids`.
 
+This guide is for a V1 house, where `endAuction` always transfers the NFT and
+pays out in the same call. [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2)
+pays the seller only after delivery to you, the winner, is verified; if delivery
+fails, nobody is paid and the lot stays escrowed for a retry with `claimLot`.
+
 ## viem: read the minimum, then bid
 
 ```ts

@@ -4,6 +4,8 @@ import { cache } from "react"
 import Link from "next/link"
 import { ipfsToHttp } from "@pin/shared"
 import { AuctionPanel } from "@/components/auction/AuctionPanel"
+import { DeferredLotCard } from "@/components/auction/DeferredLotCard"
+import { PendingRefundCard } from "@/components/auction/PendingRefundCard"
 import { SettledAuctionSummary } from "@/components/auction/SettledAuctionSummary"
 import { TokenMedia } from "@/components/token/TokenMedia"
 import { getAuctionDetail } from "@/lib/auctions"
@@ -17,7 +19,7 @@ type Params = Promise<{ house: string; auctionId: string }>
 
 // Request-scoped memo: `generateMetadata` and the page body both call this, so
 // one request resolves the auction + metadata once. `cache()` is React's
-// built-in per-request dedup — no cross-request leakage.
+// built-in per-request dedup, no cross-request leakage.
 const getAuctionPageData = cache(async (house: string, auctionId: string) => {
   const detail = await getAuctionDetail(house, auctionId).catch(() => null)
   if (!detail) return null
@@ -34,10 +36,16 @@ function shortDescription(
   if (detail.status === "settled" && detail.finalPriceWei != null) {
     return `Sold for ${formatEthAmount(detail.finalPriceWei)} ETH`
   }
+  if (detail.status === "deferred") {
+    return "Auction ended, delivery pending. Nobody has been paid yet."
+  }
+  if (detail.status === "unwound" || detail.status === "unwound_return_pending") {
+    return "Auction unwound, winning bid refunded."
+  }
   if (detail.status === "active" && detail.live) {
     return detail.live.awaitingFirstBid
-      ? `Reserve ${formatEthAmount(detail.live.amount)} ETH — bid live.`
-      : `Currently ${formatEthAmount(detail.live.amount)} ETH — bid live.`
+      ? `Reserve ${formatEthAmount(detail.live.amount)} ETH. Bid live.`
+      : `Currently ${formatEthAmount(detail.live.amount)} ETH. Bid live.`
   }
   return "Auction cancelled."
 }
@@ -56,7 +64,7 @@ export async function generateMetadata({
   const description = shortDescription(data.detail)
   const image = data.meta?.image ? ipfsToHttp(data.meta.image) : undefined
   return {
-    // Bare token name — the root layout's `%s | PND` template adds the suffix.
+    // Bare token name; the root layout's `%s | PND` template adds the suffix.
     title: tokenName,
     description,
     openGraph: {
@@ -142,7 +150,22 @@ export default async function AuctionPage({ params }: { params: Params }) {
                   amount: detail.finalPriceWei ?? 0n,
                   settledAtTime: detail.settledAtTime ?? 0,
                   bids: detail.bids,
+                  tokenStandard: detail.tokenStandard,
+                  quantity: detail.quantity,
                 }}
+              />
+            ) : detail.status === "deferred" ||
+              detail.status === "unwound" ||
+              detail.status === "unwound_return_pending" ? (
+              <DeferredLotCard
+                houseAddress={detail.marketAddress}
+                auctionId={detail.auctionId}
+                status={detail.status}
+                winner={detail.winner}
+                winnerDisplay={detail.winnerDisplay || "the winner"}
+                sellerDisplay={detail.sellerDisplay}
+                deferredAtTime={detail.deferredAtTime}
+                refundAmount={detail.refundAmount}
               />
             ) : (
               <div className="rounded-lg border border-gray-200 bg-surface p-5 space-y-2">
@@ -158,6 +181,18 @@ export default async function AuctionPage({ params }: { params: Params }) {
               </div>
             )}
           </section>
+
+          {/* Any refund owed to the connected wallet on this house. Renders
+              nothing when disconnected or the balance is zero, so no wrapping
+              section/border here, avoids an empty bordered gap. */}
+          {detail.source === "sovereign" && (
+            <div className="pt-5">
+              <PendingRefundCard
+                houseAddress={detail.marketAddress}
+                houseVersion={detail.houseVersion}
+              />
+            </div>
+          )}
 
           {/* Link back to the token's full history */}
           <section className="py-5 border-b border-gray-100">

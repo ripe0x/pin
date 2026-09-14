@@ -10,7 +10,7 @@
 
 ## Context
 
-The existing PND codebase at `/Users/dd/foundation` has evolved into a
+The existing PND codebase has evolved into a
 multi-tier architecture (pgCache → Ponder → lazy_* tables → eager RPC)
 where the bottom tier — eager RPC fallback on cache miss — has historically
 run up unexpected Alchemy bills. The team has already migrated some artist-
@@ -178,7 +178,7 @@ established in [db/migrations/022_known_artists_view.sql](db/migrations/022_know
 
 ## Repo structure
 
-Fresh repo at `/Users/dd/foundation-v2/` (or whatever the user prefers).
+Fresh sibling repo (or whatever the user prefers).
 
 ```
 foundation-v2/

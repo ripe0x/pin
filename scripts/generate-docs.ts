@@ -83,6 +83,8 @@ const ABI_BY_NAME: Record<string, AbiItem[]> = {
     IPreviewRenderer: abis.iPreviewRendererAbi as unknown as AbiItem[],
     SovereignAuctionHouse: abis.sovereignAuctionHouseAbi as unknown as AbiItem[],
     SovereignAuctionHouseFactory: abis.sovereignAuctionHouseFactoryAbi as unknown as AbiItem[],
+    SovereignAuctionHouseV2: abis.sovereignAuctionHouseV2Abi as unknown as AbiItem[],
+    SovereignAuctionHouseV2Factory: abis.sovereignAuctionHouseV2FactoryAbi as unknown as AbiItem[],
 };
 
 // ── Page plan ──────────────────────────────────────────────────────────
@@ -216,6 +218,15 @@ const PROTOCOLS: Protocol[] = [
                 note: 'Deployed per owner as an EIP-1167 clone of the implementation above through the [factory](/docs/auctions/contracts/auction-house-factory). A house has no canonical address of its own; substitute your house address for `<AUCTION_HOUSE_ADDRESS>` in the examples below.',
             },
             {name: 'SovereignAuctionHouseFactory', slug: 'auction-house-factory', deploymentsKey: 'auctionHouseFactory', kind: 'singleton'},
+            {
+                name: 'SovereignAuctionHouseV2',
+                slug: 'sovereign-auction-house-v2',
+                deploymentsKey: null,
+                kind: 'clone',
+                implementationKey: 'auctionHouseV2Implementation',
+                note: 'Deployed per owner as an EIP-1167 clone of the implementation above through the [V2 factory](/docs/auctions/contracts/auction-house-v2-factory). A house has no canonical address of its own; substitute your house address for `<AUCTION_HOUSE_V2_ADDRESS>` in the examples below. This is a separate deployment from [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house); the two coexist and neither depends on the other.',
+            },
+            {name: 'SovereignAuctionHouseV2Factory', slug: 'auction-house-v2-factory', deploymentsKey: 'auctionHouseV2Factory', kind: 'singleton'},
         ],
         guides: [
             {section: 'guides', slug: 'deploy-an-auction-house', file: 'auctions/guides/deploy-an-auction-house.md'},

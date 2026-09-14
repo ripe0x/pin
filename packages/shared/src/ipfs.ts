@@ -5,13 +5,16 @@
  * the web app, indexer, and API routes.
  */
 
-/** Public IPFS gateways, ordered by reliability. cloudflare-ipfs.com was
- * discontinued — `curl https://cloudflare-ipfs.com/...` returns nothing. */
+/** Public IPFS gateways, ordered by reliability. cloudflare-ipfs.com is
+ * discontinued (returns nothing), nftstorage.link is retired (302 to
+ * ipfs.io) and w3s.link only redirects to dweb.link, so none is listed.
+ * Public gateways rate-limit per client IP, so the list needs entries
+ * from different operators for rotation to find one that answers. */
 export const IPFS_GATEWAYS = [
-  "https://nftstorage.link",
   "https://dweb.link",
   "https://ipfs.io",
-  "https://w3s.link",
+  "https://gateway.pinata.cloud",
+  "https://ipfs.filebase.io",
 ] as const
 
 const DEFAULT_GATEWAY = IPFS_GATEWAYS[0]

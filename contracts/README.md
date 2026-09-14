@@ -9,6 +9,53 @@ Ownership of each house is locked at deploy (transferOwnership /
 renounceOwnership revert). To change the implementation, fee, or recipient,
 deploy a new factory.
 
+## Deployed on Ethereum mainnet
+
+Canonical shared singletons and clone implementations. The machine-readable
+source of truth is [`deployments.mainnet.json`](./deployments.mainnet.json);
+the docs reference tables resolve from it. Deployed 2026-07-22 from commit
+`fa5af29`; source verified against these addresses with `forge verify-bytecode`
+(full creation + runtime match). Per-owner collections and auction houses are
+EIP-1167 clones and are not listed here.
+
+| Contract | Address |
+| --- | --- |
+| SurfaceFactory | [`0xdB81d3F33EF3D84685486916E0d372E247558094`](https://evm.now/address/0xdB81d3F33EF3D84685486916E0d372E247558094?chainId=1) |
+| Surface (sequential implementation) | [`0xd0cC38cB3BD18FbdAD278f14AD1f40E513f846Ef`](https://evm.now/address/0xd0cC38cB3BD18FbdAD278f14AD1f40E513f846Ef?chainId=1) |
+| PooledSurface (pooled implementation) | [`0xd2e3Ac74DbF40c454a4211db5CF137c7355421eA`](https://evm.now/address/0xd2e3Ac74DbF40c454a4211db5CF137c7355421eA?chainId=1) |
+| FixedPriceMinter (minter implementation) | [`0x50941e5fd0B177826AB86419502b221049821Ba3`](https://evm.now/address/0x50941e5fd0B177826AB86419502b221049821Ba3?chainId=1) |
+| Catalog | [`0x467a9c39e03C595EC3075D856f19C7386b6b915d`](https://evm.now/address/0x467a9c39e03C595EC3075D856f19C7386b6b915d?chainId=1) |
+| SovereignAuctionHouseFactory | [`0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f`](https://evm.now/address/0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f?chainId=1) |
+| SovereignAuctionHouse (implementation) | [`0xC70D8a99b915BeDA52C5A952E29FFE152CbfCB34`](https://evm.now/address/0xC70D8a99b915BeDA52C5A952E29FFE152CbfCB34?chainId=1) |
+| SovereignAuctionHouseV2Factory | [`0x77aB853543286C9Cdd7dd6c01222A7cC4Ac93d63`](https://evm.now/address/0x77aB853543286C9Cdd7dd6c01222A7cC4Ac93d63?chainId=1) |
+| SovereignAuctionHouseV2 (implementation) | [`0x88b48793f38EF7370F2e7BC12E2f73DC565C117F`](https://evm.now/address/0x88b48793f38EF7370F2e7BC12E2f73DC565C117F?chainId=1) |
+
+The Auction House V2 pair deployed 2026-09-02 from commit `49a5a696`
+(`DeployAuctionV2.s.sol`, 0 bps fee, zero fee recipient): implementation at
+block 25901755 (tx `0x2c538141…6ddd`), factory at block 25901772 (tx
+`0x5202cc23…52cb`). Both sources are verified on Etherscan under the default
+profile. The v1 factory and implementation stay live for existing houses; V2
+houses settle with escrow-and-wait (seller paid only after verified delivery).
+The drift guard is `test/AuctionV2MainnetDeployment.t.sol`.
+
+Reproduce the deployed bytecode with the default profile (solc 0.8.24,
+optimizer runs 200, no via-ir). The 2026-07-22 deploy (commit `fa5af29`) built
+under that profile: its `foundry.toml` set no `evm_version` and no `via_ir`, so
+a plain `forge build` byte-matches mainnet:
+
+```bash
+forge verify-bytecode \
+  0xdB81d3F33EF3D84685486916E0d372E247558094 SurfaceFactory \
+  --rpc-url "$MAINNET_RPC_URL" --etherscan-api-key "$ETHERSCAN_API_KEY"
+```
+
+The runtime bytecode of Surface, PooledSurface, and FixedPriceMinter matches
+exactly under the default profile except the trailing 53-byte CBOR metadata
+hash (`forge verify-bytecode` ignores it); SurfaceFactory additionally differs
+in its baked-in immutable constructor args. Do not enable via-ir to reproduce
+the deploy: the via-ir build is ~1300 bytes smaller per contract and does not
+match.
+
 ## Setup
 
 ```bash
@@ -40,6 +87,14 @@ Layout:
 
 ## Deploy
 
+Always pass `--slow` on a multi-transaction broadcast. The mainnet deployer
+key is an EIP-7702 delegated account, and nodes allow a delegated account only
+one in-flight transaction with no nonce gaps (`gapped-nonce tx from delegated
+accounts`). Without `--slow` a two-contract script lands the first transaction
+and rejects the rest. A run that failed midway resumes with `--resume --slow`,
+which sends only the unsent transactions; confirm the deployer nonce has not
+moved first.
+
 Required env vars:
 
 | Var | Purpose |
@@ -47,14 +102,14 @@ Required env vars:
 | `PND_FEE_RECIPIENT` | Treasury that receives protocol fees. Use `0x0` only when fee bps is `0` (the constructor enforces that pairing). Locked forever once deployed. |
 | `PND_PROTOCOL_FEE_BPS` | Optional. Protocol fee bps. Default `0`. Capped at `500` (5%). Locked forever once deployed. |
 | `MAINNET_RPC_URL` | RPC endpoint. |
-| `DEPLOYER_PK` | Deployer private key. |
+| `DEPLOYER_PK` | Deployer private key (or use `--account <keystore>` instead). |
 | `ETHERSCAN_API_KEY` | For verification. Also resolved from `[etherscan]` block in `foundry.toml`. |
 
 ```bash
 forge script script/Deploy.s.sol \
   --rpc-url $MAINNET_RPC_URL \
   --private-key $DEPLOYER_PK \
-  --broadcast \
+  --broadcast --slow \
   --verify \
   --etherscan-api-key $ETHERSCAN_API_KEY
 ```

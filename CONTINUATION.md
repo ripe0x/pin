@@ -163,8 +163,7 @@ Tracked in CUTOVER.md.
 ## Reading order for the next contributor
 
 1. README.md — what the system is, how to run it locally.
-2. PLAN.md (in `/Users/dd/.claude/plans/great-create-a-plan-ancient-kazoo.md`)
-   — the architectural rationale; the invariants the system enforces.
+2. PLAN.md — the architectural rationale; the invariants the system enforces.
 3. apps/indexer/ponder.config.ts + ponder.schema.ts — the load-bearing
    data definitions.
 4. apps/worker/src/scheduler.ts — the heartbeat that keeps every

@@ -6,9 +6,9 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   createPublicClient,
+  encodeFunctionData,
   formatEther,
   http,
-  parseAbiItem,
   type Address,
 } from "viem"
 import { mainnet } from "viem/chains"
@@ -18,14 +18,18 @@ import {
   useWriteContract,
 } from "wagmi"
 import { writeContract as writeContractAction, waitForTransactionReceipt } from "wagmi/actions"
-import { erc721Abi, sovereignAuctionHouseAbi } from "@pin/abi"
+import { erc721Abi, sovereignAuctionHouseAbi, sovereignAuctionHouseV2Abi } from "@pin/abi"
 import { config as wagmiConfig } from "@/lib/wagmi"
 import type { GalleryItem, GalleryPage } from "@/lib/artist-queries"
 import { mapWithConcurrency } from "@/lib/concurrency"
 import { ipfsToHttp } from "@pin/shared"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
+import { useArtistHouseV2 } from "@/components/auction/useArtistHouseV2"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
-import { TxLink } from "@/components/auction/tx"
+import { useChainNowSec } from "@/components/tx/tx-ui"
+import { parseListingExpiry } from "@/lib/listing-expiry"
+import { TxLink, StatusChip } from "@/components/auction/tx"
+import { useBatchedCalls, type PreparedCall } from "@/lib/useBatchedCalls"
 
 const DURATION_OPTIONS = [
   { label: "24 hours", seconds: 24 * 60 * 60 },
@@ -34,10 +38,6 @@ const DURATION_OPTIONS = [
 ] as const
 
 const PAGE_SIZE = 100
-
-const auctionCreatedEvent = parseAbiItem(
-  "event AuctionCreated(uint256 indexed auctionId, uint256 indexed tokenId, address indexed tokenContract, uint256 duration, uint256 reservePrice, address tokenOwner)",
-)
 
 function getClient() {
   // Use the server-side `/api/rpc` proxy to avoid bundling the Alchemy API
@@ -70,15 +70,24 @@ export function SovereignBulkPanel({ artistAddress }: { artistAddress: string })
     !!connectedAddress &&
     connectedAddress.toLowerCase() === artistAddress.toLowerCase()
 
-  const { houseAddress } = useArtistHouse(isOwner ? artistAddress : undefined)
+  const v1 = useArtistHouse(isOwner ? artistAddress : undefined)
+  const v2 = useArtistHouseV2(isOwner ? artistAddress : undefined)
 
-  if (!isOwner || !houseAddress || !connectedAddress) return null
+  if (!isOwner || !connectedAddress) return null
+  if (!v1.houseAddress && !v2.houseAddress) return null
 
   return (
     <PanelInner
       artistAddress={artistAddress}
       connectedAddress={connectedAddress as Address}
-      houseAddress={houseAddress as Address}
+      // Bulk listing targets the newest house generation (V2 when live).
+      listHouseAddress={(v2.houseAddress ?? v1.houseAddress) as Address}
+      listHouseVersion={v2.houseAddress ? 2 : 1}
+      // Bulk cancel runs per house generation the artist actually has: V1
+      // via bulkCancelAuctions (one tx), V2 via N cancelAuction calls (V2
+      // dropped bulkCancelAuctions) through the batched-calls runner.
+      v1HouseAddress={v1.houseAddress}
+      v2HouseAddress={v2.houseAddress}
     />
   )
 }
@@ -86,23 +95,40 @@ export function SovereignBulkPanel({ artistAddress }: { artistAddress: string })
 function PanelInner({
   artistAddress,
   connectedAddress,
-  houseAddress,
+  listHouseAddress,
+  listHouseVersion,
+  v1HouseAddress,
+  v2HouseAddress,
 }: {
   artistAddress: string
   connectedAddress: Address
-  houseAddress: Address
+  listHouseAddress: Address
+  listHouseVersion: 1 | 2
+  v1HouseAddress: Address | null
+  v2HouseAddress: Address | null
 }) {
   return (
     <div className="space-y-4">
       <BulkListSection
         artistAddress={artistAddress}
         connectedAddress={connectedAddress}
-        houseAddress={houseAddress}
+        houseAddress={listHouseAddress}
+        houseVersion={listHouseVersion}
       />
-      <BulkCancelSection
-        connectedAddress={connectedAddress}
-        houseAddress={houseAddress}
-      />
+      {v1HouseAddress && (
+        <BulkCancelSection
+          connectedAddress={connectedAddress}
+          houseAddress={v1HouseAddress}
+          houseVersion={1}
+        />
+      )}
+      {v2HouseAddress && (
+        <BulkCancelSection
+          connectedAddress={connectedAddress}
+          houseAddress={v2HouseAddress}
+          houseVersion={2}
+        />
+      )}
     </div>
   )
 }
@@ -118,10 +144,12 @@ function BulkListSection({
   artistAddress,
   connectedAddress,
   houseAddress,
+  houseVersion,
 }: {
   artistAddress: string
   connectedAddress: Address
   houseAddress: Address
+  houseVersion: 1 | 2
 }) {
   const router = useRouter()
   const [load, setLoad] = useState<ListLoadState>({ kind: "loading" })
@@ -130,6 +158,13 @@ function BulkListSection({
   const [durationSec, setDurationSec] = useState<number>(
     DURATION_OPTIONS[0].seconds,
   )
+  // V2-only: one listing expiry applies to the whole batch. Funds recipient
+  // has no bulk-create parameter (it's per-auction, set only via
+  // setAuctionFundsRecipient), omitted here rather than following up with
+  // N setter calls; edit it per auction from its detail page afterward.
+  const nowSec = useChainNowSec()
+  const [listingExpiryInput, setListingExpiryInput] = useState("")
+  const listingExpiry = parseListingExpiry(listingExpiryInput, nowSec)
 
   const refresh = useCallback(async () => {
     setLoad({ kind: "loading" })
@@ -138,6 +173,7 @@ function BulkListSection({
         artistAddress,
         connectedAddress,
         houseAddress,
+        houseVersion,
       )
       setLoad({ kind: "loaded", items })
       setSelected(new Set())
@@ -147,7 +183,7 @@ function BulkListSection({
         message: err instanceof Error ? err.message : "Failed to load tokens",
       })
     }
-  }, [artistAddress, connectedAddress, houseAddress])
+  }, [artistAddress, connectedAddress, houseAddress, houseVersion])
 
   useEffect(() => {
     refresh()
@@ -168,6 +204,7 @@ function BulkListSection({
   // Reserve = 0 is valid (no-reserve auction). The hook reports invalid for
   // empty/non-numeric/locale-mismatched input and surfaces the reason.
   const reserveValid = reserve.isValid && reserve.wei !== null
+  const listingTermsValid = houseVersion !== 2 || listingExpiry.error === null
 
   // Listing tx state
   const [running, setRunning] = useState<{
@@ -225,9 +262,11 @@ function BulkListSection({
 
   async function handleList() {
     if (load.kind !== "loaded") return
-    if (!reserveValid || reserve.wei == null) return
+    if (!reserveValid || reserve.wei == null || !listingTermsValid) return
     const selectedItems = load.items.filter((i) => selected.has(itemKey(i)))
     if (selectedItems.length === 0) return
+    const listingExpirySeconds =
+      houseVersion === 2 ? listingExpiry.seconds ?? 0n : 0n
 
     // Group by collection (bulkCreateAuctions takes one collection per call).
     const byContract = new Map<Address, ListableItem[]>()
@@ -300,12 +339,20 @@ function BulkListSection({
         })
 
         const tokenIds = items.map((i) => BigInt(i.tokenId))
-        const createHash = await writeContractAction(wagmiConfig, {
-          address: houseAddress,
-          abi: sovereignAuctionHouseAbi,
-          functionName: "bulkCreateAuctions",
-          args: [contract, tokenIds, reserveWei, BigInt(durationSec)],
-        })
+        const createHash =
+          houseVersion === 2
+            ? await writeContractAction(wagmiConfig, {
+                address: houseAddress,
+                abi: sovereignAuctionHouseV2Abi,
+                functionName: "bulkCreateAuctions",
+                args: [contract, tokenIds, reserveWei, BigInt(durationSec), listingExpirySeconds],
+              })
+            : await writeContractAction(wagmiConfig, {
+                address: houseAddress,
+                abi: sovereignAuctionHouseAbi,
+                functionName: "bulkCreateAuctions",
+                args: [contract, tokenIds, reserveWei, BigInt(durationSec)],
+              })
         await waitForTransactionReceipt(wagmiConfig, { hash: createHash })
       }
 
@@ -399,6 +446,33 @@ function BulkListSection({
         </div>
       </div>
 
+      {houseVersion === 2 && (
+        <div className="mt-3">
+          <label className="block">
+            <span className="text-[11px] uppercase tracking-[0.08em] text-gray-400">
+              Listing expiry (optional)
+            </span>
+            <input
+              type="datetime-local"
+              value={listingExpiryInput}
+              onChange={(e) => setListingExpiryInput(e.target.value)}
+              disabled={isRunning}
+              className="mt-1 w-full border border-gray-200 focus-within:border-gray-400 transition-colors rounded px-3 py-2 text-sm outline-none disabled:opacity-40 bg-transparent"
+            />
+          </label>
+          {listingExpiry.error ? (
+            <p className="mt-1 text-[11px] text-red-500">{listingExpiry.error}</p>
+          ) : (
+            <p className="mt-1 text-[11px] text-gray-400">
+              Applies to the whole batch. No bids by this time and a listing
+              can be expired by anyone. Leave blank for no expiry. Funds
+              recipient defaults to you for every auction in this batch , 
+              edit it per auction from its detail page afterward.
+            </p>
+          )}
+        </div>
+      )}
+
       <footer className="mt-5 flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
         <p className="text-xs text-gray-500">
           {selected.size} selected
@@ -411,7 +485,7 @@ function BulkListSection({
         </p>
         <button
           onClick={handleList}
-          disabled={isRunning || selected.size === 0 || !reserveValid}
+          disabled={isRunning || selected.size === 0 || !reserveValid || !listingTermsValid}
           className="text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {isRunning
@@ -437,9 +511,11 @@ type CancelLoadState =
 function BulkCancelSection({
   connectedAddress,
   houseAddress,
+  houseVersion,
 }: {
   connectedAddress: Address
   houseAddress: Address
+  houseVersion: 1 | 2
 }) {
   const router = useRouter()
   const [load, setLoad] = useState<CancelLoadState>({ kind: "loading" })
@@ -451,6 +527,7 @@ function BulkCancelSection({
     Array<{ contract: string; tokenId: string }>
   >([])
 
+  // V1: one bulkCancelAuctions tx for every selected id.
   const {
     writeContract,
     data: txHash,
@@ -463,10 +540,15 @@ function BulkCancelSection({
     isSuccess,
   } = useWaitForTransactionReceipt({ hash: txHash })
 
+  // V2: no bulkCancelAuctions, so N cancelAuction(id) calls through the
+  // same EIP-5792-aware runner the V1-to-V2 upgrade flow uses (batched on
+  // smart wallets, sequential otherwise), one per selected auction.
+  const v2Cancel = useBatchedCalls()
+
   const refresh = useCallback(async () => {
     setLoad({ kind: "loading" })
     try {
-      const auctions = await loadCancellableAuctions(houseAddress)
+      const auctions = await loadCancellableAuctions(houseAddress, houseVersion)
       setLoad({ kind: "loaded", auctions })
       setSelected(new Set())
     } catch (err) {
@@ -475,7 +557,7 @@ function BulkCancelSection({
         message: err instanceof Error ? err.message : "Failed to load auctions",
       })
     }
-  }, [houseAddress])
+  }, [houseAddress, houseVersion])
 
   useEffect(() => {
     refresh()
@@ -517,7 +599,8 @@ function BulkCancelSection({
 
   const total = load.auctions.length
   const allSelected = selected.size === total
-  const isRunning = isWritePending || isMining
+  const v2Running = v2Cancel.status === "running"
+  const isRunning = houseVersion === 2 ? v2Running : isWritePending || isMining
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -534,15 +617,39 @@ function BulkCancelSection({
     else setSelected(new Set(load.auctions.map((a) => a.auctionId)))
   }
 
-  function handleCancel() {
+  async function handleCancel() {
     if (load.kind !== "loaded") return
     const targets = load.auctions.filter((a) => selected.has(a.auctionId))
     if (targets.length === 0) return
-    // Capture (contract, tokenId) pairs now so the post-confirm effect can
-    // revalidate them — `selected` may change while the tx is mining.
+    // Capture (contract, tokenId) pairs now so the post-confirm revalidation
+    // can target them, `selected` may change while the cancel(s) are mining.
     setPendingCancels(
       targets.map((a) => ({ contract: a.contract, tokenId: a.tokenId })),
     )
+
+    if (houseVersion === 2) {
+      const calls: PreparedCall[] = targets.map((a) => ({
+        id: a.auctionId,
+        to: houseAddress,
+        data: encodeFunctionData({
+          abi: sovereignAuctionHouseV2Abi,
+          functionName: "cancelAuction",
+          args: [BigInt(a.auctionId)],
+        }),
+        write: {
+          address: houseAddress,
+          abi: sovereignAuctionHouseV2Abi,
+          functionName: "cancelAuction",
+          args: [BigInt(a.auctionId)],
+        },
+      }))
+      await v2Cancel.run(calls)
+      setPendingCancels([])
+      router.refresh()
+      await refresh()
+      return
+    }
+
     writeContract({
       address: houseAddress,
       abi: sovereignAuctionHouseAbi,
@@ -563,7 +670,8 @@ function BulkCancelSection({
             Cancel pending auctions
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            {total} pre-bid {total === 1 ? "auction" : "auctions"} on your house
+            {total} pre-bid {total === 1 ? "auction" : "auctions"} on your V
+            {houseVersion} house
           </p>
         </div>
         <button
@@ -587,9 +695,14 @@ function BulkCancelSection({
             disabled={isRunning}
             onToggle={() => toggle(a.auctionId)}
             right={
-              <p className="text-xs text-gray-400 tabular-nums shrink-0">
-                Reserve {formatEther(a.reserveWei)} ETH
-              </p>
+              <div className="flex items-center gap-2 shrink-0">
+                <p className="text-xs text-gray-400 tabular-nums">
+                  Reserve {formatEther(a.reserveWei)} ETH
+                </p>
+                {houseVersion === 2 && v2Cancel.perItemStatus.has(a.auctionId) && (
+                  <StatusChip status={v2Cancel.perItemStatus.get(a.auctionId)} />
+                )}
+              </div>
             }
           />
         ))}
@@ -598,23 +711,30 @@ function BulkCancelSection({
       <footer className="mt-5 flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
         <p className="text-xs text-gray-500">
           {selected.size} selected
-          {isRunning && " — sign the cancel in your wallet"}
+          {houseVersion === 2 && isRunning && v2Cancel.mode === "sequential" && (
+            <>, {v2Cancel.walletLabel ?? "your wallet"} signs each cancel separately</>
+          )}
+          {houseVersion === 1 && isRunning && ", sign the cancel in your wallet"}
         </p>
         <button
-          onClick={handleCancel}
+          onClick={() => void handleCancel()}
           disabled={isRunning || selected.size === 0}
           className="text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          {isWritePending
-            ? "Confirm in wallet…"
-            : isMining
+          {houseVersion === 2
+            ? v2Running
               ? "Cancelling…"
-              : `Cancel ${selected.size || ""} ${selected.size === 1 ? "auction" : "auctions"}`.replace(/\s+/g, " ").trim()}
+              : `Cancel ${selected.size || ""} ${selected.size === 1 ? "auction" : "auctions"}`.replace(/\s+/g, " ").trim()
+            : isWritePending
+              ? "Confirm in wallet…"
+              : isMining
+                ? "Cancelling…"
+                : `Cancel ${selected.size || ""} ${selected.size === 1 ? "auction" : "auctions"}`.replace(/\s+/g, " ").trim()}
         </button>
       </footer>
 
-      {txHash && isMining && <TxLink hash={txHash} label="Pending tx:" />}
-      {writeError && (
+      {houseVersion === 1 && txHash && isMining && <TxLink hash={txHash} label="Pending tx:" />}
+      {houseVersion === 1 && writeError && (
         <p className="mt-2 text-xs text-red-500 break-words">
           {writeError.message.includes("User rejected")
             ? "Transaction rejected"
@@ -629,14 +749,15 @@ function BulkCancelSection({
 
 /**
  * Walk every page of the artist's gallery, then filter to tokens the connected
- * wallet still owns AND that don't already have an auction on the house. Single
- * multicall per check type would be cheaper but `mapWithConcurrency` keeps the
- * code simple and the parallelism bounded.
+ * wallet still owns AND that don't already have an auction on the house. One
+ * multicall per check type: per-token reads tripped /api/rpc's per-IP rate
+ * limit on large galleries.
  */
 async function loadListableItems(
   artistAddress: string,
   connectedAddress: Address,
   houseAddress: Address,
+  houseVersion: 1 | 2,
 ): Promise<ListableItem[]> {
   // Page through /api/artist/[address]/tokens (mirrors what ArtistGallery does).
   const all: GalleryItem[] = []
@@ -657,125 +778,131 @@ async function loadListableItems(
 
   const client = getClient()
 
-  // Per-token ownership + auction-existence check in parallel, capped.
-  const results = await mapWithConcurrency(all, 8, async (item) => {
-    const contract = item.contract as Address
-    let owner: Address | null = null
-    try {
-      owner = (await client.readContract({
-        address: contract,
-        abi: erc721Abi,
-        functionName: "ownerOf",
-        args: [BigInt(item.tokenId)],
-      })) as Address
-    } catch {
-      return null
-    }
-    if (!owner || owner.toLowerCase() !== connectedAddress.toLowerCase()) {
-      return null
-    }
+  // Ownership + auction-existence checks as two multicalls instead of two
+  // RPC reads per token. The per-token version tripped /api/rpc's per-IP
+  // rate limit (429s) on large galleries.
+  const ownerReads = await client.multicall({
+    contracts: all.map((item) => ({
+      address: item.contract as Address,
+      abi: erc721Abi,
+      functionName: "ownerOf" as const,
+      args: [BigInt(item.tokenId)] as const,
+    })),
+    allowFailure: true,
+  })
+  const owned = all.filter((_, i) => {
+    const r = ownerReads[i]
+    return (
+      r.status === "success" &&
+      typeof r.result === "string" &&
+      r.result.toLowerCase() === connectedAddress.toLowerCase()
+    )
+  })
+  if (owned.length === 0) return []
 
-    let hasAuction = false
-    try {
-      hasAuction = (await client.readContract({
-        address: houseAddress,
-        abi: sovereignAuctionHouseAbi,
-        functionName: "hasAuctionFor",
-        args: [contract, BigInt(item.tokenId)],
-      })) as boolean
-    } catch {
-      hasAuction = false
+  // V2 dropped `hasAuctionFor`; `getAuctionFor` returns (exists, auctionId)
+  // instead of a plain bool.
+  const auctionReads = await client.multicall({
+    contracts: owned.map((item) =>
+      houseVersion === 2
+        ? {
+            address: houseAddress,
+            abi: sovereignAuctionHouseV2Abi,
+            functionName: "getAuctionFor" as const,
+            args: [item.contract as Address, BigInt(item.tokenId)] as const,
+          }
+        : {
+            address: houseAddress,
+            abi: sovereignAuctionHouseAbi,
+            functionName: "hasAuctionFor" as const,
+            args: [item.contract as Address, BigInt(item.tokenId)] as const,
+          },
+    ),
+    allowFailure: true,
+  })
+  const listable = owned.filter((_, i) => {
+    const r = auctionReads[i]
+    // A failed read is treated as "no auction"; worst case the create tx
+    // reverts on a token that already has one.
+    if (r.status !== "success") return true
+    if (houseVersion === 2) {
+      const [exists] = r.result as readonly [boolean, bigint]
+      return !exists
     }
-    if (hasAuction) return null
-
-    return {
-      contract,
-      tokenId: item.tokenId,
-      displayName: item.title,
-      imageUrl: item.imageUrl,
-    } satisfies ListableItem
+    return r.result !== true
   })
 
-  return results.filter((r): r is ListableItem => r !== null)
+  return listable.map((item) => ({
+    contract: item.contract as Address,
+    tokenId: item.tokenId,
+    displayName: item.title,
+    imageUrl: item.imageUrl,
+  }))
 }
 
 /**
- * Enumerate every AuctionCreated event on the artist's house, then read the
- * current auction storage for each. Keep only those that:
+ * Load the house's cancellable auctions: indexer-nominated candidate ids
+ * (one API read; the old eth_getLogs house scan exceeded the /api/rpc
+ * proxy's numeric-bounds and 10k-block-span rules and could never
+ * succeed), then one multicall of the house's auctions() storage as the
+ * source of truth. Keep only those that:
  *   - are still in storage (`tokenOwner != 0`) — i.e. not settled or cancelled
  *   - have no bids (`firstBidTime == 0`) — the contract's only cancellable state
  */
 async function loadCancellableAuctions(
   houseAddress: Address,
+  houseVersion: 1 | 2,
 ): Promise<CancellableAuction[]> {
-  const client = getClient()
+  const res = await fetch(`/api/house-upgrade/${houseAddress}`)
+  if (!res.ok) throw new Error(`Failed to load house listings (${res.status})`)
+  const { listings } = (await res.json()) as {
+    listings: Array<{ auctionId: string }>
+  }
+  if (listings.length === 0) return []
 
-  const logs = await client.getLogs({
-    address: houseAddress,
-    event: auctionCreatedEvent,
-    // Houses can't pre-date the factory; scanning from 0 was a 24M-block
-    // null scan per panel open. Hardcoded to avoid a cross-package import
-    // for a single number — also used in lib/auctions.ts and lib/last-sale.ts.
-    fromBlock: 24_973_294n,
-    toBlock: "latest",
+  const client = getClient()
+  const reads = await client.multicall({
+    contracts: listings.map((l) => ({
+      address: houseAddress,
+      abi: houseVersion === 2 ? sovereignAuctionHouseV2Abi : sovereignAuctionHouseAbi,
+      functionName: "auctions" as const,
+      args: [BigInt(l.auctionId)] as const,
+    })),
+    allowFailure: true,
   })
 
-  if (logs.length === 0) return []
-
-  // Some auctions may have been recreated for the same auctionId — but the
-  // contract uses a monotonic counter, so each id appears once. Still: dedupe
-  // defensively.
-  const seen = new Set<string>()
-  const ids: bigint[] = []
-  for (const log of logs) {
-    const id = log.args.auctionId
-    if (id === undefined) continue
-    const key = id.toString()
-    if (seen.has(key)) continue
-    seen.add(key)
-    ids.push(id)
-  }
-
-  // Parallel: read current auction state for each id.
-  const states = await mapWithConcurrency(ids, 8, async (id) => {
-    try {
-      const result = (await client.readContract({
-        address: houseAddress,
-        abi: sovereignAuctionHouseAbi,
-        functionName: "auctions",
-        args: [id],
-      })) as readonly [
+  const cancellable: Array<{
+    id: bigint
+    tokenId: bigint
+    tokenContract: Address
+    reservePrice: bigint
+  }> = []
+  listings.forEach((l, i) => {
+    const r = reads[i]
+    if (r.status !== "success") return
+    // V1's and V2's auctions() tuples agree on the first six fields
+    // (tokenId, tokenContract, firstBidTime, amount, reservePrice,
+    // tokenOwner); V2 adds fundsRecipient/quantity/standard after that,
+    // which this read doesn't need.
+    const [tokenId, tokenContract, firstBidTime, , reservePrice, tokenOwner] =
+      r.result as readonly [
         bigint, // tokenId
         Address, // tokenContract
         bigint, // firstBidTime
         bigint, // amount
         bigint, // reservePrice
         Address, // tokenOwner
-        bigint, // endTime
-        Address, // bidder
-        bigint, // duration
+        ...unknown[],
       ]
-      const [
-        tokenId,
-        tokenContract,
-        firstBidTime,
-        ,
-        reservePrice,
-        tokenOwner,
-      ] = result
-      // Filter: must still exist (tokenOwner != 0) AND be pre-bid.
-      if (tokenOwner === "0x0000000000000000000000000000000000000000") return null
-      if (firstBidTime !== 0n) return null
-      return { id, tokenId, tokenContract, reservePrice }
-    } catch {
-      return null
-    }
+    if (tokenOwner === "0x0000000000000000000000000000000000000000") return
+    if (firstBidTime !== 0n) return
+    cancellable.push({
+      id: BigInt(l.auctionId),
+      tokenId,
+      tokenContract,
+      reservePrice,
+    })
   })
-
-  const cancellable = states.filter(
-    (s): s is { id: bigint; tokenId: bigint; tokenContract: Address; reservePrice: bigint } =>
-      s !== null,
-  )
 
   // Resolve metadata via the public `/api/meta` route. We previously called
   // the server lib `resolveTokenMetadataDirect` directly from this client

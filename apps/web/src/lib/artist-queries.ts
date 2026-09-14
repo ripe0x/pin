@@ -27,7 +27,11 @@ import {
   getCachedEnrichedPage,
   EnrichmentEmpty,
 } from "./artist-cache"
-import { getArtistSovereignAuctionMap, type SovereignAuctionLite } from "./auctions"
+import {
+  getArtistSovereignAuctionMap,
+  getArtistFndAuctionMap,
+  type SovereignAuctionLite,
+} from "./auctions"
 import { getMuriUriCounts } from "./reads"
 import { extractCid, ipfsToHttp } from "@pin/shared"
 
@@ -548,7 +552,7 @@ export async function getArtistGalleryPage(
     return { tokens: [], total, page, pageSize, hasMore: false }
   }
 
-  const [enriched, prices, auctionMap, muriCounts] = await Promise.all([
+  const [enriched, prices, auctionMap, fndAuctionMap, muriCounts] = await Promise.all([
     // `getCachedEnrichedPage` throws `EnrichmentEmpty` when every token
     // in the slice enriches to null (transient RPC/IPFS hiccup, not a
     // real empty gallery) — the throw stops `unstable_cache` from
@@ -560,6 +564,9 @@ export async function getArtistGalleryPage(
     }),
     fetchBuyPrices(slice),
     getArtistSovereignAuctionMap(artistAddress).catch(
+      (): Record<string, SovereignAuctionLite> => ({}),
+    ),
+    getArtistFndAuctionMap(artistAddress).catch(
       (): Record<string, SovereignAuctionLite> => ({}),
     ),
     // Postgres-only MURI preservation counts for this page (no RPC).
@@ -574,7 +581,11 @@ export async function getArtistGalleryPage(
     return {
       ...display,
       buyPrice: prices.get(key) ?? null,
-      auction: auctionMap[key] ?? null,
+      // Sovereign (PND's own house) takes precedence; a token is escrowed
+      // in at most one auction contract, so both maps won't hold the same
+      // key. FND fills in Foundation listings the gallery previously
+      // ignored.
+      auction: auctionMap[key] ?? fndAuctionMap[key] ?? null,
       muriUriCount: muriCounts.get(key) ?? null,
     }
   })

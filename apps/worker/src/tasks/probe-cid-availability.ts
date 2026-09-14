@@ -35,10 +35,7 @@
 import { sql } from "../db.ts"
 import { extractArweaveId, extractBareCid } from "@pin/shared"
 import type { TaskResult } from "../scheduler.ts"
-
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g, "",
-)
+import { INDEXER_SCHEMA } from "../indexer-schema.ts"
 
 const BATCH_SIZE = Number(process.env.CID_PROBE_BATCH_SIZE ?? "50")
 const RETRY_AFTER_DAYS = Number(process.env.CID_PROBE_RETRY_AFTER_DAYS ?? "7")

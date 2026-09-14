@@ -7,11 +7,12 @@
     "dev": "ponder dev",
     "start": "ponder start",
     "codegen": "ponder codegen",
-    "lint": "ponder lint",
-    "typecheck": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\""
   },
   "dependencies": {
-    "hono": "^4.12.15",
+    "hono": "^4.12.34",
     "ponder": "^0.16.6",
     "viem": "^2.21.0"
   },

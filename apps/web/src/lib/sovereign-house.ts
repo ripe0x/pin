@@ -2,7 +2,7 @@
  * Resolver for an artist's sovereign auction house address.
  *
  * Source of truth: the Ponder indexer's `pnd_houses` table (under the
- * schema named by `INDEXER_SCHEMA`, currently `ponder_v1`). Ponder
+ * schema named by `INDEXER_SCHEMA`, see lib/indexer-schema.ts). Ponder
  * subscribes to the factory's `AuctionHouseCreated` events in real time
  * and maintains a row per house indexed by `owner`. Reading from there
  * costs one Postgres point query and is free of on-chain RPC traffic.
@@ -26,14 +26,20 @@ import { mainnet } from "viem/chains"
 import { sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import {
   SOVEREIGN_AUCTION_HOUSE_FACTORY,
+  SOVEREIGN_AUCTION_HOUSE_V2_FACTORY,
   MAINNET_CHAIN_ID,
   getAddressOrNull,
 } from "@pin/addresses"
 import { sql } from "./db"
 import { getMainnetTransport } from "./alchemy-rpc"
+import { INDEXER_SCHEMA } from "./indexer-schema"
 
 const SOVEREIGN_FACTORY = getAddressOrNull(
   SOVEREIGN_AUCTION_HOUSE_FACTORY,
+  MAINNET_CHAIN_ID,
+)
+const SOVEREIGN_V2_FACTORY = getAddressOrNull(
+  SOVEREIGN_AUCTION_HOUSE_V2_FACTORY,
   MAINNET_CHAIN_ID,
 )
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
@@ -50,13 +56,15 @@ async function readHouseFromPonder(
 ): Promise<Address | null | undefined> {
   if (!sql) return undefined
   try {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
+    // An artist can hold one house per factory generation. Prefer the
+    // newest: display reads should point at the V2 house once it exists.
+    // Against a pre-version-column schema this query errors and falls
+    // through to the on-chain read.
     const rows = (await sql.unsafe(
       `SELECT house FROM ${schema}.pnd_houses
        WHERE lower(owner) = $1
+       ORDER BY version DESC
        LIMIT 1`,
       [artistLower],
     )) as Array<{ house: string }>
@@ -74,18 +82,26 @@ async function readHouseFromPonder(
 async function readHouseOnChain(
   artistAddress: string,
 ): Promise<Address | null> {
-  if (!SOVEREIGN_FACTORY) return null
-  try {
-    const house = await getClient().readContract({
-      address: SOVEREIGN_FACTORY,
-      abi: sovereignAuctionHouseFactoryAbi,
-      functionName: "houseOf",
-      args: [artistAddress as Address],
-    })
-    return house === ZERO_ADDRESS ? null : house
-  } catch {
-    return null
+  // V2 factory first (same houseOf ABI), matching the version-DESC
+  // preference of the Ponder path. Folds to V1-only while the V2 factory
+  // address is unset.
+  const factories = [SOVEREIGN_V2_FACTORY, SOVEREIGN_FACTORY].filter(
+    (f): f is Address => f !== null,
+  )
+  for (const factoryAddress of factories) {
+    try {
+      const house = await getClient().readContract({
+        address: factoryAddress,
+        abi: sovereignAuctionHouseFactoryAbi,
+        functionName: "houseOf",
+        args: [artistAddress as Address],
+      })
+      if (house !== ZERO_ADDRESS) return house
+    } catch {
+      // Try the next generation's factory.
+    }
   }
+  return null
 }
 
 export const getSovereignHouseOf = unstable_cache(
@@ -96,5 +112,8 @@ export const getSovereignHouseOf = unstable_cache(
     return readHouseOnChain(artistAddress)
   },
   ["sov-house-v2"],
-  { revalidate: 60 * 60 * 24, tags: ["sov-house"] },
+  // 1h TTL, tag-busted by POST /api/sovereign-house/revalidate right
+  // after a house deploy or upgrade confirms (useDeployHouse,
+  // HouseUpgradePanel), so the CTA/count don't wait out the TTL.
+  { revalidate: 60 * 60, tags: ["sov-house"] },
 )

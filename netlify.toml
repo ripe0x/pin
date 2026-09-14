@@ -34,6 +34,26 @@
   NEXT_PUBLIC_USE_SEPOLIA = "1"
   NEXT_PUBLIC_SEPOLIA_RPC_URL = "https://gateway.tenderly.co/public/sepolia"
 
+# Keep pnd.fyi canonical. These match only the production aliases, leaving
+# deploy previews and branch deploys on their Netlify URLs untouched.
+[[redirects]]
+  from = "https://pnd.ripe.wtf/*"
+  to = "https://pnd.fyi/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "https://pin.ripe.wtf/*"
+  to = "https://pnd.fyi/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "https://art-pin.netlify.app/*"
+  to = "https://pnd.fyi/:splat"
+  status = 301
+  force = true
+
 # Next.js runtime plugin — Netlify auto-installs this for Next.js
 # projects, but we pin it explicitly so build behavior is reproducible.
 [[plugins]]

@@ -6,6 +6,12 @@ import {
   refererPathname,
   upstreamHost,
 } from "@/lib/rpc-log"
+import {
+  getLogsValidationError,
+  MAX_RPC_BATCH_SIZE,
+  readRpcBodyWithinLimit,
+  type JsonRpcRequest,
+} from "@/lib/rpc-request-guard"
 
 /**
  * Server-side JSON-RPC proxy for the public Alchemy mainnet endpoint.
@@ -101,9 +107,8 @@ const ALLOWED_METHODS = new Set([
   "eth_getTransactionReceipt",
 ])
 
-// Rate limit: per-IP token bucket of RPC calls per minute. Real users average
-// well under this; the limit is sized to give a moderate-traffic page room
-// without giving a scraper a meaningful budget.
+// Rate limit: per-IP RPC operations per minute. A batch is charged by its
+// number of entries, so batching improves latency without multiplying quota.
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX_PER_WINDOW = 240 // 4 rps sustained
 
@@ -118,7 +123,10 @@ const counts: Map<string, Counter> = (
     globalThis as unknown as { __pndRpcLimiter?: Map<string, Counter> }
   ).__pndRpcLimiter = new Map())
 
-function rateLimit(ip: string): { ok: true } | { ok: false; retryAfter: number } {
+function rateLimit(
+  ip: string,
+  cost: number,
+): { ok: true } | { ok: false; retryAfter: number } {
   const now = Date.now()
 
   // Opportunistic cleanup so the map doesn't grow without bound.
@@ -130,24 +138,17 @@ function rateLimit(ip: string): { ok: true } | { ok: false; retryAfter: number }
 
   const c = counts.get(ip)
   if (!c || now - c.windowStart > RATE_LIMIT_WINDOW_MS) {
-    counts.set(ip, { count: 1, windowStart: now })
+    counts.set(ip, { count: cost, windowStart: now })
     return { ok: true }
   }
-  if (c.count >= RATE_LIMIT_MAX_PER_WINDOW) {
+  if (c.count + cost > RATE_LIMIT_MAX_PER_WINDOW) {
     const retryAfter = Math.ceil(
       (RATE_LIMIT_WINDOW_MS - (now - c.windowStart)) / 1000,
     )
     return { ok: false, retryAfter }
   }
-  c.count++
+  c.count += cost
   return { ok: true }
-}
-
-type JsonRpcRequest = {
-  jsonrpc?: string
-  id?: number | string | null
-  method?: string
-  params?: unknown
 }
 
 function rejectMethod(id: number | string | null | undefined, method: string) {
@@ -158,6 +159,20 @@ function rejectMethod(id: number | string | null | undefined, method: string) {
       error: { code: -32601, message: `Method not allowed: ${method}` },
     },
     { status: 200 }, // JSON-RPC errors are always 200 at the HTTP layer.
+  )
+}
+
+function rejectInvalidRequest(
+  id: number | string | null | undefined,
+  message: string,
+) {
+  return NextResponse.json(
+    {
+      jsonrpc: "2.0",
+      id: id ?? null,
+      error: { code: -32600, message },
+    },
+    { status: 200 },
   )
 }
 
@@ -234,8 +249,46 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  let body: JsonRpcRequest | JsonRpcRequest[]
+  try {
+    const rawBody = await readRpcBodyWithinLimit(req)
+    body = JSON.parse(rawBody) as JsonRpcRequest | JsonRpcRequest[]
+  } catch (err) {
+    if (err instanceof Error && err.message === "request body too large") {
+      return NextResponse.json({ error: err.message }, { status: 413 })
+    }
+    return NextResponse.json({ error: "invalid json" }, { status: 400 })
+  }
+
+  // viem batches requests as an array; check every entry.
+  const batch = Array.isArray(body) ? body : [body]
+  if (batch.length === 0) {
+    return rejectInvalidRequest(null, "empty batches are not allowed")
+  }
+  if (batch.length > MAX_RPC_BATCH_SIZE) {
+    return NextResponse.json(
+      { error: `batch exceeds ${MAX_RPC_BATCH_SIZE} operations` },
+      { status: 413 },
+    )
+  }
+  for (const entry of batch) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return rejectInvalidRequest(null, "invalid JSON-RPC request")
+    }
+    const method = entry?.method
+    if (typeof method !== "string" || !ALLOWED_METHODS.has(method)) {
+      return rejectMethod(entry?.id ?? null, String(method))
+    }
+    if (method === "eth_getLogs") {
+      const error = getLogsValidationError(entry.params)
+      if (error) return rejectInvalidRequest(entry.id, error)
+    }
+  }
+
+  // A batch consumes one limiter unit per operation, closing the loophole
+  // where thousands of RPC calls could be hidden in one HTTP request.
   const ip = getClientIp(req)
-  const rl = rateLimit(ip)
+  const rl = rateLimit(ip, batch.length)
   if (!rl.ok) {
     return NextResponse.json(
       { error: "rate-limited", retryAfter: rl.retryAfter },
@@ -243,32 +296,12 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  let body: JsonRpcRequest | JsonRpcRequest[]
-  try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 })
-  }
-
-  // viem batches requests as an array; check every entry.
-  const batch = Array.isArray(body) ? body : [body]
-  for (const entry of batch) {
-    const method = entry?.method
-    if (typeof method !== "string" || !ALLOWED_METHODS.has(method)) {
-      return rejectMethod(entry?.id ?? null, String(method))
-    }
-  }
-
-  // Forward verbatim. We pass the original body bytes through so encoding
-  // matches exactly what viem sent (including key ordering, etc.).
+  // Re-encode only the validated request object. JSON-RPC does not attach
+  // meaning to key ordering or whitespace.
   const payload = JSON.stringify(body)
 
-  // Walk the full upstream chain for every request. The configured primary
-  // (Alchemy → Infura) serves every healthy read, keeping wallet+query
-  // patterns off public RPCs on the happy path. The public fallbacks only
-  // see traffic when every preferred upstream is down — a tradeoff against
-  // the previous design, where a single primary hiccup took the entire
-  // read path down site-wide.
+  // Walk the public-first upstream chain for every request; paid providers are
+  // last-resort backstops when the anonymous gateways are unavailable.
   const upstreams = UPSTREAMS
 
   // Log one event per request, attributed to the first batch entry's

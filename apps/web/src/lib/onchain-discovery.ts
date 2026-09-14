@@ -18,6 +18,7 @@ import { mainnet } from "viem/chains"
 import { sql } from "./db"
 import { pgCache } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
+import { INDEXER_SCHEMA } from "./indexer-schema"
 
 export type TokenRef = {
   contract: `0x${string}`
@@ -28,6 +29,33 @@ export type TokenRef = {
   /** Mint block as a decimal string (refs must stay bigint-free for
    * unstable_cache hashing). Used only for newest-first ordering. */
   mintBlock?: string
+}
+
+/**
+ * Drop refs for tokens confirmed burned/nonexistent. `token_metadata.burned`
+ * is set when the resolver sees `tokenURI`/`uri` revert (a permanent verdict,
+ * see resolveTokenMetadataDirect). Filtering here keeps burned tokens out of
+ * both the gallery AND the "N indexed works" count, which are derived from the
+ * same refs. Tokens not yet resolved aren't marked burned, so they pass
+ * through until the metadata worker resolves them, then drop on the next
+ * refs-cache refresh.
+ */
+export async function filterOutBurnedRefs(
+  refs: TokenRef[],
+): Promise<TokenRef[]> {
+  if (!sql || refs.length === 0) return refs
+  const contracts = [...new Set(refs.map((r) => r.contract.toLowerCase()))]
+  const burnedRows = (await sql`
+    SELECT contract, token_id FROM token_metadata
+    WHERE burned = true AND contract = ANY(${contracts})
+  `) as Array<{ contract: string; token_id: string }>
+  if (burnedRows.length === 0) return refs
+  const burned = new Set(
+    burnedRows.map((r) => `${r.contract.toLowerCase()}:${r.token_id}`),
+  )
+  return refs.filter(
+    (r) => !burned.has(`${r.contract.toLowerCase()}:${r.tokenId}`),
+  )
 }
 
 /**
@@ -273,9 +301,6 @@ export async function discoverArtistTokenRefs(
 ): Promise<TokenRef[]> {
   if (!sql) return []
   const artist = artistAddress.toLowerCase()
-  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-    /[^a-zA-Z0-9_]/g, "",
-  )
 
   // UNION across worker-owned + Ponder-owned per-artist token sources.
   // Each source contributes (contract, tokenId, platform). The reader
@@ -629,9 +654,6 @@ export async function getTokenOnChainData(
 ): Promise<TokenOnChainData | null> {
   if (!sql) return null
   const c = contract.toLowerCase()
-  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-    /[^a-zA-Z0-9_]/g, "",
-  )
 
   const [owners, transfers] = await Promise.all([
     sql`
@@ -830,9 +852,6 @@ export async function discoverFoundationPinnedTokens(
 }>> {
   if (!sql) return []
   const lower = artistAddress.toLowerCase()
-  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-    /[^a-zA-Z0-9_]/g, "",
-  )
 
   const rows = (await sql.unsafe(
     `WITH refs AS (

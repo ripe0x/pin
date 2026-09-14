@@ -15,6 +15,10 @@
  * substitution, IPFS gateway fallback) are fixed in one place.
  */
 import type { Address, PublicClient } from "viem"
+import { lookup } from "node:dns/promises"
+import { request as httpsRequest } from "node:https"
+import { isIP, type LookupFunction } from "node:net"
+import { Readable } from "node:stream"
 import {
   extractCid,
   fetchFromIpfs,
@@ -23,6 +27,9 @@ import {
   extractArweavePath,
   fetchFromArweave,
 } from "@pin/shared"
+
+const MAX_METADATA_BYTES = 2 * 1024 * 1024
+const MAX_HTTP_REDIRECTS = 3
 
 const erc1155UriAbi = [
   {
@@ -210,6 +217,7 @@ export async function fetchMetadataForUri(
   // fragment delimiter and silently truncates the body, which trips on
   // common cases like `"name":"foo #2"`.
   if (resolvedUri.startsWith("data:")) {
+    if (Buffer.byteLength(resolvedUri, "utf8") > MAX_METADATA_BYTES) return null
     return parseDataUriJson(resolvedUri)
   }
 
@@ -234,7 +242,7 @@ export async function fetchMetadataForUri(
       if (!contentType.includes("json") && !contentType.includes("text/plain")) {
         return null
       }
-      return metadataOrNull(await res.json(), resolvedUri)
+      return metadataOrNull(await readJsonWithinLimit(res), resolvedUri)
     } catch {
       return null
     }
@@ -259,7 +267,7 @@ export async function fetchMetadataForUri(
       if (!contentType.includes("json") && !contentType.includes("text/plain")) {
         return null
       }
-      return metadataOrNull(await res.json(), resolvedUri)
+      return metadataOrNull(await readJsonWithinLimit(res), resolvedUri)
     } catch {
       return null
     }
@@ -268,17 +276,13 @@ export async function fetchMetadataForUri(
   const cid = extractCid(resolvedUri)
   if (!cid) {
     try {
-      const res = await fetch(resolvedUri, {
-        signal: AbortSignal.timeout(fetchTimeoutMs),
-        headers,
-        cache: "no-store",
-      })
+      const res = await fetchSafeHttpUrl(resolvedUri, fetchTimeoutMs, headers)
       if (!res.ok) return null
       const contentType = res.headers.get("content-type") ?? ""
       if (!contentType.includes("json") && !contentType.includes("text/plain")) {
         return null
       }
-      return metadataOrNull(await res.json(), resolvedUri)
+      return metadataOrNull(await readJsonWithinLimit(res), resolvedUri)
     } catch {
       return null
     }
@@ -292,10 +296,193 @@ export async function fetchMetadataForUri(
     if (!contentType.includes("json") && !contentType.includes("text/plain")) {
       return null
     }
-    return metadataOrNull(await res.json(), resolvedUri)
+    return metadataOrNull(await readJsonWithinLimit(res), resolvedUri)
   } catch {
     return null
   }
+}
+
+async function fetchSafeHttpUrl(
+  uri: string,
+  timeoutMs: number,
+  headers: Record<string, string>,
+): Promise<Response> {
+  let current = new URL(uri)
+
+  for (let redirects = 0; redirects <= MAX_HTTP_REDIRECTS; redirects++) {
+    const resolvedAddress = await assertSafePublicHttpsUrl(current)
+    const res = resolvedAddress
+      ? await fetchPinnedHttps(current, resolvedAddress, timeoutMs, headers)
+      : await fetch(current, {
+          signal: AbortSignal.timeout(timeoutMs),
+          headers,
+          cache: "no-store",
+          redirect: "manual",
+        })
+
+    if (![301, 302, 303, 307, 308].includes(res.status)) return res
+    const location = res.headers.get("location")
+    if (!location || redirects === MAX_HTTP_REDIRECTS) {
+      throw new Error("too many metadata redirects")
+    }
+    current = new URL(location, current)
+  }
+
+  throw new Error("too many metadata redirects")
+}
+
+type ResolvedAddress = { address: string; family: 4 | 6 }
+
+async function assertSafePublicHttpsUrl(
+  url: URL,
+): Promise<ResolvedAddress | null> {
+  if (url.protocol !== "https:" || url.username || url.password) {
+    throw new Error("unsafe metadata URL")
+  }
+
+  const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase()
+  if (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local")
+  ) {
+    throw new Error("unsafe metadata host")
+  }
+
+  if (isIP(hostname)) {
+    if (!isPublicIp(hostname)) throw new Error("unsafe metadata host")
+    return null
+  }
+
+  const addresses = await lookup(hostname, { all: true, verbatim: true })
+  if (addresses.length === 0 || addresses.some(({ address }) => !isPublicIp(address))) {
+    throw new Error("unsafe metadata host")
+  }
+  // Pin the HTTPS connection to the address we validated. Resolving once and
+  // then letting fetch resolve again would leave a DNS-rebinding window.
+  return addresses[0] as ResolvedAddress
+}
+
+async function fetchPinnedHttps(
+  url: URL,
+  resolved: ResolvedAddress,
+  timeoutMs: number,
+  headers: Record<string, string>,
+): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const pinnedLookup: LookupFunction = (_hostname, options, callback) => {
+      if (options.all) {
+        callback(null, [resolved])
+      } else {
+        callback(null, resolved.address, resolved.family)
+      }
+    }
+
+    const req = httpsRequest(
+      url,
+      {
+        headers: { ...headers, "accept-encoding": "identity" },
+        lookup: pinnedLookup,
+        agent: false,
+      },
+      (incoming) => {
+        const timer = setTimeout(
+          () => incoming.destroy(new Error("metadata request timed out")),
+          timeoutMs,
+        )
+        incoming.once("end", () => clearTimeout(timer))
+        incoming.once("close", () => clearTimeout(timer))
+
+        const responseHeaders = new Headers()
+        for (const [name, value] of Object.entries(incoming.headers)) {
+          if (Array.isArray(value)) {
+            for (const item of value) responseHeaders.append(name, item)
+          } else if (value !== undefined) {
+            responseHeaders.set(name, value)
+          }
+        }
+        const body = Readable.toWeb(incoming) as ReadableStream<Uint8Array>
+        resolve(
+          new Response(body, {
+            status: incoming.statusCode ?? 500,
+            statusText: incoming.statusMessage,
+            headers: responseHeaders,
+          }),
+        )
+      },
+    )
+    req.setTimeout(timeoutMs, () => req.destroy(new Error("metadata request timed out")))
+    req.once("error", reject)
+    req.end()
+  })
+}
+
+function isPublicIp(address: string): boolean {
+  const normalized = address.toLowerCase().split("%")[0]
+  if (normalized.startsWith("::ffff:")) {
+    const mapped = normalized.slice("::ffff:".length)
+    const hex = mapped.match(/^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
+    if (hex) {
+      const high = Number.parseInt(hex[1], 16)
+      const low = Number.parseInt(hex[2], 16)
+      return isPublicIp(
+        `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`,
+      )
+    }
+    return isPublicIp(mapped)
+  }
+
+  if (isIP(normalized) === 4) {
+    const [a, b, c] = normalized.split(".").map(Number)
+    if (a === 0 || a === 10 || a === 127 || a >= 224) return false
+    if (a === 100 && b >= 64 && b <= 127) return false
+    if (a === 169 && b === 254) return false
+    if (a === 172 && b >= 16 && b <= 31) return false
+    if (a === 192 && (b === 168 || (b === 0 && (c === 0 || c === 2)))) return false
+    if (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) return false
+    if (a === 203 && b === 0 && c === 113) return false
+    return true
+  }
+
+  if (isIP(normalized) === 6) {
+    if (normalized === "::" || normalized === "::1") return false
+    if (/^f[cd]/.test(normalized) || normalized.startsWith("fe")) return false
+    if (
+      normalized.startsWith("ff") ||
+      normalized.startsWith("64:ff9b:") ||
+      normalized.startsWith("2001:db8:")
+    ) {
+      return false
+    }
+    return true
+  }
+
+  return false
+}
+
+async function readJsonWithinLimit(res: Response): Promise<unknown> {
+  const declaredLength = Number(res.headers.get("content-length"))
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_METADATA_BYTES) {
+    throw new Error("metadata response too large")
+  }
+  if (!res.body) throw new Error("metadata response is empty")
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let bytes = 0
+  let text = ""
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    bytes += value.byteLength
+    if (bytes > MAX_METADATA_BYTES) {
+      await reader.cancel()
+      throw new Error("metadata response too large")
+    }
+    text += decoder.decode(value, { stream: true })
+  }
+  text += decoder.decode()
+  return JSON.parse(text) as unknown
 }
 
 /**

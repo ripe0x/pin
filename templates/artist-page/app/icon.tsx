@@ -4,6 +4,7 @@ import { getConfig } from "@/lib/config"
 import { getArtistAvatarUrl } from "@/lib/artist"
 
 export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 export const size = { width: 32, height: 32 }
 export const contentType = "image/png"
 
@@ -30,7 +31,6 @@ export default async function Icon() {
           overflow: "hidden",
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={avatarUrl ?? zorbDataURI(cfg.artistAddress)}
           width={32}

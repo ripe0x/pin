@@ -40,13 +40,30 @@ The mechanics are a standard English auction with a small fixed rule set:
   get their own house, owned by the caller, at an address predictable from the owner
   alone. The factory sets the fee terms on every house it creates
 
+## V1 vs V2
+
+A second, independent pair of contracts,
+[SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2)
+and its
+[V2 factory](/docs/auctions/contracts/auction-house-v2-factory), is also
+deployed on mainnet. V2 adds ERC1155 support alongside ERC721, and changes
+settlement from a single unconditional step to escrow-and-wait: `endAuction`
+pays the seller only after the winner's delivery is verified, and a failed
+delivery leaves the bid and the lot escrowed for a permissionless retry
+instead of reverting or losing funds. The two systems are separate
+deployments; a V1 house keeps working exactly as documented on this page, and
+deploying a V2 house does not affect it. The pages below describe V1 only;
+see the V2 contract references for the V2 behavior.
+
 ## Status
 
-The factory is deployed on Ethereum mainnet at `{{addr:auctionHouseFactory}}`.
-Each house is a per-owner clone with no fixed address, so its examples use
-`<AUCTION_HOUSE_ADDRESS>`. Read examples use `cast` against a free public RPC;
-write examples use viem. See [Conventions](/docs/introduction/conventions) for how
-to read the examples, addresses, and units.
+The V1 factory is deployed on Ethereum mainnet at `{{addr:auctionHouseFactory}}`,
+and the V2 factory at `{{addr:auctionHouseV2Factory}}`. Each house is a
+per-owner clone with no fixed address, so its examples use
+`<AUCTION_HOUSE_ADDRESS>` (V1) or `<AUCTION_HOUSE_V2_ADDRESS>` (V2). Read
+examples use `cast` against a free public RPC; write examples use viem. See
+[Conventions](/docs/introduction/conventions) for how to read the examples,
+addresses, and units.
 
 ## Where to go next
 
@@ -60,4 +77,7 @@ to read the examples, addresses, and units.
   and settlement
 - [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house) and
   [SovereignAuctionHouseFactory](/docs/auctions/contracts/auction-house-factory): the
-  full contract references
+  full V1 contract references
+- [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2) and
+  [SovereignAuctionHouseV2Factory](/docs/auctions/contracts/auction-house-v2-factory): the
+  full V2 contract references, with escrow-and-wait settlement and ERC1155 support

@@ -1,6 +1,7 @@
 import "server-only"
 import { createPublicClient, type Address } from "viem"
 import { mainnet } from "viem/chains"
+import { sovereignAuctionHouseAbi, sovereignAuctionHouseV2Abi } from "@pin/abi"
 import { pgCache } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
 import { sql } from "./db"
@@ -38,31 +39,38 @@ export async function getActiveAuctionState(
     30,
     async () => {
       const client = getClient()
-      const data = await client.readContract({
+      const isV2 = await client.readContract({
         address: house,
         abi: [{
-          type: "function", name: "auctions", stateMutability: "view",
-          inputs: [{ name: "id", type: "uint256" }],
-          outputs: [
-            { name: "auctionId", type: "uint256" },
-            { name: "tokenContract", type: "address" },
-            { name: "tokenId", type: "uint256" },
-            { name: "amount", type: "uint256" },
-            { name: "duration", type: "uint256" },
-            { name: "firstBidTime", type: "uint256" },
-            { name: "reservePrice", type: "uint256" },
-            { name: "tokenOwner", type: "address" },
-            { name: "bidder", type: "address" },
-          ],
+          type: "function",
+          name: "auctionVersion",
+          stateMutability: "view",
+          inputs: [],
+          outputs: [{ name: "", type: "uint8" }],
         }],
+        functionName: "auctionVersion",
+      }).then((version) => version === 2).catch(() => false)
+      const data = await client.readContract({
+        address: house,
+        abi: isV2 ? sovereignAuctionHouseV2Abi : sovereignAuctionHouseAbi,
         functionName: "auctions",
         args: [auctionId],
       })
-      const tuple = data as unknown as readonly bigint[]
+      const tuple = data as unknown as readonly [
+        bigint,
+        Address,
+        bigint,
+        bigint,
+        bigint,
+        Address,
+        bigint,
+        Address,
+        bigint,
+      ]
       const amount = tuple[3]
-      const duration = tuple[4]
-      const firstBidTime = tuple[5]
-      const endTime = firstBidTime > 0n ? firstBidTime + duration : 0n
+      const endTime = isV2
+        ? (tuple as unknown as readonly [bigint, Address, bigint, bigint, bigint, Address, Address, bigint])[7]
+        : tuple[6]
       return { amount, endTime }
     },
   )

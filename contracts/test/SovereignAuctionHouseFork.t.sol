@@ -24,11 +24,17 @@ contract SovereignAuctionHouseForkTest is Test {
     SovereignAuctionHouse internal house;
 
     function setUp() public {
-        // Skip the suite when no fork URL is provided (regular `forge test` runs
-        // shouldn't fail because of missing env vars).
-        try vm.envString("MAINNET_RPC_URL") returns (string memory) {} catch {
+        if (!vm.envOr("RUN_MAINNET_FORK_TESTS", false)) {
+            emit log("skipping auction-house fork test: set RUN_MAINNET_FORK_TESTS=true to run");
             vm.skip(true);
+            return;
         }
+        string memory rpc = vm.envOr("MAINNET_RPC_URL", string(""));
+        if (bytes(rpc).length == 0) {
+            revert("MAINNET_RPC_URL required when RUN_MAINNET_FORK_TESTS=true");
+        }
+        // A configured but unavailable endpoint is a real CI failure.
+        vm.createSelectFork(rpc);
 
         // Resolve the real owner of the test NFT and impersonate them.
         artist = BAYC.ownerOf(TOKEN_ID);

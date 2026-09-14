@@ -3,14 +3,21 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useAccount } from "wagmi"
+import { parseAbi } from "viem"
+import { useAccount, useReadContract } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { useArtistHouse } from "@/components/auction/useArtistHouse"
+import { useResolvedArtistHouse } from "@/components/auction/useResolvedArtistHouse"
 import { AuctionTermsForm } from "@/components/auction/AuctionTermsForm"
 import { TokenPreview } from "@/components/auction/TokenPreview"
 import type { GalleryItem, GalleryPage } from "@/lib/artist-queries"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
+
+const ERC1155_INTERFACE_ID = "0xd9b67a26"
+const detectAbi = parseAbi([
+  "function supportsInterface(bytes4 interfaceId) view returns (bool)",
+  "function balanceOf(address account, uint256 id) view returns (uint256)",
+])
 
 export function AuctionNewClient() {
   // Wagmi hooks need WagmiProvider mounted, so gate all wagmi-dependent UI
@@ -30,7 +37,8 @@ function PageShell({ children }: { children?: React.ReactNode }) {
           Start an auction
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          List any ERC-721 you own through your sovereign auction house.
+          List any ERC-721 or ERC-1155 you own through your sovereign auction
+          house.
         </p>
       </div>
       {children}
@@ -40,7 +48,8 @@ function PageShell({ children }: { children?: React.ReactNode }) {
 
 function Inner() {
   const { address } = useAccount()
-  const { houseAddress, isLoading: houseLoading } = useArtistHouse(address)
+  const { houseAddress, version, isLoading: houseLoading } =
+    useResolvedArtistHouse(address)
 
   if (!address) {
     return (
@@ -99,6 +108,7 @@ function Inner() {
       <ListForm
         connected={address as `0x${string}`}
         houseAddress={houseAddress}
+        houseVersion={version ?? 1}
       />
     </PageShell>
   )
@@ -107,9 +117,11 @@ function Inner() {
 function ListForm({
   connected,
   houseAddress,
+  houseVersion,
 }: {
   connected: `0x${string}`
   houseAddress: `0x${string}`
+  houseVersion: 1 | 2
 }) {
   const router = useRouter()
   const [contractInput, setContractInput] = useState("")
@@ -120,6 +132,25 @@ function ListForm({
   const contractValid = ADDRESS_RE.test(contractInput.trim())
   const tokenIdValid = /^[0-9]+$/.test(tokenIdInput.trim())
   const ready = contractValid && tokenIdValid
+
+  // Standard detection. A contract that answers supportsInterface(0xd9b67a26)
+  // with true is ERC1155; everything else goes down the ERC721 path (where
+  // TokenPreview's ownerOf check still gates listing).
+  const { data: is1155Data, isLoading: standardLoading } = useReadContract({
+    address: contractValid ? (contractInput.trim() as `0x${string}`) : undefined,
+    abi: detectAbi,
+    functionName: "supportsInterface",
+    args: [ERC1155_INTERFACE_ID],
+    query: { enabled: contractValid },
+  })
+  const is1155 = is1155Data === true
+  const { data: balance1155 } = useReadContract({
+    address: contractValid ? (contractInput.trim() as `0x${string}`) : undefined,
+    abi: detectAbi,
+    functionName: "balanceOf",
+    args: tokenIdValid ? [connected, BigInt(tokenIdInput.trim())] : undefined,
+    query: { enabled: ready && is1155 },
+  })
 
   // Stable callback so TokenPreview's effect dep is honest.
   const handleOwnedChange = useCallback((next: boolean) => {
@@ -149,7 +180,7 @@ function ListForm({
           </h2>
           <p className="text-sm text-gray-500 mt-1">
             Paste the NFT contract address and token ID. Works for any ERC-721
-            on Ethereum mainnet.
+            or ERC-1155 on Ethereum mainnet.
           </p>
         </div>
         <div className="grid grid-cols-1 gap-3">
@@ -189,7 +220,7 @@ function ListForm({
           </label>
         </div>
 
-        {ready && (
+        {ready && !standardLoading && !is1155 && (
           <div ref={previewRef} className="space-y-4">
             <TokenPreview
               key={`${contractInput.trim()}:${tokenIdInput.trim()}`}
@@ -202,8 +233,37 @@ function ListForm({
               <div className="rounded border border-gray-200 bg-surface p-5">
                 <AuctionTermsForm
                   houseAddress={houseAddress}
+                  houseVersion={houseVersion}
                   nftContract={contractInput.trim() as `0x${string}`}
                   tokenId={tokenIdInput.trim()}
+                  onSuccess={handleCreated}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {ready && is1155 && (
+          <div ref={previewRef} className="space-y-4">
+            {balance1155 === undefined ? (
+              <p className="text-sm text-gray-400">Checking your balance…</p>
+            ) : balance1155 === 0n ? (
+              <p className="text-sm text-red-500">
+                You hold no editions of this ERC-1155 token.
+              </p>
+            ) : (
+              <div className="rounded border border-gray-200 bg-surface p-5 space-y-4">
+                <p className="text-xs text-gray-500">
+                  ERC-1155 token. You hold {balance1155.toString()}{" "}
+                  {balance1155 === 1n ? "edition" : "editions"}.
+                </p>
+                <AuctionTermsForm
+                  houseAddress={houseAddress}
+                  houseVersion={houseVersion}
+                  nftContract={contractInput.trim() as `0x${string}`}
+                  tokenId={tokenIdInput.trim()}
+                  tokenStandard="erc1155"
+                  maxQuantity={balance1155}
                   onSuccess={handleCreated}
                 />
               </div>

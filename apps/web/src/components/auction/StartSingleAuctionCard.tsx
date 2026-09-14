@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useArtistHouse } from "@/components/auction/useArtistHouse"
+import { useResolvedArtistHouse } from "@/components/auction/useResolvedArtistHouse"
 
 /**
  * "List a single work" card on the studio auctions tab. The link only
@@ -17,7 +17,7 @@ export function StartSingleAuctionCard({
 }: {
   artistAddress: string
 }) {
-  const { houseAddress, isLoading } = useArtistHouse(artistAddress)
+  const { houseAddress, isLoading } = useResolvedArtistHouse(artistAddress)
   const active = !!houseAddress
 
   return (
@@ -28,7 +28,7 @@ export function StartSingleAuctionCard({
         </p>
         <p className="text-xs text-gray-500">
           {active
-            ? "Paste any ERC-721 you own, or pick from your indexed works."
+            ? "Paste any ERC-721 or ERC-1155 you own, or pick from your indexed works."
             : "Available once your auction house is deployed."}
         </p>
       </div>

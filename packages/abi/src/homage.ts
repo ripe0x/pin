@@ -2013,7 +2013,7 @@ export const homageCollectionAbi = [
  *   - the base `HomageRenderer` punk-id surface: `tokenURI(uint256)` (live
  *     market status, square form), `tokenURI(uint256,uint8,bool)` and
  *     `renderSVG(uint256,uint8,bool)` (explicit status + form, `circle` for
- *     the PFP treatment), `pfpSVG(uint256,uint8)`, `colorCount(uint256)`,
+ *     the PFP treatment), `colorCount(uint256)`,
  *     `statusOf(uint256)`, and the owner-settable `collectionName()` /
  *     `collectionDescription()` getters.
  *   - the `IPreviewRenderer`/`IRenderer` adapter surface the PND Collection
@@ -2056,16 +2056,6 @@ export const homageRendererAbi = [
       { name: "id", type: "uint256", internalType: "uint256" },
       { name: "status", type: "uint8", internalType: "uint8" },
       { name: "circle", type: "bool", internalType: "bool" },
-    ],
-    outputs: [{ name: "", type: "string", internalType: "string" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "pfpSVG",
-    inputs: [
-      { name: "id", type: "uint256", internalType: "uint256" },
-      { name: "status", type: "uint8", internalType: "uint8" },
     ],
     outputs: [{ name: "", type: "string", internalType: "string" }],
     stateMutability: "view",

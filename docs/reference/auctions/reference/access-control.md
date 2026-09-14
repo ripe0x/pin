@@ -25,3 +25,36 @@ Every state-changing function in the Auctions contracts and who may call it. Gen
 | Function | Access |
 | --- | --- |
 | [`createAuctionHouse`](/docs/auctions/contracts/auction-house-factory#createauctionhouse) | permissionless (anyone may deploy; the new house is owned by `msg.sender`) |
+
+## SovereignAuctionHouseV2
+
+| Function | Access |
+| --- | --- |
+| [`createAuction`](/docs/auctions/contracts/sovereign-auction-house-v2#createauction) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
+| [`bulkCreateAuctions`](/docs/auctions/contracts/sovereign-auction-house-v2#bulkcreateauctions) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
+| [`create1155Auction`](/docs/auctions/contracts/sovereign-auction-house-v2#create1155auction) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
+| [`setAuctionReservePrice`](/docs/auctions/contracts/sovereign-auction-house-v2#setauctionreserveprice) | seller-only (`msg.sender` must be the auction's `tokenOwner`, else the call reverts `"Not token owner"`) |
+| [`setAuctionDuration`](/docs/auctions/contracts/sovereign-auction-house-v2#setauctionduration) | seller-only (`msg.sender` must be the auction's `tokenOwner`, else the call reverts `"Not token owner"`) |
+| [`setAuctionFundsRecipient`](/docs/auctions/contracts/sovereign-auction-house-v2#setauctionfundsrecipient) | seller-only (`msg.sender` must be the auction's `tokenOwner`, else the call reverts `"Not token owner"`) |
+| [`setAuctionListingExpiry`](/docs/auctions/contracts/sovereign-auction-house-v2#setauctionlistingexpiry) | seller-only (`msg.sender` must be the auction's `tokenOwner`, else the call reverts `"Not token owner"`) |
+| [`createBid`](/docs/auctions/contracts/sovereign-auction-house-v2#createbid) | permissionless (payable; any caller may bid, guarded by expiry, reserve, increment, and timer checks) |
+| [`endAuction`](/docs/auctions/contracts/sovereign-auction-house-v2#endauction) | permissionless (any caller may attempt settlement of an ended auction) |
+| [`deliverERC721`](/docs/auctions/contracts/sovereign-auction-house-v2#delivererc721) | self-only (`msg.sender` must be this contract, else `OnlySelf`) |
+| [`deliverERC1155`](/docs/auctions/contracts/sovereign-auction-house-v2#delivererc1155) | self-only (`msg.sender` must be this contract, else `OnlySelf`) |
+| [`claimLot`](/docs/auctions/contracts/sovereign-auction-house-v2#claimlot) | permissionless to trigger delivery to the winner; winner-only to redirect (`to` nonzero from a non-winner reverts `NotWinner`) |
+| [`unwindStuckLot`](/docs/auctions/contracts/sovereign-auction-house-v2#unwindstucklot) | permissionless, but only once `PENDING_DELIVERY_TIMEOUT` has elapsed since deferral (`UnwindTooEarly` otherwise) |
+| [`returnUnwoundLot`](/docs/auctions/contracts/sovereign-auction-house-v2#returnunwoundlot) | permissionless (any caller may deliver a lot pending return) |
+| [`cancelAuction`](/docs/auctions/contracts/sovereign-auction-house-v2#cancelauction) | seller-only (`msg.sender` must be the auction's `tokenOwner`, else the call reverts `"Not token owner"`) |
+| [`expireAuction`](/docs/auctions/contracts/sovereign-auction-house-v2#expireauction) | permissionless (any caller may expire a listing whose expiry has passed) |
+| [`withdrawRefund`](/docs/auctions/contracts/sovereign-auction-house-v2#withdrawrefund) | permissionless (any caller drains only their own credited balance, paid to themselves) |
+| [`withdrawRefundTo`](/docs/auctions/contracts/sovereign-auction-house-v2#withdrawrefundto) | permissionless (any caller drains only their own credited balance, paid to a chosen address) |
+| [`recoverStuckERC721`](/docs/auctions/contracts/sovereign-auction-house-v2#recoverstuckerc721) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
+| [`recoverStuckERC1155`](/docs/auctions/contracts/sovereign-auction-house-v2#recoverstuckerc1155) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
+| [`initialize`](/docs/auctions/contracts/sovereign-auction-house-v2#initialize) | deployer one-shot (`initializer`, else `InvalidInitialization`) |
+| [`receive`](/docs/auctions/contracts/sovereign-auction-house-v2#receive) | permissionless (payable, but always reverts) |
+
+## SovereignAuctionHouseV2Factory
+
+| Function | Access |
+| --- | --- |
+| [`createAuctionHouse`](/docs/auctions/contracts/auction-house-v2-factory#createauctionhouse) | permissionless (anyone may deploy; the new house is owned by `msg.sender`) |

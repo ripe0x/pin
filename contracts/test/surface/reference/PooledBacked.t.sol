@@ -104,9 +104,10 @@ contract PooledBackedTest is Test {
 
         // Predict the minter address so the collection deploys fully wired
         // in one factory tx (initialMinters), the studio one-click property.
-        // createSurface does not consume this contract's nonce (the clone
-        // is CREATEd by the factory), so the minter is our very next deploy.
-        uint256 nonce = vm.getNonce(address(this));
+        // createPooledSurface is an external call that bumps this contract's
+        // nonce by one under forge >=1.8 (pre-1.8 left the caller nonce
+        // untouched), so the minter lands at nonce + 1, not nonce.
+        uint256 nonce = vm.getNonce(address(this)) + 1;
         address predictedMinter = vm.computeCreateAddress(address(this), nonce);
         address[] memory minters = new address[](1);
         minters[0] = predictedMinter;

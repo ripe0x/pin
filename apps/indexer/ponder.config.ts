@@ -2,6 +2,8 @@ import { createConfig, factory } from "ponder"
 import { http, parseAbiItem } from "viem"
 import { sovereignAuctionHouseAbi } from "./abis/SovereignAuctionHouse"
 import { sovereignAuctionHouseFactoryAbi } from "./abis/SovereignAuctionHouseFactory"
+import { sovereignAuctionHouseV2Abi } from "./abis/SovereignAuctionHouseV2"
+import { sovereignAuctionHouseV2FactoryAbi } from "./abis/SovereignAuctionHouseV2Factory"
 import { foundationNftAbi, nftCollectionFactoryAbi } from "./abis/FoundationNFT"
 import { nftMarketAbi } from "./abis/NFTMarket"
 import { catalogAbi } from "./abis/Catalog"
@@ -110,6 +112,15 @@ export const HOMAGE_WIRED = Boolean(
     process.env.HOMAGE_MINTER_START_BLOCK &&
     process.env.HOMAGE_COLLECTION_ADDRESS &&
     process.env.HOMAGE_COLLECTION_START_BLOCK,
+)
+
+// Sovereign Auction House V2 factory — ENV-GATED like Homage above (see
+// src/SovereignV2.ts): the V2 factory is not deployed yet, so both the
+// config entries and the src/SovereignV2.ts handler registrations gate on
+// the same two env vars. Set both after the mainnet factory deploy.
+export const SOVEREIGN_V2_WIRED = Boolean(
+  process.env.SOVEREIGN_V2_FACTORY_ADDRESS &&
+    process.env.SOVEREIGN_V2_FACTORY_START_BLOCK,
 )
 
 // drpc.org free tier handles multi-address eth_getLogs for the PND
@@ -304,6 +315,32 @@ export default createConfig({
       }),
       startBlock: SURFACE_FACTORY_DEPLOY_BLOCK,
     },
+
+    // ── Sovereign Auction House V2 (ENV-GATED — see SOVEREIGN_V2_WIRED) ──
+    // Same factory + factory() clone pattern as the V1 pair above. The V2
+    // factory's AuctionHouseCreated signature is byte-identical to V1's.
+    ...(SOVEREIGN_V2_WIRED
+      ? {
+          SovereignAuctionHouseV2Factory: {
+            chain: "mainnet",
+            abi: sovereignAuctionHouseV2FactoryAbi,
+            address: process.env.SOVEREIGN_V2_FACTORY_ADDRESS as `0x${string}`,
+            startBlock: Number(process.env.SOVEREIGN_V2_FACTORY_START_BLOCK),
+          },
+          SovereignAuctionHouseV2: {
+            chain: "mainnet",
+            abi: sovereignAuctionHouseV2Abi,
+            address: factory({
+              address: process.env.SOVEREIGN_V2_FACTORY_ADDRESS as `0x${string}`,
+              event: parseAbiItem(
+                "event AuctionHouseCreated(address indexed owner, address indexed house, address feeRecipient, uint16 protocolFeeBps)",
+              ),
+              parameter: "house",
+            }),
+            startBlock: Number(process.env.SOVEREIGN_V2_FACTORY_START_BLOCK),
+          },
+        }
+      : {}),
 
     // ── Homage singleton pair (ENV-GATED — see HOMAGE_WIRED above) ────
     ...(HOMAGE_WIRED

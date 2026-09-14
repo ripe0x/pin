@@ -21,8 +21,8 @@
  * contract reads are made.
  *
  * HAND-SYNCED SNAPSHOT — pending final audit freeze (Phase 0 gate G1).
- * Derived from /Users/dd/CascadeProjects/homage to the punk
- * (branch sovereign-rebuild), contracts/src/HomageMinter.sol (verbatim event
+ * Derived from `ripe0x/permanence`'s sovereign-rebuild branch,
+ * contracts/src/HomageMinter.sol (verbatim event
  * declarations) and web/lib/homage.ts's homageMinterAbi (view/write
  * functions). Re-derive from the audited build before mainnet deploy + Ponder
  * redeploy.

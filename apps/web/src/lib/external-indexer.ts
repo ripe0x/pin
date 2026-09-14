@@ -29,8 +29,11 @@ export async function refreshArtist(address: string): Promise<RefreshReport> {
   }
   try {
     const res = await fetch(
-      `${workerUrl}/jobs/refresh-artist/${address.toLowerCase()}?secret=${encodeURIComponent(secret)}`,
-      { method: "POST" },
+      `${workerUrl}/jobs/refresh-artist/${address.toLowerCase()}`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${secret}` },
+      },
     )
     return { caughtUp: res.ok }
   } catch {
@@ -55,8 +58,11 @@ export async function refreshTokenMetadata(
   }
   try {
     const res = await fetch(
-      `${workerUrl}/jobs/refresh-token/${contract.toLowerCase()}/${tokenId}?secret=${encodeURIComponent(secret)}`,
-      { method: "POST" },
+      `${workerUrl}/jobs/refresh-token/${contract.toLowerCase()}/${tokenId}`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${secret}` },
+      },
     )
     return { ok: res.ok }
   } catch {

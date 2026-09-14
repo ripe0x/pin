@@ -7,8 +7,8 @@
  *      txs are signed server-side by Anvil — no private key in the browser.
  *      Forking mainnet means Multicall3 is present, which the collections
  *      server reads (getCollection et al) rely on.
- *   2. Deploys the Surface system (Attribution + renderers +
- *      impl + factory) to the fork.
+ *   2. Deploys the Surface implementations + factory to the fork, reusing
+ *      the mainnet Catalog already present in forked state.
  *   3. Next dev server on a fixed port (E2E_APP_PORT, default 3100) with the
  *      fork env + NEXT_PUBLIC_DEV_IMPERSONATE set, so the wagmi mock
  *      connector auto-connects as the impersonated account (no modal). This
@@ -17,7 +17,7 @@
  * Process handles + addresses are written to a state file that the fixture
  * and teardown read.
  */
-import { spawn, execSync, type ChildProcess } from "node:child_process"
+import { spawn, execFileSync, type ChildProcess } from "node:child_process"
 import { createServer } from "node:net"
 import { writeFileSync } from "node:fs"
 import { resolve } from "node:path"
@@ -27,7 +27,8 @@ export const STATE_FILE = resolve(__dirname, "../.e2e-state.json")
 export type GlobalState = {
   rpcUrl: string
   factory: `0x${string}`
-  renderAssets?: `0x${string}`
+  renderAssets: `0x${string}`
+  renderer: `0x${string}`
   appPort: number
   impersonate: `0x${string}`
   anvilPid: number
@@ -42,12 +43,11 @@ const CHAIN_ID = 31339
 const FORK_RPC = process.env.E2E_FORK_RPC ?? "https://ethereum-rpc.publicnode.com"
 const IMPERSONATE = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as const // Anvil acct 0
 // Well-known Anvil account-0 private key (derives to IMPERSONATE above).
-// DeploySurfaceSystem.s.sol reads PRIVATE_KEY via vm.envUint and signs
-// locally with vm.startBroadcast(deployerPk) — unlike the retired
-// DeployEditions.s.sol, it does NOT rely on --unlocked eth_sendTransaction
-// impersonation. See scripts/dev-collections.sh for the same pattern.
+// Passed explicitly to Forge's --private-key flag; the script itself uses
+// vm.startBroadcast() and does not read a secret from its environment.
 const DEPLOYER_PK = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 const APP_PORT = Number(process.env.E2E_APP_PORT ?? "3100")
+const COMMAND_TIMEOUT_MS = 120_000
 
 const FOUNDRY_BIN = resolve(process.env.HOME ?? "", ".foundry/bin")
 const ENV_WITH_FOUNDRY = { ...process.env, PATH: `${FOUNDRY_BIN}:${process.env.PATH ?? ""}` }
@@ -89,6 +89,25 @@ async function waitFor(label: string, fn: () => Promise<boolean>, timeoutMs: num
   throw new Error(`e2e: timed out waiting for ${label}`)
 }
 
+function deployedAddress(output: string, label: string): `0x${string}` {
+  const match = output.match(/Deployed to:\s*(0x[0-9a-fA-F]{40})/)
+  if (!match) throw new Error(`e2e: could not parse ${label} address`)
+  return match[1] as `0x${string}`
+}
+
+function killGroup(pid: number | undefined) {
+  if (!pid) return
+  try {
+    process.kill(-pid, "SIGTERM")
+  } catch {
+    try {
+      process.kill(pid, "SIGTERM")
+    } catch {
+      // already gone
+    }
+  }
+}
+
 export default async function globalSetup() {
   // 1) Anvil fork.
   const anvilPort = await freePort(8546)
@@ -107,6 +126,8 @@ export default async function globalSetup() {
     { cwd: REPO_ROOT, env: ENV_WITH_FOUNDRY, detached: true, stdio: "ignore" },
   )
   anvil.unref()
+  let app: ChildProcess | undefined
+  try {
   await waitFor("anvil", async () => {
     await rpc(rpcUrl, "eth_blockNumber")
     return true
@@ -115,9 +136,23 @@ export default async function globalSetup() {
   // 2) Fund the impersonated wallet + deploy the Surface system.
   await rpc(rpcUrl, "anvil_setBalance", [IMPERSONATE, "0x21e19e0c9bab2400000"])
   console.log("[e2e] deploying collection contracts…")
-  const out = execSync(
-    `forge script script/DeploySurfaceSystem.s.sol --rpc-url ${rpcUrl} --broadcast --sender ${IMPERSONATE}`,
-    { cwd: CONTRACTS_DIR, env: { ...ENV_WITH_FOUNDRY, PRIVATE_KEY: DEPLOYER_PK }, encoding: "utf8" },
+  const out = execFileSync(
+    "forge",
+    [
+      "script",
+      "script/DeploySurfaceSystem.s.sol",
+      "--rpc-url",
+      rpcUrl,
+      "--broadcast",
+      "--private-key",
+      DEPLOYER_PK,
+    ],
+    {
+      cwd: CONTRACTS_DIR,
+      env: ENV_WITH_FOUNDRY,
+      encoding: "utf8",
+      timeout: COMMAND_TIMEOUT_MS,
+    },
   )
   const m = out.match(/SurfaceFactory:\s*(0x[0-9a-fA-F]{40})/)
   if (!m) {
@@ -127,18 +162,79 @@ export default async function globalSetup() {
   const factory = m[1] as `0x${string}`
   console.log(`[e2e] factory: ${factory}`)
 
-  // The collection page reads presentation covers from RenderAssets (the
-  // shared display-asset registry); wire its address through so covers resolve
-  // pre-mainnet-deploy, when the static @pin/addresses entry is still the zero
-  // address. Generative works are bring-your-own renderers now, so there is no
-  // shared generative-renderer address to wire.
-  const renderAssetsMatch = out.match(/RenderAssets:\s*(0x[0-9a-fA-F]{40})/)
-  const renderAssets = renderAssetsMatch ? (renderAssetsMatch[1] as `0x${string}`) : undefined
-  if (renderAssets) console.log(`[e2e] renderAssets: ${renderAssets}`)
+  // The live factory has no default renderer, and the guided Edition and
+  // Generative presets are intentionally disabled. Deploy the two ownerless
+  // reference modules so the test can exercise today's supported
+  // Renderer-native path with a real IRenderer.
+  const renderAssets = deployedAddress(
+    execFileSync(
+      "forge",
+      [
+        "create",
+        "src/surface/renderers/RenderAssets.sol:RenderAssets",
+        "--rpc-url",
+        rpcUrl,
+        "--private-key",
+        DEPLOYER_PK,
+        "--broadcast",
+      ],
+      {
+        cwd: CONTRACTS_DIR,
+        env: ENV_WITH_FOUNDRY,
+        encoding: "utf8",
+        timeout: COMMAND_TIMEOUT_MS,
+      },
+    ),
+    "RenderAssets",
+  )
+  const renderer = deployedAddress(
+    execFileSync(
+      "forge",
+      [
+        "create",
+        "src/surface/renderers/DefaultRenderer.sol:DefaultRenderer",
+        "--rpc-url",
+        rpcUrl,
+        "--private-key",
+        DEPLOYER_PK,
+        "--broadcast",
+        "--constructor-args",
+        renderAssets,
+      ],
+      {
+        cwd: CONTRACTS_DIR,
+        env: ENV_WITH_FOUNDRY,
+        encoding: "utf8",
+        timeout: COMMAND_TIMEOUT_MS,
+      },
+    ),
+    "DefaultRenderer",
+  )
+  execFileSync(
+    "cast",
+    [
+      "send",
+      factory,
+      "setPaused(bool)",
+      "false",
+      "--rpc-url",
+      rpcUrl,
+      "--private-key",
+      DEPLOYER_PK,
+    ],
+    {
+      cwd: CONTRACTS_DIR,
+      env: ENV_WITH_FOUNDRY,
+      encoding: "utf8",
+      timeout: COMMAND_TIMEOUT_MS,
+    },
+  )
+  console.log(`[e2e] renderAssets: ${renderAssets}`)
+  console.log(`[e2e] renderer: ${renderer}`)
 
   // 3) Next dev server with the fork env + mock-connector impersonation.
   console.log(`[e2e] starting Next dev server on :${APP_PORT}`)
-  const app: ChildProcess = spawn(
+  app = spawn(
     "pnpm",
     ["exec", "next", "dev", "--turbopack", "--port", String(APP_PORT)],
     {
@@ -149,7 +245,7 @@ export default async function globalSetup() {
         NEXT_PUBLIC_USE_LOCAL_RPC: "1",
         NEXT_PUBLIC_ANVIL_RPC_URL: rpcUrl,
         NEXT_PUBLIC_SURFACE_FACTORY: factory,
-        ...(renderAssets ? { NEXT_PUBLIC_RENDER_ASSETS: renderAssets } : {}),
+        NEXT_PUBLIC_RENDER_ASSETS: renderAssets,
         NEXT_PUBLIC_DEV_IMPERSONATE: IMPERSONATE,
       },
       detached: true,
@@ -170,6 +266,7 @@ export default async function globalSetup() {
     rpcUrl,
     factory,
     renderAssets,
+    renderer,
     appPort: APP_PORT,
     impersonate: IMPERSONATE,
     anvilPid: anvil.pid ?? 0,
@@ -177,4 +274,11 @@ export default async function globalSetup() {
   }
   writeFileSync(STATE_FILE, JSON.stringify(state, null, 2))
   console.log("[e2e] stack ready")
+  } catch (error) {
+    // Playwright does not run globalTeardown when globalSetup fails before the
+    // state file is written, so clean up both detached process groups here.
+    killGroup(app?.pid)
+    killGroup(anvil.pid)
+    throw error
+  }
 }

@@ -3,9 +3,9 @@ node_modules
 .ponder
 out
 dist
-.env
-.env.local
-.env.*.local
+# every .env variant (.env.bak, .env.mainnet, ...) except the tracked templates
+.env*
+!.env.example
 *.tsbuildinfo
 
 # IDE / tooling

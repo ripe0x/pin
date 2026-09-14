@@ -1,9 +1,10 @@
 import "server-only"
-import { ipfsToHttp } from "@pin/shared"
 import { resolveTokenMetadataDirect } from "./onchain-discovery"
 import { getArtistIdentity } from "./artist-queries"
 import { getCollectionCover } from "./collection-onchain"
-import type { ActivityEvent } from "./indexer-queries"
+import { getTokenImagesFromMetadata, type ActivityEvent } from "./indexer-queries"
+import { getMediaDeliveries, type MediaDelivery } from "./media-delivery"
+import { mediaForActivityFeed } from "./activity-media"
 import {
   GROUP_MINTER_SAMPLE,
   groupFeedEvents,
@@ -39,13 +40,13 @@ export {
  * not a hundred token reads.
  *
  * Surface rows (kind "mint" or "collection.deployed" with `collection`
- * set) never resolve tokenURI — a generative tokenURI is a full HTML
- * document. Their name comes from the indexed row (SurfaceCreated carries
- * it) and their thumbnail from the collection cover until the capture
- * pipeline provides per-token frames.
+ * set) never resolve tokenURI at render time — a generative tokenURI is a
+ * full HTML document. Their name comes from the indexed row
+ * (SurfaceCreated carries it). Their thumbnail is the worker-warmed
+ * per-token image from token_metadata when present (an onchain-SVG work's
+ * small `image` field), falling back to the collection cover, then the
+ * actor's avatar/zorb — all Postgres reads, no chain call.
  */
-
-const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
 
 function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`
@@ -74,17 +75,23 @@ function isSurfaceEvent(event: ActivityEvent): boolean {
   )
 }
 
-function mediaFromUri(uri: string | null | undefined): {
-  mediaUrl: string | null
-  isVideo: boolean
-} {
-  const mediaUrl = uri ? ipfsToHttp(uri) : null
-  const isVideo = mediaUrl
-    ? VIDEO_EXTENSIONS.some((ext) =>
-        mediaUrl.split("?")[0].toLowerCase().endsWith(ext),
-      )
-    : false
-  return { mediaUrl, isVideo }
+/** Route inline `data:` media through the compact API route instead of
+ * serializing it into the feed's HTML/RSC payload. */
+function tokenMediaUrl(contract: string, tokenId: string): string {
+  return `/api/media/token/${encodeURIComponent(contract)}/${encodeURIComponent(tokenId)}`
+}
+
+/** Final URI for a feed row, preferring a ready delivery derivative over
+ * the raw candidate (worker-warmed image, collection cover, or tokenURI
+ * metadata). */
+function resolveMediaUri(
+  candidate: string | null,
+  delivery: MediaDelivery | undefined,
+): string | null {
+  if (delivery?.status === "ready") {
+    return delivery.thumbnailUrl ?? delivery.posterUrl ?? candidate
+  }
+  return candidate
 }
 
 type Identity = { displayName: string; avatarUrl: string | null } | null
@@ -145,16 +152,79 @@ export async function enrichFeedPage(
     ),
   )
 
+  // ── Surface per-token images ──
+  // One Postgres read for the Surface mint tokens on the page. A hit
+  // (the worker warmed the token's onchain image) beats the collection
+  // cover; a miss falls through to the cover. Never a chain read here.
+  const surfacePairs = new Map<string, { contract: string; tokenId: string }>()
+  for (const item of items) {
+    const events = item.type === "event" ? [item.event] : item.events
+    for (const e of events) {
+      if (isSurfaceEvent(e) && e.tokenContract && e.tokenId) {
+        surfacePairs.set(surfaceImageKey(e.tokenContract, e.tokenId), {
+          contract: e.tokenContract,
+          tokenId: e.tokenId,
+        })
+      }
+    }
+  }
+  const surfaceImages = await getTokenImagesFromMetadata(
+    Array.from(surfacePairs.values()),
+  ).catch(() => new Map<string, string>())
+
+  // ── Delivery derivatives ──
+  // Non-Surface tokens only: derive-token-media excludes Surface contracts
+  // (their captures belong to RenderAssets). A ready delivery's thumbnail
+  // or poster replaces the raw tokenURI image so inline `data:` media never
+  // reaches this page's HTML.
+  const mediaPairs = new Map<string, { contract: string; tokenId: string }>()
+  for (const item of items) {
+    const events = item.type === "event" ? [item.event] : item.events
+    for (const e of events) {
+      if (!isSurfaceEvent(e) && e.tokenContract && e.tokenId) {
+        mediaPairs.set(surfaceImageKey(e.tokenContract, e.tokenId), {
+          contract: e.tokenContract,
+          tokenId: e.tokenId,
+        })
+      }
+    }
+  }
+  const deliveries = await getMediaDeliveries(
+    Array.from(mediaPairs.values()),
+  ).catch(() => new Map<string, MediaDelivery>())
+
   return Promise.all(
     items.map(async (item) =>
       item.type === "event"
         ? {
             type: "event" as const,
-            event: await enrichEvent(item.event, identities, covers),
+            event: await enrichEvent(item.event, identities, covers, surfaceImages, deliveries),
           }
-        : enrichRun(item.events, identities, covers),
+        : enrichRun(item.events, identities, covers, surfaceImages, deliveries),
     ),
   )
+}
+
+/** Key for the Surface per-token image map: `${contract}:${tokenId}`,
+ * contract lowercased (token ids are decimal strings, case-stable). */
+function surfaceImageKey(contract: string, tokenId: string): string {
+  return `${contract.toLowerCase()}:${tokenId}`
+}
+
+/** The media URI for a Surface event: the warmed per-token image if the
+ * worker has one, else the collection cover (may be ""). */
+function surfaceMediaUri(
+  event: ActivityEvent,
+  covers: Map<string, string>,
+  surfaceImages: Map<string, string>,
+): string | null {
+  if (event.tokenContract && event.tokenId) {
+    const img = surfaceImages.get(
+      surfaceImageKey(event.tokenContract, event.tokenId),
+    )
+    if (img) return img
+  }
+  return covers.get(event.collection!.toLowerCase()) || null
 }
 
 /** First few distinct counterparty addresses of a run, newest-first. */
@@ -176,6 +246,8 @@ async function enrichEvent(
   event: ActivityEvent,
   identities: Map<string, Identity>,
   covers: Map<string, string>,
+  surfaceImages: Map<string, string>,
+  deliveries: Map<string, MediaDelivery>,
 ): Promise<EnrichedActivityEvent> {
   const surface = isSurfaceEvent(event)
 
@@ -199,9 +271,21 @@ async function enrichEvent(
         ? `#${event.tokenId}`
         : null
 
-  const { mediaUrl, isVideo } = surface
-    ? mediaFromUri(covers.get(event.collection!.toLowerCase()) || null)
-    : mediaFromUri(meta?.image)
+  const candidate = surface
+    ? surfaceMediaUri(event, covers, surfaceImages)
+    : (meta?.image ?? meta?.animation_url ?? null)
+  const delivery =
+    !surface && event.tokenContract && event.tokenId
+      ? deliveries.get(surfaceImageKey(event.tokenContract, event.tokenId))
+      : undefined
+  const uri = resolveMediaUri(candidate, delivery)
+  const inlineUrl =
+    uri?.trim().toLowerCase().startsWith("data:") &&
+    event.tokenContract &&
+    event.tokenId
+      ? tokenMediaUrl(event.tokenContract, event.tokenId)
+      : null
+  const { mediaUrl, isVideo } = mediaForActivityFeed(uri, inlineUrl)
 
   const artistId = identities.get(event.artist.toLowerCase())
 
@@ -231,6 +315,8 @@ async function enrichRun(
   events: ActivityEvent[],
   identities: Map<string, Identity>,
   covers: Map<string, string>,
+  surfaceImages: Map<string, string>,
+  deliveries: Map<string, MediaDelivery>,
 ): Promise<EnrichedMintGroup> {
   const newest = events[0]
   const oldest = events[events.length - 1]
@@ -238,7 +324,20 @@ async function enrichRun(
 
   let media: { mediaUrl: string | null; isVideo: boolean }
   if (isSurfaceEvent(newest)) {
-    media = mediaFromUri(covers.get(newest.collection!.toLowerCase()) || null)
+    // Prefer the first run member with a warmed per-token image; else
+    // the collection cover. Newest-first, so this favors recent art.
+    const withImg = events.find(
+      (e) =>
+        e.tokenContract &&
+        e.tokenId &&
+        surfaceImages.get(surfaceImageKey(e.tokenContract, e.tokenId)),
+    )
+    const uri = withImg
+      ? surfaceImages.get(
+          surfaceImageKey(withImg.tokenContract!, withImg.tokenId!),
+        )!
+      : covers.get(newest.collection!.toLowerCase()) || null
+    media = mediaForActivityFeed(uri)
   } else {
     const meta =
       newest.tokenContract && newest.tokenId
@@ -247,7 +346,19 @@ async function enrichRun(
             newest.tokenId,
           ).catch(() => null)
         : null
-    media = mediaFromUri(meta?.image)
+    const mediaContract = newest.tokenContract ?? null
+    const mediaTokenId = newest.tokenId ?? null
+    const candidate = meta?.image ?? meta?.animation_url ?? null
+    const delivery =
+      mediaContract && mediaTokenId
+        ? deliveries.get(surfaceImageKey(mediaContract, mediaTokenId))
+        : undefined
+    const uri = resolveMediaUri(candidate, delivery)
+    const inlineUrl =
+      uri?.trim().toLowerCase().startsWith("data:") && mediaContract && mediaTokenId
+        ? tokenMediaUrl(mediaContract, mediaTokenId)
+        : null
+    media = mediaForActivityFeed(uri, inlineUrl)
   }
 
   const minters: MinterRef[] = sampleMinters(events).map((addr) => {

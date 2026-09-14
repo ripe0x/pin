@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   IPFS_GATEWAYS,
   ARWEAVE_GATEWAYS,
@@ -22,6 +22,13 @@ import {
 export function useMediaFallback(initialUrl: string | null) {
   const [src, setSrc] = useState<string | null>(initialUrl)
   const tried = useRef<Set<string>>(new Set(initialUrl ? [initialUrl] : []))
+
+  // Client-side route changes can reuse the same component instance. Reset
+  // both the visible URL and tried-gateway set when the token media changes.
+  useEffect(() => {
+    setSrc(initialUrl)
+    tried.current = new Set(initialUrl ? [initialUrl] : [])
+  }, [initialUrl])
 
   function rotate(candidates: string[]): boolean {
     for (const candidate of candidates) {

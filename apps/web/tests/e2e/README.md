@@ -36,22 +36,16 @@ with `E2E_FORK_RPC`).
 
 1. **Anvil mainnet fork** on a free port, chain id **31339** (the id
    `wagmi.ts` registers for `forkChain`), with `--auto-impersonate`. Forking
-   mainnet means **Multicall3**, **ScriptyStorageV2**, and **EthFS v2** are
-   all present at their real mainnet addresses, which the collections server
-   reads (`getCollection` et al) and the GENERATIVE preset's dependency
-   picker depend on.
-2. Deploys the Surface system
-   (`forge script DeploySurfaceSystem.s.sol`: Attribution, DefaultRenderer,
-   GenerativeRenderer, the Surface implementation, and the
-   factory that clones it) and parses the **factory** and
-   **GenerativeRenderer** addresses out of the script's console output.
-   Both are exported as `NEXT_PUBLIC_*` env vars to the dev server — as of
-   this writing neither has a real mainnet address in `@pin/addresses`
-   (`SURFACE_FACTORY`/`GENERATIVE_RENDERER` are still the zero
-   address there), so the env override is the *only* way either resolves.
-   Skipping the `NEXT_PUBLIC_GENERATIVE_RENDERER` wiring silently breaks the
-   GENERATIVE preset's deploy step (`DeployStep.tsx` blocks with "No
-   GenerativeRenderer is configured for this network").
+   mainnet means **Multicall3** is present at its real mainnet address, which
+   the collections server reads (`getCollection` et al) depend on.
+2. Deploys the Surface core to the fork
+   (`forge script script/DeploySurfaceSystem.s.sol`): it reuses the forked
+   mainnet Catalog, deploys the sequential, pooled, and fixed-price-minter
+   implementations, and deploys a paused factory. The fixture then deploys
+   ownerless `RenderAssets` + `DefaultRenderer` reference modules, opens the
+   fork-local factory, and exports the addresses to the test app. The factory
+   has no default renderer, matching mainnet; the spec supplies the renderer
+   explicitly through the supported Renderer-native preset.
 3. Starts `next dev` with the fork env + `NEXT_PUBLIC_DEV_IMPERSONATE`, so
    PND's **wagmi mock connector auto-connects** as the impersonated account.
    No wallet, no modal, no private key in the browser — Anvil signs each tx
@@ -61,32 +55,19 @@ with `E2E_FORK_RPC`).
    — the checksummed form redirects to the studio dashboard, it does not
    404, so a spec that forgets to lowercase silently lands somewhere else.
 
-`fixtures/test.ts` exposes the stack state (RPC URL, factory,
-generativeRenderer, impersonated account) to specs. `fixtures/globalTeardown.ts`
+`fixtures/test.ts` exposes the stack state (RPC URL, factory, renderer,
+RenderAssets, impersonated account) to specs. `fixtures/globalTeardown.ts`
 stops both processes.
 
 ## What `collections.spec.ts` verifies
 
-Two serial tests (`test.describe.configure({ mode: "serial" })`), sharing the
-one fork:
-
-1. **EDITION preset, full create → deploy → mint → verify.** Click through
-   the wizard (preset → configure → deploy) for a capped, 0.01 ETH Edition,
-   assert the deploy success screen's "View collection" link, then read the
-   collection page (name, Open status, price) and mint one token through
-   `MintCollectionCTA`. Polls the minted count (via `expect.poll` + a fresh
-   page reload, not a fixed sleep) until the fork's next block has landed,
-   then visits the token page and checks the Mint Mark (`#1 in the
-   collection`, "First mint of the collection") and the onchain seed hex.
-2. **GENERATIVE preset, config → PREVIEW only.** Deliberately does not upload
-   the script (chunked `ScriptyStorageV2` writes) or deploy — test 1 already
-   covers that write path, and upload+deploy chains enough txs to add ~2
-   minutes for no new coverage. Fills in a tiny p5.js sketch that reads
-   `tokenData.hash`, checks the p5 dependency, and asserts the Preview step
-   renders 4 `iframe[title^="Test seed "]` elements whose `srcdoc` is
-   >100KB — proof the parity builder (`lib/collection-render/build.ts`)
-   actually resolved the forked EthFS dependency bytes into the assembled
-   document, not just that no error banner appeared.
+One **Renderer-native full create → deploy → mint → verify** test. It first
+asserts that Edition and Generative remain disabled while the factory has no
+shared renderer, then supplies the fork-local reference renderer and deploys a
+capped, 0.01 ETH collection. It verifies the collection page, mints through
+`MintCollectionCTA`, polls the fresh onchain count, and checks the token's
+derived mint order plus full seed. Pure renderer/parity assembly remains
+covered by the fast unit tests under `src/lib/collection-render/`.
 
 Traces/screenshots land under `tests/e2e/test-results/` on failure (gitignored).
 

@@ -7,7 +7,7 @@ import "server-only"
 import { unstable_cache } from "next/cache"
 import { parseAbiItem, type Address } from "viem"
 import { erc721Abi } from "./abi"
-import { getClient, getLogsChunked } from "./rpc"
+import { getClient, getLogsChunked, withDeadline } from "./rpc"
 import { SOVEREIGN_FACTORY_DEPLOY_BLOCK, ZERO_ADDRESS } from "./config"
 
 // ─── Owner ──────────────────────────────────────────────────────────────────
@@ -88,8 +88,7 @@ const _getTokenProvenanceCached = unstable_cache(
     houseAddress: Address | null,
   ): Promise<ProvenanceEntry[]> => {
     const client = getClient()
-    const latest = await client.getBlockNumber().catch(() => null)
-    if (latest === null) return []
+    const latest = await client.getBlockNumber()
 
     // Transfer scan — `tokenId` is indexed so this returns just the events
     // we care about. We bound the from-block at the SovereignAuctionHouse
@@ -178,5 +177,9 @@ export async function getTokenProvenance(
   tokenId: string,
   houseAddress: Address | null,
 ): Promise<ProvenanceEntry[]> {
-  return _getTokenProvenanceCached(tokenContract, tokenId, houseAddress)
+  return withDeadline(
+    _getTokenProvenanceCached(tokenContract, tokenId, houseAddress),
+    9_000,
+    [],
+  )
 }

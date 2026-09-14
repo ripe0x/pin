@@ -4,8 +4,8 @@
 // packages/addresses/src/index.ts SCRIPTY_STORAGE_V2).
 //
 // Not auto-extracted (no local Solidity source / forge artifact for this
-// contract in this repo) — verified by hand against the real scripty.sol
-// source at /Users/dd/Sites/scripty.sol, commit 83b850dff16ff6c82a02df601db5021a5688cc43:
+// contract in this repo) — verified by hand against intartnft/scripty.sol at
+// commit 83b850dff16ff6c82a02df601db5021a5688cc43:
 //   contracts/scripty/ScriptyStorageV2.sol
 //   contracts/scripty/interfaces/IScriptyStorage.sol
 //   contracts/scripty/interfaces/IScriptyContractStorage.sol

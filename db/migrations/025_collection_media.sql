@@ -35,7 +35,7 @@
 -- token_metadata's "row presence = attempted" convention.
 
 CREATE TABLE IF NOT EXISTS collection_media (
-  collection    TEXT NOT NULL,          -- lowercase SovereignCollection address
+  collection    TEXT NOT NULL,          -- lowercase Surface collection address
   token_id      TEXT NOT NULL,
   kind          TEXT NOT NULL,          -- 'svg' | 'html' (capture path)
   status        TEXT NOT NULL,          -- 'ready' | 'needs_html_capture' | 'failed'

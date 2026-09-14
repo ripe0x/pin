@@ -66,6 +66,12 @@ anyone can call `endAuction`. The house:
 An auction that never received a bid cannot be ended (`AuctionHasNoBids`); the seller
 cancels it instead.
 
+This page describes V1 settlement, which is unconditional: the transfer and the
+payouts happen in the same step and cannot be deferred. [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2)
+uses an escrow-and-wait model instead, where `endAuction` pays the seller only
+after delivery to the winner is verified, and a failed delivery defers the lot
+instead of paying anyone.
+
 ## Cancel
 
 Before the first bid, the seller can `cancelAuction` to pull the escrowed NFT back

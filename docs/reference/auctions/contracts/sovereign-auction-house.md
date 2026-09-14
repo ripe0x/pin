@@ -6,6 +6,11 @@ Implementation `0xC70D8a99b915BeDA52C5A952E29FFE152CbfCB34` · [view on evm.now]
 
 > Deployed per owner as an EIP-1167 clone of the implementation above through the [factory](/docs/auctions/contracts/auction-house-factory). A house has no canonical address of its own; substitute your house address for `<AUCTION_HOUSE_ADDRESS>` in the examples below.
 
+Superseded by
+[SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2).
+Existing V1 houses keep working and stay indexed; new houses deploy from the
+V2 factory.
+
 An onchain English auction house for ERC721 tokens, denominated in ETH. One
 house is deployed per owner as an immutable EIP-1167 clone by
 [the factory](/docs/auctions/contracts/auction-house-factory): the seller (an

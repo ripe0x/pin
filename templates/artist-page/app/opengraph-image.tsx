@@ -8,6 +8,7 @@ import {
 } from "@/lib/artist"
 
 export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
 export const alt = "Auctions"
 export const size = { width: 1200, height: 630 }
@@ -43,7 +44,6 @@ export default async function Image() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
           {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={avatarUrl}
               width={72}
@@ -52,7 +52,6 @@ export default async function Image() {
               alt=""
             />
           ) : (
-            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={zorbDataURI(cfg.artistAddress)}
               width={72}
@@ -115,4 +114,3 @@ export default async function Image() {
     { ...size },
   )
 }
-

@@ -17,13 +17,12 @@
 
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
+import { chromeForPath } from "./curated-chrome.ts"
 
 const HOMAGE = "0x1111111111111111111111111111111111111111"
 const HOMAGE_COLLECTION = "0x2222222222222222222222222222222222222222"
 process.env.NEXT_PUBLIC_HOMAGE_MINTER_ADDRESS = HOMAGE
 process.env.NEXT_PUBLIC_HOMAGE_COLLECTION_ADDRESS = HOMAGE_COLLECTION
-
-const { chromeForPath } = await import("./curated-chrome.ts")
 
 const DEFAULT = chromeForPath("/")
 

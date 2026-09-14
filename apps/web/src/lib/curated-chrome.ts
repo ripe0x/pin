@@ -36,20 +36,22 @@ export type SiteChrome = {
 const DEFAULT_CHROME: SiteChrome = { navbar: "solid", footer: true, padTop: true }
 const IMMERSIVE_CHROME: SiteChrome = { navbar: "overlay-dark", footer: false, padTop: false }
 
-// Literal env reads (see module note). Lowercased once for path comparison.
-const HOMAGE_ADDRESS = (process.env.NEXT_PUBLIC_HOMAGE_MINTER_ADDRESS ?? "").toLowerCase()
-// The pooled collection address — the homage /collections/<addr> page renders in
-// the terminal skin and owns its chrome the same way /mint/homage does.
-const HOMAGE_COLLECTION = (process.env.NEXT_PUBLIC_HOMAGE_COLLECTION_ADDRESS ?? "").toLowerCase()
-
 /**
  * Chrome for a pathname. Only the curated COLLECTION page is immersive —
  * token pages (/mint/homage/123) keep the standard record chrome.
  */
 export function chromeForPath(pathname: string): SiteChrome {
+  // Keep these as literal reads so Next can inline them into the client bundle.
+  // Reading on invocation also makes this pure helper straightforward to test.
+  const homageAddress = (
+    process.env.NEXT_PUBLIC_HOMAGE_MINTER_ADDRESS ?? ""
+  ).toLowerCase()
+  const homageCollection = (
+    process.env.NEXT_PUBLIC_HOMAGE_COLLECTION_ADDRESS ?? ""
+  ).toLowerCase()
   const m = pathname.match(/^\/mint\/([^/]+)\/?$/)
   const seg = m?.[1]?.toLowerCase()
-  if (seg && (seg === "homage" || (HOMAGE_ADDRESS !== "" && seg === HOMAGE_ADDRESS))) {
+  if (seg && (seg === "homage" || (homageAddress !== "" && seg === homageAddress))) {
     return IMMERSIVE_CHROME
   }
   // The homage collection's own page and its one-segment sub-pages (redeem and
@@ -59,7 +61,7 @@ export function chromeForPath(pathname: string): SiteChrome {
   // slug is the pre-deploy landing (/collections/homage), immersive in the same
   // way before the pooled address exists.
   const c = pathname.match(/^\/collections\/([^/]+)(?:\/[^/]+)?\/?$/)?.[1]?.toLowerCase()
-  if (c && (c === "homage" || (HOMAGE_COLLECTION !== "" && c === HOMAGE_COLLECTION))) {
+  if (c && (c === "homage" || (homageCollection !== "" && c === homageCollection))) {
     return IMMERSIVE_CHROME
   }
   return DEFAULT_CHROME

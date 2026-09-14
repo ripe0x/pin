@@ -2,6 +2,7 @@ import "server-only"
 import { unstable_cache } from "next/cache"
 import type { Address } from "viem"
 import { sql } from "./db"
+import { INDEXER_SCHEMA } from "./indexer-schema"
 import { getArtistIdentity, getEnsUrl } from "./artist-queries"
 import {
   IndexerUnavailable,
@@ -187,10 +188,6 @@ async function tryIndexer<T>(
     return { ok: false }
   }
 }
-
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g, "",
-)
 
 const TOP_CENTRALIZED_HOSTS = 5
 

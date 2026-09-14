@@ -5,7 +5,7 @@ import { CollectionTokenGrid } from "@/components/CollectionTokenGrid"
 import { Footer } from "@/components/Footer"
 import {
   getAllAuctions,
-  getArtistHouse,
+  getArtistHouses,
   type AuctionSummary,
 } from "@/lib/auctions"
 import { getConfig } from "@/lib/config"
@@ -23,9 +23,10 @@ export const dynamic = "force-dynamic"
 const BUCKET_RANK: Record<ReturnType<typeof bucketFor>, number> = {
   active: 0,
   ending: 1,
-  listed: 2,
-  settled: 3,
-  cancelled: 4,
+  attention: 2,
+  listed: 3,
+  settled: 4,
+  cancelled: 5,
 }
 
 /**
@@ -71,10 +72,11 @@ function compareAuctions(a: AuctionSummary, b: AuctionSummary): number {
 
 export default async function HomePage() {
   const { collectionAddress, artistAddress } = getConfig()
-  const [auctions, house] = await Promise.all([
+  const [auctions, houses] = await Promise.all([
     getAllAuctions(),
-    getArtistHouse(),
+    getArtistHouses(),
   ])
+  const hasHouse = houses.all.length > 0
 
   const unique = dedupeByToken(auctions)
   const sorted = [...unique].sort(compareAuctions)
@@ -97,7 +99,7 @@ export default async function HomePage() {
         />
       ) : null}
 
-      {!house ? (
+      {!hasHouse ? (
         <NoHouseState />
       ) : sorted.length === 0 ? (
         <EmptyState />

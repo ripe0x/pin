@@ -4,10 +4,7 @@ import type {
   PlatformAdapter, ArtistTokenRef, CollectorTokenRef, AdapterLastSale,
 } from "./types"
 import { sql } from "../db"
-
-const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g, "",
-)
+import { INDEXER_SCHEMA as schema } from "../indexer-schema"
 
 export const mintAdapter: PlatformAdapter = {
   id: "mint",

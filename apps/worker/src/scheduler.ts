@@ -13,6 +13,7 @@
  * task's own interval.
  */
 import { sql } from "./db.ts"
+import { INDEXER_SCHEMA } from "./indexer-schema.ts"
 import { seedKnownArtists } from "./tasks/seed-known-artists.ts"
 import { warmContractIdentity } from "./tasks/warm-contract-identity.ts"
 import { warmEns } from "./tasks/warm-ens.ts"
@@ -32,6 +33,7 @@ import { scanTlActiveAuctions } from "./tasks/scan-tl-active-auctions.ts"
 import { scanPndAuctionTokens } from "./tasks/scan-pnd-auction-tokens.ts"
 import { probeCidAvailability } from "./tasks/probe-cid-availability.ts"
 import { captureCollectionMedia } from "./tasks/capture-collection-media.ts"
+import { deriveTokenMedia } from "./tasks/derive-token-media.ts"
 
 type TaskName =
   | "seed-known-artists"
@@ -51,6 +53,7 @@ type TaskName =
   | "probe-cid-availability"
   | "ponder-drift-check"
   | "capture-collection-media"
+  | "derive-token-media"
 
 export type TaskResult = {
   rpcCalls?: number
@@ -87,14 +90,13 @@ const tasks: Task[] = [
   // CID is probed it stays probed for RETRY_AFTER_DAYS).
   { name: "probe-cid-availability",    intervalMs: 10 * MIN, fn: probeCidAvailability },
   { name: "ponder-drift-check",        intervalMs: 60 * MIN, fn: ponderDriftCheck },
-  // PND Surface System media capture (SVG rasterize only, v1). Inert
-  // today: SOVEREIGN_COLLECTION_FACTORY is still the zero-address
-  // sentinel (no mainnet deploy) AND the concurrent Ponder discovery
-  // tables (collections/collection_tokens) don't exist yet — both gates
-  // checked inside the task, same shape as the other dependsOnPonder
-  // tasks. Generous interval: capture is not time-sensitive, and each
+  // PND Surface System media capture (SVG rasterize only, v1). The task
+  // reads Ponder's collections/collection_tokens tables and keeps its own
+  // schema/deploy gates; scheduler gating avoids starting it before Ponder
+  // is ready. Generous interval: capture is not time-sensitive, and each
   // run is bounded by CAPTURE_BATCH_SIZE.
-  { name: "capture-collection-media", intervalMs: 10 * MIN, fn: captureCollectionMedia },
+  { name: "capture-collection-media", intervalMs: 10 * MIN, fn: captureCollectionMedia, dependsOnPonder: true },
+  { name: "derive-token-media", intervalMs: 5 * MIN, fn: deriveTokenMedia, dependsOnPonder: true },
 ]
 
 const runState = new Map<TaskName, { running: boolean; lastRun: Date | null }>()
@@ -138,12 +140,9 @@ async function isPonderReady(): Promise<boolean> {
   // Ponder writes is_ready=1 into _ponder_meta once backfill across all
   // chains is complete and it has flipped to head-following mode.
   // Querying this directly avoids a separate indexer-side sentinel.
-  const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-    /[^a-zA-Z0-9_]/g, "",
-  )
   try {
     const rows = (await sql.unsafe(
-      `SELECT value FROM ${schema}._ponder_meta WHERE key = 'app' LIMIT 1`,
+      `SELECT value FROM ${INDEXER_SCHEMA}._ponder_meta WHERE key = 'app' LIMIT 1`,
     )) as Array<{ value: { is_ready?: number } }>
     return rows[0]?.value?.is_ready === 1
   } catch {

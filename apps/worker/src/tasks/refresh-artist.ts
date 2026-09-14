@@ -11,6 +11,7 @@ import { client } from "../rpc.ts"
 import { scanArtistTokensViaTransferFromZero } from "../scanners/transfer-from-zero.ts"
 import { scanErc1155MintsFromZero } from "../scanners/erc1155-mints.ts"
 import { scanManifoldArtistTokens, discoverMintsToArtist } from "../scanners/manifold.ts"
+import { INDEXER_SCHEMA } from "../indexer-schema.ts"
 import type { Address } from "viem"
 
 export async function refreshArtist(address: string): Promise<void> {
@@ -24,10 +25,6 @@ export async function refreshArtist(address: string): Promise<void> {
     console.log(`[refresh-artist] ${lower} not in known_artists; skipping`)
     return
   }
-
-  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-    /[^a-zA-Z0-9_]/g, "",
-  )
 
   // Each platform in parallel, isolated failure.
   await Promise.allSettled([

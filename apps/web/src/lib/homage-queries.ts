@@ -1,5 +1,6 @@
 import "server-only"
 import { sql } from "./db"
+import { INDEXER_SCHEMA } from "./indexer-schema"
 
 /**
  * Read-side queries against the Homage tables Ponder writes (`homage_tokens`,
@@ -25,7 +26,7 @@ const QUERY_TIMEOUT_MS = 500
 
 /** Sanitized indexer schema name for safe interpolation into unsafe() SQL. */
 function indexerSchema(): string {
-  return (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(/[^a-zA-Z0-9_]/g, "")
+  return INDEXER_SCHEMA
 }
 
 /**

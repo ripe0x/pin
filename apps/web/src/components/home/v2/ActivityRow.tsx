@@ -3,6 +3,7 @@ import type { ReactNode } from "react"
 import { AddressZorb } from "@/components/AddressZorb"
 import { OptimizedImage } from "@/components/OptimizedImage"
 import type { EnrichedActivityEvent } from "@/lib/v2-activity-types"
+import { evmNowAddressUrl, evmNowTxUrl } from "@/lib/collection"
 import { formatEth, formatTimeAgo, truncateAddress } from "./format"
 
 type Props = {
@@ -220,8 +221,6 @@ function renderVerb(event: EnrichedActivityEvent): string {
         : "deployed a collection"
     case "auction.opened":
       return "listed"
-    case "auction.cancelled":
-      return "cancelled listing of"
     case "auction.firstBid":
     case "auction.bid":
       // Bid events use the BidHeadline path in the row template — this
@@ -362,10 +361,7 @@ function MintHeadline({
 function Subline({ event }: { event: EnrichedActivityEvent }) {
   const parts: ReactNode[] = []
 
-  if (
-    (event.kind === "auction.opened" || event.kind === "auction.cancelled") &&
-    event.reserveWei !== null
-  ) {
+  if (event.kind === "auction.opened" && event.reserveWei !== null) {
     parts.push(<>{formatEth(event.reserveWei)} reserve</>)
   }
 
@@ -402,7 +398,7 @@ function Subline({ event }: { event: EnrichedActivityEvent }) {
   }
 
   if (event.kind === "house.deployed" && event.house) {
-    parts.push(<EtherscanAddress addr={event.house} />)
+    parts.push(<ExplorerAddress addr={event.house} />)
   }
 
   if (event.kind === "collection.deployed" && event.collection) {
@@ -418,7 +414,7 @@ function Subline({ event }: { event: EnrichedActivityEvent }) {
         </Link>,
       )
     }
-    parts.push(<EtherscanAddress addr={event.collection} />)
+    parts.push(<ExplorerAddress addr={event.collection} />)
   }
 
   if (event.txHash) {
@@ -454,13 +450,13 @@ function AddressLink({ addr }: { addr: string }) {
   )
 }
 
-/** Truncated address linked to Etherscan. Used for contract addresses
+/** Truncated address linked to the explorer. Used for contract addresses
  * (auction houses, collections) where the on-chain page is the useful
  * destination. */
-function EtherscanAddress({ addr }: { addr: string }) {
+function ExplorerAddress({ addr }: { addr: string }) {
   return (
     <a
-      href={`https://etherscan.io/address/${addr}`}
+      href={evmNowAddressUrl(addr)}
       target="_blank"
       rel="noopener noreferrer"
       className="hover:text-fg transition-colors"
@@ -473,7 +469,7 @@ function EtherscanAddress({ addr }: { addr: string }) {
 function TxLink({ hash }: { hash: string }) {
   return (
     <a
-      href={`https://etherscan.io/tx/${hash}`}
+      href={evmNowTxUrl(hash)}
       target="_blank"
       rel="noopener noreferrer"
       className="hover:text-fg transition-colors"

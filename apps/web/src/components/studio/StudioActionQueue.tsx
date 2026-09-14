@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useIsStudioOwner } from "@/components/studio/useIsStudioOwner"
-import { useArtistHouse } from "@/components/auction/useArtistHouse"
+import { useResolvedArtistHouse } from "@/components/auction/useResolvedArtistHouse"
 import { fetchSellerCancellableListings } from "@/lib/seller-listings"
 import { studioToolHref } from "@/lib/studio-tools"
 
@@ -47,7 +47,7 @@ export function StudioActionQueue({ address }: { address: string }) {
   // Sovereign house — single houseOf read, owner-gated; wagmi dedupes
   // it with any other useArtistHouse caller in the tree.
   const { factoryAddress, houseAddress, isLoading: houseLoading } =
-    useArtistHouse(isOwner ? address : undefined)
+    useResolvedArtistHouse(isOwner ? address : undefined)
 
   // Artist site — ENS `url` text record via the existing API route,
   // same read the old SitePanel fired on every artist-page visit.

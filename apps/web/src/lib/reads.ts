@@ -1,5 +1,6 @@
 import "server-only"
 import { sql } from "./db"
+import { INDEXER_SCHEMA } from "./indexer-schema"
 
 /**
  * The entire data-fetching surface for the v2 web app.
@@ -14,10 +15,6 @@ import { sql } from "./db"
  * older than X minutes, active SR/TL auctions per artist), see
  * `lib/onchain.ts` — six functions, each pgCache-wrapped.
  */
-
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g, "",
-)
 
 // Helper to inline a schema-qualified table name into raw SQL.
 const t = (name: string) => `${INDEXER_SCHEMA}.${name}`

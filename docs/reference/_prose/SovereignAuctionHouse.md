@@ -4,6 +4,11 @@ title: SovereignAuctionHouse
 
 # summary
 
+Superseded by
+[SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2).
+Existing V1 houses keep working and stay indexed; new houses deploy from the
+V2 factory.
+
 An onchain English auction house for ERC721 tokens, denominated in ETH. One
 house is deployed per owner as an immutable EIP-1167 clone by
 [the factory](/docs/auctions/contracts/auction-house-factory): the seller (an

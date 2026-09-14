@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { MigratePanel } from "@/components/migrate/MigratePanel"
+import { HouseUpgradePanel } from "@/components/migrate/HouseUpgradePanel"
 
 /**
  * Guided cancel-on-marketplace, relist-on-your-house flow (moved from
@@ -26,5 +27,10 @@ export default async function StudioMigratePage({
   const address = decodeURIComponent(raw).toLowerCase()
   if (!ADDRESS_RE.test(address)) notFound()
 
-  return <MigratePanel artistAddress={address} />
+  return (
+    <div className="space-y-6">
+      <HouseUpgradePanel artistAddress={address} />
+      <MigratePanel artistAddress={address} />
+    </div>
+  )
 }

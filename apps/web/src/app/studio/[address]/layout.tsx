@@ -2,6 +2,9 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { getArtistIdentity, resolveEnsAddress } from "@/lib/artist-queries"
+import { getIndexerFreshness } from "@/lib/indexer-health"
+import { isFreshnessStale } from "@/lib/indexer-freshness-status"
+import { formatRelativeTime } from "@/lib/format-eth"
 import { AddressZorb } from "@/components/AddressZorb"
 import { CopyAddressButton } from "@/components/CopyAddressButton"
 import { StudioNav } from "@/components/studio/StudioNav"
@@ -60,9 +63,17 @@ export default async function StudioLayout({
   }
 
   const identity = await getArtistIdentity(address)
+  const freshness = await getIndexerFreshness()
+  const isStale = freshness ? isFreshnessStale(freshness.ageSeconds) : false
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-12 space-y-8">
+      {isStale && freshness && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Indexed data is stale (last update{" "}
+          {formatRelativeTime(freshness.latestBlockTime)}).
+        </div>
+      )}
       <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4 min-w-0">
           {identity.avatarUrl ? (

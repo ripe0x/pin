@@ -1,6 +1,7 @@
 import "server-only"
 import type { Address } from "viem"
 import { sql } from "../db"
+import { INDEXER_SCHEMA } from "../indexer-schema"
 import type { ImportSource, RawWork, SkippedWork } from "./types.ts"
 
 /**
@@ -25,11 +26,6 @@ import type { ImportSource, RawWork, SkippedWork } from "./types.ts"
  * tokens; sending them through normalize keeps the source-of-truth
  * single and gives the artist an honest "already in catalog" count.
  */
-
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g,
-  "",
-)
 
 type Row = {
   contract: string
