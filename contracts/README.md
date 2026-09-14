@@ -123,6 +123,58 @@ After deploy, paste the factory address into
 [`packages/addresses/src/index.ts`](../packages/addresses/src/index.ts)
 (`SOVEREIGN_AUCTION_HOUSE_FACTORY`).
 
+## Surface v2 deploy
+
+One deploy path for the Surface v2 core (SurfaceV2 implementation,
+FixedPriceMinterV2 implementation, RenderAssets, DefaultRenderer,
+SurfaceFactoryV2) across every environment: `script/DeploySurfaceV2.s.sol` is
+the only deploy script, `script/deploy.sh <env>` is the only wrapper, and
+`script/env/<env>.env` holds the per-environment values (no secrets). Anvil,
+the fork test, sepolia and mainnet all run the same script and the same
+guards; only the env file's values differ.
+
+Simulate first, then broadcast:
+
+```bash
+DRY_RUN=1 script/deploy.sh sepolia
+script/deploy.sh sepolia
+```
+
+`DRY_RUN=1` runs every guard and the full script simulation with no wallet,
+no `--broadcast`, and no record written. A dropped connection mid-broadcast
+resumes with:
+
+```bash
+script/deploy.sh sepolia --resume
+```
+
+Keystore setup for `WALLET_MODE=keystore` (sepolia and mainnet):
+
+```bash
+cast wallet import ripe0x --interactive
+export DEPLOYER_ACCOUNT=ripe0x
+```
+
+`DEPLOYER_PASSWORD_FILE` (chmod 600) replaces the interactive password
+prompt when set. Mainnet's env file ships `DEPLOYER` and `CATALOG` empty on
+purpose: the wrapper refuses to run, `DRY_RUN` included, until both are
+filled in.
+
+The mainnet deployer is EIP-7702 delegated and accepts only one in-flight
+transaction; `deploy.sh` always broadcasts with `--slow` regardless of
+target, so a multi-transaction deploy never lands a gapped nonce.
+
+`RENDER_ASSETS` and `DEFAULT_RENDERER` are reused when the env file names an
+address with deployed code, otherwise the script deploys fresh instances.
+`CATALOG` must already exist on sepolia and mainnet; a local chain deploys
+one when left empty.
+
+After a real broadcast, `deploy.sh` patches `factoryDeployBlock` and
+`txHashes` into `deployments/<chainId>.json` from the broadcast receipts and
+prints an on-chain readback of the factory's wiring. `deployments/31337.json`
+and other local-chain test records are gitignored; a sepolia or mainnet
+record is a real deployment and stays tracked.
+
 ## Regenerating ABIs for the web app
 
 After any contract change:
