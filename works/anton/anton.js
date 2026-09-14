@@ -63,6 +63,26 @@
   var params = td.params || {};
   var backgroundOnly = params.bgOnly === true || params.bgOnly === 1 || params.bgOnly === "1";
 
+  // ── host notification ───────────────────────────────────────────────────────
+  // Posts a message to window.parent at the frame a shape morph or a mass
+  // colour shift begins, and once on the first live frame. Message shape:
+  // { source: "anton", kind, tokenId, at, ...detail }. kind is "ready"
+  // (detail: openingTime, firstEventLead, warpPeriod), "shape" (detail: from,
+  // to, warp mode indices) or "colour" (detail: mass, from, to, each an
+  // [r, g, b] triple rounded to 3 decimals). Runs only in an embedded frame
+  // (window.parent !== window) and only outside the capture context. Rendering
+  // does not read anything back from this channel or depend on it.
+  function notifyHost(kind, detail) {
+    // Capture context has no host to notify; the canonical still never posts.
+    if (isCapture) return;
+    if (typeof window === "undefined" || !window.parent || window.parent === window) return;
+    try {
+      var msg = { source: "anton", kind: kind, tokenId: String(td.tokenId || ""), at: Date.now() };
+      for (var key in detail) msg[key] = detail[key];
+      window.parent.postMessage(msg, "*");
+    } catch (e) {}
+  }
+
   // ── seeds ─────────────────────────────────────────────────────────────────
   // Everything about a token comes from its seed. Palette + tone are derived
   // from the seed the SAME way the renderer derives them for onchain traits:
@@ -494,17 +514,19 @@
     return seq;
   })();
 
-  // Returns { a, b, mix } at eventTime for a token that loaded at
+  // Returns { a, b, mix, k } at eventTime for a token that loaded at
   // loadEventTime. Before the token's first grid tick this is the home mode
   // (warpSeq[0], mix 0). At and after each tick it blends from the previous
-  // mode to the next over WARP_DURATION, then holds the new mode.
+  // mode to the next over WARP_DURATION, then holds the new mode. k is the
+  // grid tick index from tickState, exposed so the host-notification code can
+  // detect a new morph without a second tickState call.
   function warpAt(loadEventTime, eventTime) {
     var ts = tickState(WARP_INTERVAL, WARP_PERIOD, loadEventTime, eventTime);
-    if (ts.k === 0) return { a: warpSeq[0], b: warpSeq[0], mix: 0 };
+    if (ts.k === 0) return { a: warpSeq[0], b: warpSeq[0], mix: 0, k: ts.k };
     var from = warpSeq[(ts.k - 1) % WARP_SEQ_LEN];
     var to = warpSeq[ts.k % WARP_SEQ_LEN];
-    if (ts.local < WARP_DURATION) return { a: from, b: to, mix: smootherstep01(0, 1, ts.local / WARP_DURATION) };
-    return { a: to, b: to, mix: 0 };
+    if (ts.local < WARP_DURATION) return { a: from, b: to, mix: smootherstep01(0, 1, ts.local / WARP_DURATION), k: ts.k };
+    return { a: to, b: to, mix: 0, k: ts.k };
   }
 
   // ── background colour drift ─────────────────────────────────────────────────
@@ -515,17 +537,41 @@
   function seedPaletteColor(index, j) {
     return activePalette[xmur3(seedHash + "|bg|" + index + "|" + j)() % activePalette.length];
   }
+  // Returns { col, j, from, to }: col is the render colour, j is the grid tick
+  // index from tickState, from/to are the two palette colours j is blending
+  // between (both the base colour when j is 0). j and to feed the
+  // host-notification code so it can detect a new retarget without a second
+  // tickState call. The returned object is bgScratch[index], mutated in place
+  // each call; col is a scratch array, from/to stay references into the
+  // palette so no colour data is copied per frame.
+  var bgScratch = [];
+  for (var bgScratchI = 0; bgScratchI < STATIC_COLS_COUNT; bgScratchI++) {
+    bgScratch.push({ col: [0, 0, 0], j: 0, from: null, to: null });
+  }
   function bgColorAt(index, loadEventTime, eventTime) {
     var offset = BG_SHIFT_DELAY + index * BG_SHIFT_STEP;
     var period = 3 * BG_SHIFT_STEP;
     var ts = tickState(offset, period, loadEventTime, eventTime);
     var base = seedPaletteColor(index, 0);
-    if (ts.k === 0) return base;
+    var out = bgScratch[index];
+    out.j = ts.k;
+    if (ts.k === 0) {
+      out.col[0] = base[0]; out.col[1] = base[1]; out.col[2] = base[2];
+      out.from = base; out.to = base;
+      return out;
+    }
     var from = ts.k === 1 ? base : seedPaletteColor(index, ts.k - 1);
     var to = seedPaletteColor(index, ts.k);
-    if (ts.local >= BG_SHIFT_DUR) return to;
+    out.from = from; out.to = to;
+    if (ts.local >= BG_SHIFT_DUR) {
+      out.col[0] = to[0]; out.col[1] = to[1]; out.col[2] = to[2];
+      return out;
+    }
     var m = smootherstep01(0, 1, ts.local / BG_SHIFT_DUR);
-    return [from[0] * (1 - m) + to[0] * m, from[1] * (1 - m) + to[1] * m, from[2] * (1 - m) + to[2] * m];
+    out.col[0] = from[0] * (1 - m) + to[0] * m;
+    out.col[1] = from[1] * (1 - m) + to[1] * m;
+    out.col[2] = from[2] * (1 - m) + to[2] * m;
+    return out;
   }
 
   // ── draw ────────────────────────────────────────────────────────────────────
@@ -553,11 +599,17 @@
       P[b2 + 1] = layer.active ? layer.phase : 0;
     }
   }
+  // Fills arr with the three masses' render colours and returns the matching
+  // bgColorAt() result objects (j, from, to) for the host-notification code.
+  // The returned array is bgResultsScratch, reused and overwritten each call.
+  var bgResultsScratch = new Array(STATIC_COLS_COUNT);
   function fillBgCols(loadEventTime, eventTime, arr) {
     for (var i = 0; i < STATIC_COLS_COUNT; i++) {
-      var col = bgColorAt(i, loadEventTime, eventTime);
-      arr[i * 3] = col[0]; arr[i * 3 + 1] = col[1]; arr[i * 3 + 2] = col[2];
+      var res = bgColorAt(i, loadEventTime, eventTime);
+      arr[i * 3] = res.col[0]; arr[i * 3 + 1] = res.col[1]; arr[i * 3 + 2] = res.col[2];
+      bgResultsScratch[i] = res;
     }
+    return bgResultsScratch;
   }
 
   // ── opening instant ──────────────────────────────────────────────────────────
@@ -650,13 +702,44 @@
   var loadStart = Date.now();
   var loadEventTime = loadStart / 1000 + ownerOffset;
 
+  // Live-loop event detection: fires "ready" once, then "shape" when the warp
+  // tick index advances and "colour" when a mass's tick index advances. State
+  // is set from the first live frame's own indices so that frame reports only
+  // "ready", never a shape or colour transition into the home state.
+  var hostReadySent = false;
+  var lastWarpTick = 0;
+  var lastBgTick = [0, 0, 0];
+  function round3(x) { return Math.round(x * 1000) / 1000; }
+  function rgb3(c) { return [round3(c[0]), round3(c[1]), round3(c[2])]; }
+  function reportLiveEvents(warp, bgResults) {
+    if (!hostReadySent) {
+      hostReadySent = true;
+      notifyHost("ready", { openingTime: openingTime, firstEventLead: FIRST_EVENT_LEAD, warpPeriod: WARP_PERIOD });
+      lastWarpTick = warp.k;
+      for (var i = 0; i < bgResults.length; i++) lastBgTick[i] = bgResults[i].j;
+      return;
+    }
+    if (warp.k > lastWarpTick) {
+      notifyHost("shape", { from: warpSeq[lastWarpTick % WARP_SEQ_LEN], to: warpSeq[warp.k % WARP_SEQ_LEN] });
+      lastWarpTick = warp.k;
+    }
+    for (var m = 0; m < bgResults.length; m++) {
+      if (bgResults[m].j > lastBgTick[m]) {
+        notifyHost("colour", { mass: m, from: rgb3(seedPaletteColor(m, lastBgTick[m])), to: rgb3(bgResults[m].to) });
+        lastBgTick[m] = bgResults[m].j;
+      }
+    }
+  }
+
   function drawLive() {
     var now = Date.now();
     var eventTime = now / 1000 + ownerOffset;
     var motionTime = openingTime + (now - loadStart) / 1000;
-    fillBgCols(loadEventTime, eventTime, staticCols);
+    var warp = warpAt(loadEventTime, eventTime);
+    var bgResults = fillBgCols(loadEventTime, eventTime, staticCols);
     fillLayers(motionTime, layerData, colorData, paramData);
-    paint(warpAt(loadEventTime, eventTime), motionTime);
+    paint(warp, motionTime);
+    reportLiveEvents(warp, bgResults);
   }
   function frame() { drawLive(); requestAnimationFrame(frame); }
 
