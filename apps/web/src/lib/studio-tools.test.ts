@@ -3,7 +3,7 @@
  * either Surface factory resolves for the given chain, in all four
  * combinations. BASE_CHAIN_ID has no Surface addresses on either version,
  * so it exercises "neither" without disturbing the real mainnet constant
- * (v1 is already deployed there — see collection.test.ts).
+ * (v1 is already deployed there, see collection.test.ts).
  */
 import { test } from "node:test"
 import assert from "node:assert/strict"

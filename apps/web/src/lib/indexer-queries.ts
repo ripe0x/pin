@@ -1665,7 +1665,7 @@ export type IndexedCollectionRow = {
   primaryMinter: string | null
   /** 1 for a v1-factory collection, 2 for v2 (see SurfaceV2.version()).
    *  Defaults to 1 when the indexer schema predates the column (see
-   *  protocolVersionColumnExists) — every collection indexed before v2
+   *  protocolVersionColumnExists): every collection indexed before v2
    *  shipped is a v1 collection. */
   protocolVersion: number
 }

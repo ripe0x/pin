@@ -24,7 +24,7 @@
  */
 
 import { useRouter } from "next/navigation"
-import { parseEventLogs, type Address, type TransactionReceipt } from "viem"
+import { type Address } from "viem"
 import { useAccount, useChainId, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
 import { surfaceFactoryAbi, surfaceFactoryV2Abi, renderAssetsAbi } from "@pin/abi"
 import { formatWriteError } from "@/components/tx/tx-ui"
@@ -35,6 +35,7 @@ import {
   renderAssetsAddress,
 } from "@/lib/collection"
 import { studioToolHref } from "@/lib/studio-tools"
+import { parseDeployedCollectionAddress } from "./parse-deployed-address"
 import { validateCollaborators } from "./SharedFields"
 import type { WizardState } from "./types"
 import { BTN, BTN_SECONDARY, ERROR } from "./wizard-ui"
@@ -82,10 +83,10 @@ export function DeployStep({
     hash: deploy.data,
   })
 
-  const deployedAddress = useDeployedAddress(receipt)
+  const deployedAddress = parseDeployedCollectionAddress(receipt, !!factoryV2)
 
   // Post-deploy configuration: presentation data lives in renderer-land. A
-  // cover image goes to RenderAssets — its own tx, authorized by the
+  // cover image goes to RenderAssets, its own tx, authorized by the
   // collection owner (the connected artist).
   const coverWrite = useWriteContract()
   const { isLoading: coverMining, isSuccess: coverDone } = useWaitForTransactionReceipt({
@@ -127,8 +128,8 @@ export function DeployStep({
 
   // Economics are preset-independent: renderer-native works sell through
   // the same canonical minter; only the artwork source differs. The wizard
-  // doesn't yet offer allowlist/wallet-cap/priceStrategy at deploy time —
-  // those are studio follow-up actions (mint gate tool, ActivationQueue)
+  // doesn't yet offer allowlist/wallet-cap/priceStrategy at deploy time.
+  // Those are studio follow-up actions (mint gate tool, ActivationQueue)
   // directly on the minter after deploy. maxMints is the exception: a sale
   // ceiling set after the fact leaves the mint unbounded in between, so
   // callers that need one pass it here.
@@ -259,20 +260,6 @@ export function DeployStep({
       </button>
     </div>
   )
-}
-
-function useDeployedAddress(receipt: TransactionReceipt | undefined): Address | null {
-  if (!receipt) return null
-  try {
-    const logs = parseEventLogs({
-      abi: surfaceFactoryAbi,
-      logs: receipt.logs,
-      eventName: "SurfaceCreated",
-    })
-    return (logs[0]?.args as { collection?: Address } | undefined)?.collection ?? null
-  } catch {
-    return null
-  }
 }
 
 function SuccessScreen({

@@ -30,11 +30,11 @@ import { surfaceFactory, surfaceFactoryV2 } from "./collection"
 /** True when either the v1 or v2 SurfaceFactory resolves for `chainId`
  *  (mainnet by default), or a dev override is set for either. Gates every
  *  tool whose per-collection logic (see the STUDIO_TOOLS entries below)
- *  already routes by the collection's own protocolVersion — the tool works
- *  once ANY Surface factory is live, not only v1. Exported (rather than
- *  private) so tests can exercise all four v1/v2 combinations against an
- *  unconfigured chain id — mainnet itself always resolves v1 today, since
- *  that factory is already deployed. */
+ *  already routes by the collection's own protocolVersion, so the tool
+ *  works once ANY Surface factory is live, not only v1. Exported (rather
+ *  than private) so tests can exercise all four v1/v2 combinations against
+ *  an unconfigured chain id (mainnet itself always resolves v1 today,
+ *  since that factory is already deployed). */
 export function anySurfaceFactoryLive(chainId: number = MAINNET_CHAIN_ID): boolean {
   return (
     surfaceFactory(chainId) !== null ||
@@ -66,7 +66,7 @@ export const STUDIO_TOOLS: StudioTool[] = [
     label: "Create a collection",
     description: "Deploy a collection contract onchain, configured through a step-by-step form.",
     // The wizard itself picks v2 over v1 per-chain when both resolve (see
-    // DeployStep) — the tab only needs to know a deploy is possible at all.
+    // DeployStep). The tab only needs to know a deploy is possible at all.
     available: anySurfaceFactoryLive,
   },
   {
@@ -99,7 +99,7 @@ export const STUDIO_TOOLS: StudioTool[] = [
     description:
       "Gate a collection's mint with an allowlist and a per-wallet limit, directly on its canonical minter.",
     // Allowlist + wallet-cap config live on the collection's own canonical
-    // FixedPriceMinter clone (v1) or FixedPriceMinterV2 clone (v2) — same
+    // FixedPriceMinter clone (v1) or FixedPriceMinterV2 clone (v2), same
     // setter selectors either way, routed by the collection's own
     // protocolVersion at the panel, not here. Ships dark until a Surface
     // factory (either version) is live on mainnet, or a dev/sepolia override
@@ -110,7 +110,7 @@ export const STUDIO_TOOLS: StudioTool[] = [
     id: "sale",
     label: "Sale settings",
     description:
-      "Edit a collection's price, mint window, max mints, payout, and referral share on its canonical minter — reopen a window or raise the cap for the next batch.",
+      "Edit a collection's price, mint window, max mints, payout, and referral share on its canonical minter. Reopen a window or raise the cap for the next batch.",
     // Same gate as mint-gate: works against a v1 or v2 collection's
     // canonical minter, routed by protocolVersion at the panel.
     available: anySurfaceFactoryLive,
