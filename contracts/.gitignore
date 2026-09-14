@@ -3,6 +3,10 @@ out/
 cache/
 broadcast/
 
+# Local-chain deploy record from DeploySurfaceV2.s.sol; deployments.mainnet.json
+# and deployments.sepolia.json are real deployments and stay tracked.
+deployments.anvil.json
+
 # Forge-installed dependencies (reinstall with `forge install` per README).
 lib/
 .env*

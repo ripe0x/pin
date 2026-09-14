@@ -4,7 +4,9 @@ import { mainnet, sepolia } from "viem/chains"
 import {
   catalogAbi,
   surfaceAbi,
+  surfaceV2Abi,
   surfaceFactoryAbi,
+  surfaceFactoryV2Abi,
   fixedPriceMinterAbi,
   renderAssetsAbi,
   iBatchRenderRouterAbi,
@@ -22,10 +24,14 @@ import {
 } from "./indexer-queries"
 import {
   decodeCollectionConfig,
+  decodeLocks,
   renderAssetsAddress,
   surfaceFactory,
+  surfaceFactoryV2,
   type Collection,
   type MinterSaleConfig,
+  type MulticallEntry,
+  type PermanenceTuple,
   IdMode,
   ZERO_ADDRESS,
 } from "./collection"
@@ -72,38 +78,68 @@ type RawConfigReturn = readonly [Parameters<typeof decodeCollectionConfig>[0], b
  * on the token), multicalled together. Returns null on any read failure
  * (e.g. `minterAddr` is a bring-your-own minter that doesn't implement this
  * shape) rather than a partially-filled object.
+ *
+ * `protocolVersion` selects the ABI: FixedPriceMinterV2 drops `priceStrategy`
+ * entirely (exact-payment only, see docs/pnd-surface-v2-plan.md), so a v2
+ * minter's config always reports `priceStrategy` zero, the true state,
+ * not a stand-in for a missing read.
  */
 async function getMinterSaleConfig(
   client: ReturnType<typeof getClient>,
   minterAddr: Address,
+  protocolVersion = 1,
 ): Promise<MinterSaleConfig | null> {
+  const isV2 = protocolVersion === 2
+  // Every getter but priceStrategy shares an identical selector between
+  // FixedPriceMinter and FixedPriceMinterV2, so the v1 ABI's typed calls
+  // encode correctly against either clone. priceStrategy is still called
+  // (allowFailure lets a v2 clone's revert through harmlessly) rather than
+  // branched out, so the multicall shape and destructure never change with
+  // protocolVersion. The isV2 check only decides whether to trust the
+  // result.
   const base = { address: minterAddr, abi: fixedPriceMinterAbi } as const
   try {
+    const results = await client.multicall({
+      allowFailure: true,
+      contracts: [
+        { ...base, functionName: "price" },
+        { ...base, functionName: "priceStrategy" },
+        { ...base, functionName: "mintStart" },
+        { ...base, functionName: "mintEnd" },
+        { ...base, functionName: "payoutRecipient" },
+        { ...base, functionName: "maxMints" },
+        { ...base, functionName: "allowlistRoot" },
+        { ...base, functionName: "walletCap" },
+        { ...base, functionName: "referralShareBps" },
+      ],
+    })
     const [price, priceStrategy, mintStart, mintEnd, payout, maxMints, allowlistRoot, walletCap, referralShareBps] =
-      await client.multicall({
-        allowFailure: false,
-        contracts: [
-          { ...base, functionName: "price" },
-          { ...base, functionName: "priceStrategy" },
-          { ...base, functionName: "mintStart" },
-          { ...base, functionName: "mintEnd" },
-          { ...base, functionName: "payoutRecipient" },
-          { ...base, functionName: "maxMints" },
-          { ...base, functionName: "allowlistRoot" },
-          { ...base, functionName: "walletCap" },
-          { ...base, functionName: "referralShareBps" },
-        ],
-      })
+      results
+    // Every field but priceStrategy must succeed. A real failure here
+    // (bring-your-own minter, bad address) should still surface as null,
+    // not a partially-filled config.
+    if (
+      price.status !== "success" ||
+      mintStart.status !== "success" ||
+      mintEnd.status !== "success" ||
+      payout.status !== "success" ||
+      maxMints.status !== "success" ||
+      allowlistRoot.status !== "success" ||
+      walletCap.status !== "success" ||
+      referralShareBps.status !== "success"
+    ) {
+      return null
+    }
     return {
-      price: price as bigint,
-      priceStrategy: priceStrategy as Address,
-      mintStart: mintStart as bigint,
-      mintEnd: mintEnd as bigint,
-      payout: payout as Address,
-      maxMints: maxMints as bigint,
-      allowlistRoot: allowlistRoot as `0x${string}`,
-      walletCap: walletCap as bigint,
-      referralShareBps: Number(referralShareBps as number),
+      price: price.result as bigint,
+      priceStrategy: isV2 || priceStrategy.status !== "success" ? (ZERO_ADDRESS as Address) : (priceStrategy.result as Address),
+      mintStart: mintStart.result as bigint,
+      mintEnd: mintEnd.result as bigint,
+      payout: payout.result as Address,
+      maxMints: maxMints.result as bigint,
+      allowlistRoot: allowlistRoot.result as `0x${string}`,
+      walletCap: walletCap.result as bigint,
+      referralShareBps: Number(referralShareBps.result as number),
     }
   } catch {
     return null
@@ -147,7 +183,12 @@ export type FactoryStatus = {
  * infrequent deployer action, not something needing sub-30s freshness.
  */
 export async function getFactoryStatus(): Promise<FactoryStatus> {
-  const factory = surfaceFactory()
+  // v2 wins when configured for this chain, matching DeployStep's choice.
+  // The wizard's top-level block screen must agree with what it actually
+  // deploys through.
+  const factoryV2 = surfaceFactoryV2()
+  const factory = factoryV2 ?? surfaceFactory()
+  const abi = factoryV2 ? surfaceFactoryV2Abi : surfaceFactoryAbi
   if (!factory) return { configured: false, paused: true, deprecated: false, defaultRendererSet: false }
   const read = await pgCache(`sc-factory-status:${lc(factory)}`, 60, async () => {
     const client = getClient()
@@ -155,9 +196,9 @@ export async function getFactoryStatus(): Promise<FactoryStatus> {
       const [paused, deprecated, defaultRenderer] = await client.multicall({
         allowFailure: false,
         contracts: [
-          { address: factory, abi: surfaceFactoryAbi, functionName: "paused" },
-          { address: factory, abi: surfaceFactoryAbi, functionName: "deprecated" },
-          { address: factory, abi: surfaceFactoryAbi, functionName: "defaultRenderer" },
+          { address: factory, abi, functionName: "paused" },
+          { address: factory, abi, functionName: "deprecated" },
+          { address: factory, abi, functionName: "defaultRenderer" },
         ],
       })
       return {
@@ -286,27 +327,33 @@ export async function isFactoryCollection(address: Address): Promise<boolean> {
     const indexed = await isCollectionInIndexer(address)
     if (indexed === true) return true
   }
-  const factory = surfaceFactory()
-  if (!factory) return false
+  const factoryV1 = surfaceFactory()
+  const factoryV2 = surfaceFactoryV2()
+  if (!factoryV1 && !factoryV2) return false
   const live = await pgCache(`sc-issurface:${lc(address)}`, 60, async () => {
     const client = getClient()
     try {
-      const ok = (await client.readContract({
-        address: factory,
-        abi: surfaceFactoryAbi,
-        functionName: "isSurface",
-        args: [address],
-      })) as boolean
-      return ok
+      // Both factories checked in one round trip so a v2 collection isn't
+      // missed while v1 stays configured too.
+      const contracts = [
+        ...(factoryV1
+          ? [{ address: factoryV1, abi: surfaceFactoryAbi, functionName: "isSurface" as const, args: [address] as const }]
+          : []),
+        ...(factoryV2
+          ? [{ address: factoryV2, abi: surfaceFactoryV2Abi, functionName: "isSurface" as const, args: [address] as const }]
+          : []),
+      ]
+      const results = await client.multicall({ allowFailure: true, contracts })
+      return results.some((r) => r.status === "success" && r.result === true) ? true : null
     } catch {
-      return null // read failed — unknown, distinct from a confirmed "no"
+      return null // read failed, unknown, distinct from a confirmed "no"
     }
   })
   return live === true
 }
 
 export async function getCollection(address: Address): Promise<Collection | null> {
-  // Membership gate first (indexed set, RPC fallback — see
+  // Membership gate first (indexed set, RPC fallback, see
   // isFactoryCollection): an arbitrary pasted address that merely
   // implements the Surface read surface must not render as a collection
   // page, and a non-member costs one SELECT instead of a speculative
@@ -316,27 +363,74 @@ export async function getCollection(address: Address): Promise<Collection | null
     const client = getClient()
     const base = { address, abi: surfaceAbi } as const
     try {
-      const [name, symbol, owner, rendererLocked, supplyLocked, renderer, idModeRaw, primaryMinterRaw, cfgRes] =
-        await client.multicall({
-          allowFailure: false,
-          contracts: [
-            { ...base, functionName: "name" },
-            { ...base, functionName: "symbol" },
-            { ...base, functionName: "owner" },
-            { ...base, functionName: "isRendererLocked" },
-            { ...base, functionName: "isSupplyLocked" },
-            { ...base, functionName: "renderer" },
-            // idMode is a structural fact read separately since the Sequential/
-            // Pooled split moved it out of the config struct.
-            { ...base, functionName: "idMode" },
-            // primaryMinter read live (authoritative, kept current by
-            // PrimaryMinterSet). Folded into this multicall so it costs no
-            // extra round trip.
-            { ...base, functionName: "primaryMinter" },
-            { ...base, functionName: "config" },
-          ],
-        })
-      const [cfgRaw, minted] = cfgRes as RawConfigReturn
+      // allowFailure:true (not the plain per-field abort of the identity
+      // reads below) because permanence() is v2 only: it fails for a v1
+      // collection and that failure must not take down the rest of this
+      // read. One round trip either way.
+      const results = await client.multicall({
+        allowFailure: true,
+        contracts: [
+          { ...base, functionName: "name" },
+          { ...base, functionName: "symbol" },
+          { ...base, functionName: "owner" },
+          { ...base, functionName: "isRendererLocked" },
+          { ...base, functionName: "isSupplyLocked" },
+          { ...base, functionName: "renderer" },
+          // idMode is a structural fact read separately since the Sequential/
+          // Pooled split moved it out of the config struct. v2 keeps idMode()
+          // as a compat shim, always returning Sequential.
+          { ...base, functionName: "idMode" },
+          // primaryMinter read live (authoritative, kept current by
+          // PrimaryMinterSet). Folded into this multicall so it costs no
+          // extra round trip.
+          { ...base, functionName: "primaryMinter" },
+          { ...base, functionName: "config" },
+          // version() is a bytecode constant (1 or 2) shared byte-for-byte
+          // between v1 and v2's ISurfaceView selectors, so reading it
+          // through the v1 ABI still decodes correctly against a v2
+          // collection.
+          { ...base, functionName: "version" },
+          // permanence() exists only on SurfaceV2 (see SurfaceV2.sol). A v1
+          // collection's call fails here and the lock/seal fields below
+          // fall back to the individual v1 reads above.
+          { address, abi: surfaceV2Abi, functionName: "permanence" },
+        ],
+      })
+      const [
+        nameRes,
+        symbolRes,
+        ownerRes,
+        rendererLockedRes,
+        supplyLockedRes,
+        rendererRes,
+        idModeRes,
+        primaryMinterRes,
+        cfgRes,
+        versionRes,
+        permanenceRes,
+      ] = results
+
+      // Every field but permanence() must succeed, a real failure here
+      // (bring-your-own contract that doesn't fully implement the read
+      // surface, bad address) surfaces as null, not a partially-filled
+      // Collection.
+      if (
+        nameRes.status !== "success" ||
+        symbolRes.status !== "success" ||
+        ownerRes.status !== "success" ||
+        rendererLockedRes.status !== "success" ||
+        supplyLockedRes.status !== "success" ||
+        rendererRes.status !== "success" ||
+        idModeRes.status !== "success" ||
+        primaryMinterRes.status !== "success" ||
+        cfgRes.status !== "success" ||
+        versionRes.status !== "success"
+      ) {
+        return null
+      }
+
+      const [cfgRaw, minted] = cfgRes.result as RawConfigReturn
+      const protocolVersion = Number(versionRes.result as bigint)
 
       // Presentation data lives in renderer-land: the cover in RenderAssets.
       // Generative work now ships as bring-your-own renderers (each renderer
@@ -355,22 +449,31 @@ export async function getCollection(address: Address): Promise<Collection | null
         : ""
 
       // primaryMinter is read live above (was an indexer-only read, which left
-      // the mint UI blind on chains with no indexer — fork/sepolia — and during
+      // the mint UI blind on chains with no indexer, fork/sepolia, and during
       // the indexer lag right after a mainnet deploy; both fell through to the
       // pooled "mints through its minter" notice).
-      const pmChain = primaryMinterRaw as Address
+      const pmChain = primaryMinterRes.result as Address
       const primaryMinter = pmChain && pmChain.toLowerCase() !== ZERO_ADDRESS ? pmChain : null
-      const sale = primaryMinter ? await getMinterSaleConfig(client, primaryMinter) : null
+      const sale = primaryMinter ? await getMinterSaleConfig(client, primaryMinter, protocolVersion) : null
+
+      const locks = decodeLocks(
+        protocolVersion,
+        { isRendererLocked: rendererLockedRes.result as boolean, isSupplyLocked: supplyLockedRes.result as boolean },
+        permanenceRes as MulticallEntry<PermanenceTuple>,
+      )
 
       return {
         address,
-        name: name as string,
-        symbol: symbol as string,
-        owner: owner as Address,
-        isRendererLocked: rendererLocked as boolean,
-        isSupplyLocked: supplyLocked as boolean,
-        renderer: renderer as Address,
-        cfg: decodeCollectionConfig(cfgRaw, Number(idModeRaw) as IdMode),
+        protocolVersion,
+        isRoyaltyLocked: locks.isRoyaltyLocked,
+        sealed: locks.sealed,
+        name: nameRes.result as string,
+        symbol: symbolRes.result as string,
+        owner: ownerRes.result as Address,
+        isRendererLocked: locks.isRendererLocked,
+        isSupplyLocked: locks.isSupplyLocked,
+        renderer: rendererRes.result as Address,
+        cfg: decodeCollectionConfig(cfgRaw, Number(idModeRes.result) as IdMode),
         primaryMinter,
         sale,
         // Shared work-config read removed with the shared GenerativeRenderer;

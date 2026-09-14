@@ -78,6 +78,27 @@
           "abi": "/abis/IPreviewRenderer.json",
           "docs": "/docs/surface/contracts/i-preview-renderer",
           "role": "An optional extension a renderer implements to render the output for a caller-supplied seed with no token existing."
+        },
+        "SurfaceV2": {
+          "address": null,
+          "kind": "clone",
+          "abi": "/abis/SurfaceV2.json",
+          "docs": "/docs/surface/contracts/surface-v2",
+          "role": "Second generation of the sequential-id ERC721 collection: the token core of the Surface v2 art protocol."
+        },
+        "SurfaceFactoryV2": {
+          "address": null,
+          "kind": "singleton",
+          "abi": "/abis/SurfaceFactoryV2.json",
+          "docs": "/docs/surface/contracts/factory-v2",
+          "role": "Deploys one [SurfaceV2](/docs/surface/contracts/surface-v2) collection per call as an EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, and one collection form (sequential ids)."
+        },
+        "FixedPriceMinterV2": {
+          "address": null,
+          "kind": "clone",
+          "abi": "/abis/FixedPriceMinterV2.json",
+          "docs": "/docs/surface/contracts/fixed-price-minter-v2",
+          "role": "Exact-payment fixed-price minter for a [SurfaceV2](/docs/surface/contracts/surface-v2) collection, deployed as one EIP-1167 clone per collection."
         }
       }
     },

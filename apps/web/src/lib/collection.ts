@@ -15,6 +15,7 @@ import { foundry, mainnet, sepolia } from "wagmi/chains"
 import {
   RENDER_ASSETS,
   SURFACE_FACTORY,
+  SURFACE_FACTORY_V2,
   getAddressOrNull,
 } from "@pin/addresses"
 
@@ -41,6 +42,13 @@ export function surfaceFactory(chainId: number = PND_CHAIN_ID): Address | null {
   const env = process.env.NEXT_PUBLIC_SURFACE_FACTORY
   if (env && isAddress(env)) return env as Address
   return getAddressOrNull(SURFACE_FACTORY, chainId)
+}
+
+/** The SurfaceFactoryV2 address (env override for local dev wins). */
+export function surfaceFactoryV2(chainId: number = PND_CHAIN_ID): Address | null {
+  const env = process.env.NEXT_PUBLIC_SURFACE_FACTORY_V2
+  if (env && isAddress(env)) return env as Address
+  return getAddressOrNull(SURFACE_FACTORY_V2, chainId)
 }
 
 /** The RenderAssets registry address (env override for local dev wins). */
@@ -161,6 +169,12 @@ export type SaleWindow = {
 
 export type Collection = {
   address: Address
+  /** SurfaceCore.version()/SurfaceV2.version(): 1 for a v1 Surface, 2 for a
+   *  v2 Surface. Read live off the collection itself (a bytecode constant,
+   *  free of the indexer), never inferred from which factory deployed it.
+   *  Selects which factory/ABI a write flow (mint gate, sale settings)
+   *  targets for this collection. */
+  protocolVersion: number
   name: string
   symbol: string
   owner: Address
@@ -169,11 +183,18 @@ export type Collection = {
   isSupplyLocked: boolean
   renderer: Address
   cfg: SurfaceConfig
+  /** v2 only (see SurfaceV2.lockRoyalty); always false for v1, which has no
+   *  royalty lock. */
+  isRoyaltyLocked: boolean
+  /** Sealed is reported by SurfaceV2.permanence (the owner renounced
+   *  ownership, engaging every remaining lock and permanently ending
+   *  minting if no minter was granted); v1 collections report false. */
+  sealed: boolean
   /** Frontend-discovery default: mirrors the collection's own
    *  primaryMinter(), from the indexed row (seeded from SurfaceCreated,
-   *  kept current by PrimaryMinterSet) — null when none is on record
+   *  kept current by PrimaryMinterSet). Null when none is on record
    *  (not indexed, or a bring-your-own/pooled collection with no primary
-   *  set). Not proof that no other authorized minter exists; only that no
+   *  set). Not proof that no other authorized minter exists, only that no
    *  primary is on record. There is no live-chain way to recover this
    *  cheaply beyond the single primaryMinter() read: the token has no
    *  "list of minters" getter, only isMinter(candidate). */
@@ -259,6 +280,48 @@ export function decodeCollectionConfig(raw: RawSurfaceConfig, idMode: IdMode): S
     royaltyReceiver: raw.royaltyReceiver,
     renderer: raw.renderer,
     idMode,
+  }
+}
+
+/** One multicall result entry (viem's allowFailure:true shape), loose
+ *  enough to accept without importing viem's own multicall types here. */
+export type MulticallEntry<T> = { status: "success"; result: T } | { status: "failure"; error?: unknown }
+
+/** SurfaceV2.permanence() tuple: rendererLocked, supplyLocked, minterLocked,
+ *  royaltyLocked, sealed, version. minterLocked and version aren't
+ *  surfaced on Collection today; the tuple is still decoded positionally
+ *  in full so the shape stays checked against the real ABI. */
+export type PermanenceTuple = readonly [boolean, boolean, boolean, boolean, boolean, bigint]
+
+export type Locks = {
+  isRendererLocked: boolean
+  isSupplyLocked: boolean
+  isRoyaltyLocked: boolean
+  sealed: boolean
+}
+
+/**
+ * The lock/seal facts for a collection. For a v2 row with a successful
+ * permanence() call, every flag (renderer, supply, royalty, sealed) comes
+ * from that single tuple, the source of truth for v2. Otherwise (v1, or a
+ * v2 row whose permanence() call itself failed) falls back to the
+ * individual isRendererLocked/isSupplyLocked reads, with isRoyaltyLocked
+ * and sealed false: v1 has no royalty lock and no seal.
+ */
+export function decodeLocks(
+  protocolVersion: number,
+  individual: { isRendererLocked: boolean; isSupplyLocked: boolean },
+  permanence: MulticallEntry<PermanenceTuple> | undefined,
+): Locks {
+  if (protocolVersion === 2 && permanence?.status === "success") {
+    const [rendererLocked, supplyLocked, , royaltyLocked, sealed] = permanence.result
+    return { isRendererLocked: rendererLocked, isSupplyLocked: supplyLocked, isRoyaltyLocked: royaltyLocked, sealed }
+  }
+  return {
+    isRendererLocked: individual.isRendererLocked,
+    isSupplyLocked: individual.isSupplyLocked,
+    isRoyaltyLocked: false,
+    sealed: false,
   }
 }
 

@@ -1,0 +1,264 @@
+---
+title: SurfaceFactoryV2
+---
+
+# summary
+
+Deploys one [SurfaceV2](/docs/surface/contracts/surface-v2) collection per call
+as an EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade
+path, and one collection form (sequential ids). `createSurface` clones the
+token and a
+[FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2),
+initializes both, and grants the minter, in one transaction.
+`createSurfaceCustom` clones only the token and grants the minters the caller
+passes, plus a caller-chosen `primaryMinter` (frontend-discovery default)
+validated against that grant list. The factory takes no fee. This is a
+separate deployment from [SurfaceFactory](/docs/surface/contracts/factory);
+the two coexist and neither depends on the other.
+
+An indexer reads one `SurfaceCreated` event per collection, carrying the
+chosen primary minter (the canonical clone on `createSurface`, the caller's
+choice or zero on `createSurfaceCustom`), plus the `allSurfaces` array and the
+`isSurface` map for enumeration. A new implementation ships behind a new
+factory. `deprecate` is a one-way stop for this factory's deploy paths;
+`setPaused` is a reversible pause.
+
+# concepts
+
+### One transaction, two clones
+
+`createSurface` clones the token (uninitialized), clones the minter and
+initializes it bound to the token with the caller's `SaleConfig`, then
+initializes the token with the minter as its sole initial minter. Clone order
+matters because the minter's `initialize` requires the collection address to
+have code, which an EIP-1167 clone has after `Clones.clone`.
+`createSurfaceCustom` skips the minter clone and initializes the token with
+the caller's `initialMinters`.
+
+### SaleConfig
+
+The `sale` argument to `createSurface` is the canonical minter's config, minus
+the collection address the factory fills in. Each field is settable on the
+minter afterward by the collection's owner or admin.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `price` | `uint256` | Price per token in wei; payment must equal it exactly |
+| `mintStart` | `uint64` | Sale start, unix seconds; `0` opens immediately |
+| `mintEnd` | `uint64` | Sale end, unix seconds; `0` is open-ended |
+| `payoutRecipient` | `address` | Where the artist share accrues; `0` defaults to the deploy-time `owner` argument |
+| `maxMints` | `uint256` | This minter's sale ceiling; `0` is unlimited |
+| `allowlistRoot` | `bytes32` | Merkle allowlist root; `0` is no allowlist |
+| `walletCap` | `uint256` | Per-recipient mint cap; `0` is unlimited |
+
+### Creator listing at init
+
+The `creators` argument sets the collection's listed-creator set during
+`initialize`, emitting `CreatorListed` per address. This is the collection's
+own storage, not a shared-registry write: the
+[Catalog](/docs/catalog/contracts/catalog) is only read. A listed creator
+confirms by claiming the collection in the Catalog from their own address,
+after which `isConfirmedCreator` reads true. Pass an empty array for solo
+works; the owner can change the listing later with `setCreators`.
+
+### seedSource pass-through
+
+Both create functions take a `seedSource` argument, wired straight into the
+collection's `initialize` with no validation beyond the collection's own
+contract-code check. `address(0)` disables it, the default and the only
+option most works need. See
+[seeds](/docs/surface/contracts/surface-v2#seeds).
+
+## function createSurface
+
+access: permissionless (anyone may deploy; control belongs to the `owner` argument)
+
+Deploys a collection wired to a canonical
+[FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2) clone in
+one transaction: clones the token, clones and initializes the minter bound to
+it with `sale`, then initializes the token with the minter as its sole
+initial minter. Returns both addresses. `owner` is an argument rather than
+`msg.sender`, so a deploy helper can create on an artist's behalf; reverts
+`OwnerRequired` for a zero owner, `FactoryDeprecated` after deprecation, and
+`FactoryPaused` while paused. Token-side init reverts (`RoyaltyTooHigh`,
+`RendererRequired`, `SeedSourceNotContract`) and minter-side init reverts
+(`BadMintWindow`, `PayoutRecipientRequired`) surface through this call. On
+success, records the collection in `isSurface`/`allSurfaces` and emits
+`SurfaceCreated` naming the minter as `primaryMinter`.
+
+```solidity
+(address collection, address minter) = factory.createSurface(
+    "My Collection",
+    "MC",
+    artistAddress,
+    cfg,        // SurfaceConfig: cap, royalty, renderer, locks
+    sale,       // SaleConfig: price, window, payout, gates
+    creators,
+    address(0)  // seedSource: disabled
+);
+```
+
+## function createSurfaceCustom
+
+access: permissionless (control belongs to the `owner` argument)
+
+Deploys a collection with no canonical minter: clones the token and
+initializes it with the caller's `initialMinters` (empty for collections that
+grant minters later) and a caller-chosen `primaryMinter` (the
+frontend-discovery default), which must be the zero address or a member of
+`initialMinters`, else `PrimaryMinterNotAuthorized`. For projects whose
+economics live in their own minter contract. Same creation gates as
+`createSurface`. Emits `SurfaceCreated` with the supplied `primaryMinter`
+(zero if none was chosen); the collection's owner can repoint it later with
+`setPrimaryMinter`. Minter grants beyond the initial set appear as
+`MinterSet` events on the collection.
+
+## function deprecate
+
+access: deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`)
+
+One-way stop for new deploys: afterward every create function reverts
+`FactoryDeprecated`, and `successor` points to a replacement factory (zero if
+none is set). Deployed collections and minters are unaffected; the deployer
+has no power over them. Reverts `AlreadyDeprecated` on a second call. Emits
+`Deprecated`.
+
+## function setPaused
+
+access: deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`)
+
+Reversible pause on new deploys, separate from `deprecate`. While paused, the
+create functions revert `FactoryPaused`. A deprecated factory stays off
+regardless of this flag. Deployed collections are unaffected. Emits
+`PausedSet`.
+
+## function allSurfaces
+
+Every collection address the factory has deployed, in deployment order. For
+direct onchain enumeration; indexers typically read `SurfaceCreated`.
+
+## function isSurface
+
+Whether an address is a collection this factory deployed. Cheaper than
+scanning `allSurfaces` for a membership check.
+
+## function totalSurfaces
+
+The length of `allSurfaces`.
+
+## function sequentialImplementation
+
+The `SurfaceV2` implementation every `createSurface` and `createSurfaceCustom`
+clone delegates to. Fixed at construction, no setter.
+
+## function minterImplementation
+
+The `FixedPriceMinterV2` implementation `createSurface` clones. Fixed at
+construction, no setter. Not used by `createSurfaceCustom`, which takes
+minters from the caller.
+
+## function defaultRenderer
+
+The renderer a collection uses when its config names none. May be zero: with
+no factory default, a collection that names no renderer reverts
+`RendererRequired` at creation. A collection's owner can change its renderer
+after deploy; this is only the value new collections start with.
+
+## function catalog
+
+The Catalog singleton wired into every collection this factory creates, read
+to confirm creators (`isConfirmedCreator`). The Catalog is only read. Zero
+disables confirmation: a collection wired with no Catalog can list creators
+but confirms none.
+
+```bash
+cast call {{addr:surfaceFactoryV2}} "catalog()(address)" \
+  --rpc-url https://ethereum-rpc.publicnode.com
+```
+
+## function deployer
+
+The address that deployed the factory: the only address that may `deprecate`
+or `setPaused`. It has no power over deployed collections or minters.
+
+## function deprecated
+
+True after the factory has been deprecated (new deploys revert).
+
+## function paused
+
+True while new deploys are paused (see `setPaused`). Reversible, unlike
+`deprecated`.
+
+## function successor
+
+The replacement factory set at deprecation, or zero. Informational.
+
+## event SurfaceCreated
+
+Emitted once per successful create call, with `owner` and `collection`
+indexed. `primaryMinter` is the chosen primary at creation: the canonical
+`FixedPriceMinterV2` clone `createSurface` wired, the caller's supplied
+primary on `createSurfaceCustom`, or `address(0)` when none was designated.
+This mirrors the collection's own `primaryMinter()` at creation time, the
+collection-to-minter binding an indexer reads first, but the collection's
+`PrimaryMinterSet` event is what keeps it current after a repoint or
+revoke-clear. `idMode` always reports Sequential. It fires in the transaction
+that initializes the collection, so an indexer reading it can treat the
+collection and any wired minter as fully configured.
+
+## event Deprecated
+
+Emitted once when the deployer deprecates the factory, carrying the successor
+address (zero if none). Indexed by `successor`.
+
+## event PausedSet
+
+Emitted when the deployer pauses or resumes new deploys, with the new
+`paused` state.
+
+## error FactoryDeprecated
+
+A create function was called after deprecation. Deploy through the successor
+factory (`successor()`).
+
+## error FactoryPaused
+
+A create function was called while the factory is paused (see `setPaused`).
+
+## error NotDeployer
+
+`deprecate` or `setPaused` was called by an address other than the factory
+deployer.
+
+## error AlreadyDeprecated
+
+`deprecate` was called on an already-deprecated factory.
+
+## error OwnerRequired
+
+A create function was given the zero address as the collection `owner`.
+
+## error PrimaryMinterNotAuthorized
+
+`createSurfaceCustom` was given a nonzero `primaryMinter` that is not a
+member of `initialMinters`. The token's own `initialize` re-checks this
+independently of the factory.
+
+## error NotAContract
+
+The constructor was given an address with no code where a contract is
+required: an implementation (sequential or minter), a nonzero default
+renderer, or a nonzero Catalog.
+
+## error FailedDeployment
+
+Inherited from OpenZeppelin `Clones`. The EIP-1167 clone deployment failed at
+the `CREATE` opcode. Not expected against a valid implementation.
+
+## error InsufficientBalance
+
+Inherited from OpenZeppelin `Clones`. Raised by the value-forwarding clone
+variants when the factory's ETH balance is below the value being forwarded.
+The create functions do not forward value, so this is not reachable through
+the factory's public surface.

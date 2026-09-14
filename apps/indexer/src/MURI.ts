@@ -12,7 +12,7 @@ import { muriProtocolAbi } from "../abis/MURIProtocol"
  * The TokenDataInitialized event carries no URI count, so on each data-
  * changing event we read getArtwork() once to keep counts authoritative.
  * These reads are bounded to MURI events (low volume). We deliberately do
- * NOT catch read errors — a transient RPC failure should let Ponder retry
+ * NOT catch read errors: a transient RPC failure should let Ponder retry
  * the event rather than persist a wrong count.
  */
 

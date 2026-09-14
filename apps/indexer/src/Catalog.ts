@@ -7,8 +7,8 @@ import {
 
 /**
  * Catalog handlers (verbatim from v1; the on-chain contract surface
- * hasn't changed). Six events — Added/Removed pairs for contracts,
- * tokens, and token ranges — mirror into three tables keyed by
+ * hasn't changed). Six events: Added/Removed pairs for contracts,
+ * tokens, and token ranges: mirror into three tables keyed by
  * (artist, …).
  */
 

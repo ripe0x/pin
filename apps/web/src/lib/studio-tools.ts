@@ -25,7 +25,24 @@
  */
 
 import { MAINNET_CHAIN_ID } from "@pin/addresses"
-import { surfaceFactory } from "./collection"
+import { surfaceFactory, surfaceFactoryV2 } from "./collection"
+
+/** True when either the v1 or v2 SurfaceFactory resolves for `chainId`
+ *  (mainnet by default), or a dev override is set for either. Gates every
+ *  tool whose per-collection logic (see the STUDIO_TOOLS entries below)
+ *  already routes by the collection's own protocolVersion, so the tool
+ *  works once ANY Surface factory is live, not only v1. Exported (rather
+ *  than private) so tests can exercise all four v1/v2 combinations against
+ *  an unconfigured chain id (mainnet itself always resolves v1 today,
+ *  since that factory is already deployed). */
+export function anySurfaceFactoryLive(chainId: number = MAINNET_CHAIN_ID): boolean {
+  return (
+    surfaceFactory(chainId) !== null ||
+    surfaceFactoryV2(chainId) !== null ||
+    process.env.NEXT_PUBLIC_SURFACE_FACTORY !== undefined ||
+    process.env.NEXT_PUBLIC_SURFACE_FACTORY_V2 !== undefined
+  )
+}
 
 export type StudioTool = {
   /** Route segment under /studio/[address]/ */
@@ -48,7 +65,9 @@ export const STUDIO_TOOLS: StudioTool[] = [
     id: "create",
     label: "Create a collection",
     description: "Deploy a collection contract onchain, configured through a step-by-step form.",
-    available: () => surfaceFactory(MAINNET_CHAIN_ID) !== null,
+    // The wizard itself picks v2 over v1 per-chain when both resolve (see
+    // DeployStep). The tab only needs to know a deploy is possible at all.
+    available: anySurfaceFactoryLive,
   },
   {
     id: "listings",
@@ -80,24 +99,21 @@ export const STUDIO_TOOLS: StudioTool[] = [
     description:
       "Gate a collection's mint with an allowlist and a per-wallet limit, directly on its canonical minter.",
     // Allowlist + wallet-cap config live on the collection's own canonical
-    // FixedPriceMinter clone (thin-token rearchitecture — there's no
-    // separate GateHook to deploy anymore), so this tool ships dark until
-    // Surface itself is live on mainnet, same gate as the collections
-    // surfaces; live in dev via the harness's NEXT_PUBLIC_SURFACE_FACTORY
-    // override (see scripts/dev-collections.sh).
-    available: () =>
-      surfaceFactory(MAINNET_CHAIN_ID) !== null || process.env.NEXT_PUBLIC_SURFACE_FACTORY !== undefined,
+    // FixedPriceMinter clone (v1) or FixedPriceMinterV2 clone (v2), same
+    // setter selectors either way, routed by the collection's own
+    // protocolVersion at the panel, not here. Ships dark until a Surface
+    // factory (either version) is live on mainnet, or a dev/sepolia override
+    // is set (see scripts/dev-collections.sh).
+    available: anySurfaceFactoryLive,
   },
   {
     id: "sale",
     label: "Sale settings",
     description:
-      "Edit a collection's price, mint window, max mints, payout, and referral share on its canonical minter — reopen a window or raise the cap for the next batch.",
-    // Same gate as the mint-gate/collections surfaces: price/window/etc. live
-    // on the collection's canonical FixedPriceMinter, so this ships dark until
-    // Surface is live on mainnet (or a dev/sepolia factory override is set).
-    available: () =>
-      surfaceFactory(MAINNET_CHAIN_ID) !== null || process.env.NEXT_PUBLIC_SURFACE_FACTORY !== undefined,
+      "Edit a collection's price, mint window, max mints, payout, and referral share on its canonical minter. Reopen a window or raise the cap for the next batch.",
+    // Same gate as mint-gate: works against a v1 or v2 collection's
+    // canonical minter, routed by protocolVersion at the panel.
+    available: anySurfaceFactoryLive,
   },
 ]
 

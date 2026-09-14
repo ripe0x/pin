@@ -18,7 +18,7 @@ import {
  *
  * Per-clone Transfer subscriptions (FoundationCollection, MintCollection,
  * TLCollection) and the SR Bazaar + TL Auction House marketplaces are
- * intentionally NOT subscribed here in v2 — that work lives in the
+ * intentionally NOT subscribed here in v2: that work lives in the
  * worker (apps/worker/src/tasks/scan-{fnd-collections,mint-clones,
  * tl-clones}.ts).
  *
@@ -106,7 +106,7 @@ ponder.on("SovereignAuctionHouse:AuctionBid", async ({ event, context }) => {
   const existing = await context.db.find(pndAuctions, { id })
   if (!existing) return
 
-  await context.db.update(pndAuctions, { id }).set((row) => {
+  await context.db.update(pndAuctions, { id }).set((row: typeof pndAuctions.$inferSelect) => {
     const firstBidTime = firstBid ? event.block.timestamp : row.firstBidTime
     const endTime = firstBid
       ? firstBidTime + row.duration
@@ -190,7 +190,7 @@ ponder.on("FoundationNFT:Minted", async ({ event, context }) => {
     .onConflictDoNothing()
 })
 
-// ─── Foundation NFTMarket — reserve auctions ────────────────────────────
+// ─── Foundation NFTMarket: reserve auctions ────────────────────────────
 
 ponder.on("NFTMarket:ReserveAuctionCreated", async ({ event, context }) => {
   const { seller, nftContract, tokenId, duration, reservePrice, auctionId } =
@@ -293,7 +293,7 @@ ponder.on(
   },
 )
 
-// ─── Foundation NFTMarket — buy now ──────────────────────────────────────
+// ─── Foundation NFTMarket: buy now ──────────────────────────────────────
 
 ponder.on("NFTMarket:BuyPriceSet", async ({ event, context }) => {
   const { nftContract, tokenId, seller, price } = event.args

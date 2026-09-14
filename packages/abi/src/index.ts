@@ -8,6 +8,10 @@ export { sovereignAuctionHouseV2FactoryAbi } from "./sovereignAuctionHouseV2Fact
 export { surfaceAbi } from "./surface.ts"
 export { pooledSurfaceAbi } from "./pooledSurface.ts"
 export { surfaceFactoryAbi } from "./surfaceFactory.ts"
+// Surface v2: art-only core, sequential ids only, lives beside v1.
+export { surfaceV2Abi } from "./surfaceV2.ts"
+export { surfaceFactoryV2Abi } from "./surfaceFactoryV2.ts"
+export { fixedPriceMinterV2Abi } from "./fixedPriceMinterV2.ts"
 // Canonical fixed-price/referral minter clone (Phase 2/3): the mint/withdraw/
 // sale-config ABI every canonical-minter collection shares.
 export { fixedPriceMinterAbi } from "./fixedPriceMinter.ts"

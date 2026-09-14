@@ -747,6 +747,15 @@ export default async function CollectionPage({
                 label="Royalty"
                 value={c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none"}
               />
+              {c.protocolVersion === 2 && (
+                <Fact
+                  label="Royalty lock"
+                  value={c.isRoyaltyLocked ? "Locked forever" : "Adjustable by the artist"}
+                />
+              )}
+              {c.protocolVersion === 2 && (
+                <Fact label="Sealed" value={c.sealed ? "Sealed, ownership renounced" : "Not sealed"} />
+              )}
               <Fact
                 label="Referral share"
                 value={`${formatBps(c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS)} (to the referrer)`}

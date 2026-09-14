@@ -7,7 +7,13 @@ Every custom error the Surface contracts can revert with, its contract, and the 
 **`AlreadyAdmin`** · [Surface](/docs/surface/contracts/surface#errors)\
 `addAdmin` was called for the owner or an existing admin.
 
+**`AlreadyAdmin`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+`addAdmin` was called for the owner or an existing admin.
+
 **`AlreadyDeprecated`** · [SurfaceFactory](/docs/surface/contracts/factory#errors)\
+`deprecate` was called on an already-deprecated factory.
+
+**`AlreadyDeprecated`** · [SurfaceFactoryV2](/docs/surface/contracts/factory-v2#errors)\
 `deprecate` was called on an already-deprecated factory.
 
 **`AssetsRequired`** · [DefaultRenderer](/docs/surface/contracts/default-renderer#errors)\
@@ -16,8 +22,14 @@ Reverts construction when the RenderAssets address is zero: the renderer has no 
 **`BadMintWindow`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
 `initialize` or `setMintWindow` was given a nonzero `mintEnd` not strictly after `mintStart`.
 
+**`BadMintWindow`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
+`initialize` or `setMintWindow` was given a nonzero `mintEnd` not strictly after `mintStart`.
+
 **`BadSupplyCap`** · [Surface](/docs/surface/contracts/surface#errors)\
 `setSupplyCap` was given a nonzero cap below current usage: mints ever on the sequential form, live supply on the pooled form.
+
+**`BadSupplyCap`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+`setSupplyCap` was given a nonzero cap below mints-ever.
 
 **`BuilderRequired`** · [ScriptyRenderer](/docs/surface/contracts/scripty-renderer#errors)\
 Reverts construction when the ScriptyBuilderV2 address is zero: the renderer would have nothing to assemble the HTML document with.
@@ -25,40 +37,79 @@ Reverts construction when the ScriptyBuilderV2 address is zero: the renderer wou
 **`CollectionRequired`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
 `initialize` was given the zero address as the collection.
 
+**`CollectionRequired`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
+`initialize` was given the zero address as the collection.
+
 **`ERC721IncorrectOwner`** · [Surface](/docs/surface/contracts/surface#errors)\
+Standard ERC721 error: a token operation named an owner that does not match the token's actual owner.
+
+**`ERC721IncorrectOwner`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
 Standard ERC721 error: a token operation named an owner that does not match the token's actual owner.
 
 **`ERC721InsufficientApproval`** · [Surface](/docs/surface/contracts/surface#errors)\
 Standard ERC721 error: the caller lacks approval to transfer or burn the token.
 
+**`ERC721InsufficientApproval`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+Standard ERC721 error: the caller lacks approval to transfer or burn the token.
+
 **`ERC721InvalidApprover`** · [Surface](/docs/surface/contracts/surface#errors)\
+Standard ERC721 error: the approver is not authorized to grant the approval.
+
+**`ERC721InvalidApprover`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
 Standard ERC721 error: the approver is not authorized to grant the approval.
 
 **`ERC721InvalidOperator`** · [Surface](/docs/surface/contracts/surface#errors)\
 Standard ERC721 error: an invalid operator address (for example the zero address) was used in an approval.
 
+**`ERC721InvalidOperator`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+Standard ERC721 error: an invalid operator address (for example the zero address) was used in an approval.
+
 **`ERC721InvalidOwner`** · [Surface](/docs/surface/contracts/surface#errors)\
+Standard ERC721 error: an invalid owner address (for example the zero address) was used in an ownership query.
+
+**`ERC721InvalidOwner`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
 Standard ERC721 error: an invalid owner address (for example the zero address) was used in an ownership query.
 
 **`ERC721InvalidReceiver`** · [Surface](/docs/surface/contracts/surface#errors)\
 Standard ERC721 error: a safe transfer targeted a contract that does not accept ERC721 tokens (bad `onERC721Received`).
 
+**`ERC721InvalidReceiver`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+Standard ERC721 error: a safe transfer targeted a contract that does not accept ERC721 tokens (bad `onERC721Received`).
+
 **`ERC721InvalidSender`** · [Surface](/docs/surface/contracts/surface#errors)\
+Standard ERC721 error: a transfer named a sender that does not own the token.
+
+**`ERC721InvalidSender`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
 Standard ERC721 error: a transfer named a sender that does not own the token.
 
 **`ERC721NonexistentToken`** · [Surface](/docs/surface/contracts/surface#errors)\
 Standard ERC721 error: the token id does not exist (never minted or already burned).
 
+**`ERC721NonexistentToken`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+Standard ERC721 error: the token id does not exist (never minted or already burned).
+
 **`ExceedsCap`** · [Surface](/docs/surface/contracts/surface#errors)\
 A mint would cross the supply cap: mints ever on the sequential form, live supply on the pooled form.
 
+**`ExceedsCap`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+A mint would push mints-ever past the supply cap.
+
 **`FactoryDeprecated`** · [SurfaceFactory](/docs/surface/contracts/factory#errors)\
+A create function was called after deprecation.
+
+**`FactoryDeprecated`** · [SurfaceFactoryV2](/docs/surface/contracts/factory-v2#errors)\
 A create function was called after deprecation.
 
 **`FactoryPaused`** · [SurfaceFactory](/docs/surface/contracts/factory#errors)\
 A create function was called while the factory is paused (see `setPaused`).
 
+**`FactoryPaused`** · [SurfaceFactoryV2](/docs/surface/contracts/factory-v2#errors)\
+A create function was called while the factory is paused (see `setPaused`).
+
 **`FailedDeployment`** · [SurfaceFactory](/docs/surface/contracts/factory#errors)\
+Inherited from OpenZeppelin `Clones`.
+
+**`FailedDeployment`** · [SurfaceFactoryV2](/docs/surface/contracts/factory-v2#errors)\
 Inherited from OpenZeppelin `Clones`.
 
 **`GunzipStoreRequired`** · [ScriptyRenderer](/docs/surface/contracts/scripty-renderer#errors)\
@@ -67,10 +118,19 @@ Reverts at construction when any dependency or code file is gzipped but the gunz
 **`InsufficientBalance`** · [SurfaceFactory](/docs/surface/contracts/factory#errors)\
 Inherited from OpenZeppelin `Clones`.
 
+**`InsufficientBalance`** · [SurfaceFactoryV2](/docs/surface/contracts/factory-v2#errors)\
+Inherited from OpenZeppelin `Clones`.
+
 **`InvalidInitialization`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
 OpenZeppelin Initializable error: `initialize` was called more than once, or on the implementation whose initializers are disabled.
 
+**`InvalidInitialization`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
+OpenZeppelin Initializable error: `initialize` was called more than once, or on the implementation whose initializers are disabled.
+
 **`InvalidInitialization`** · [Surface](/docs/surface/contracts/surface#errors)\
+OpenZeppelin Initializable error: `initialize` was called more than once, or on the implementation whose initializers are disabled.
+
+**`InvalidInitialization`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
 OpenZeppelin Initializable error: `initialize` was called more than once, or on the implementation whose initializers are disabled.
 
 **`LengthMismatch`** · [RenderAssets](/docs/surface/contracts/render-assets#errors)\
@@ -79,17 +139,32 @@ OpenZeppelin Initializable error: `initialize` was called more than once, or on 
 **`MaxMintsExceeded`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
 The call would cross this clone's `maxMints` ceiling.
 
+**`MaxMintsExceeded`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
+The call would cross this clone's `maxMints` ceiling.
+
 **`MintEnded`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
+`mint` was called at or after a nonzero `mintEnd`.
+
+**`MintEnded`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
 `mint` was called at or after a nonzero `mintEnd`.
 
 **`MinterIsLocked`** · [Surface](/docs/surface/contracts/surface#errors)\
 `setMinter` or `lockMinter` was called after `lockMinter`.
 
+**`MinterIsLocked`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+`setMinter`, `setPrimaryMinter`, or `lockMinter` was called after `lockMinter`.
+
 **`MintNotStarted`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
+`mint` was called before `mintStart`.
+
+**`MintNotStarted`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
 `mint` was called before `mintStart`.
 
 **`NeverMinted`** · [Surface](/docs/surface/contracts/surface#errors)\
 `tokenSeed` was read for an id that was never minted (its seed slot is zero).
+
+**`NeverMinted`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+`tokenSeed` was read for an id that was never minted.
 
 **`NoCode`** · [ScriptyRenderer](/docs/surface/contracts/scripty-renderer#errors)\
 Reverts construction when the `code` array is empty: a renderer with no artist code has nothing to assemble.
@@ -97,29 +172,56 @@ Reverts construction when the `code` array is empty: a renderer with no artist c
 **`NoStrayETH`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
 `rescueStrayETH` found no ETH above the owed balances.
 
+**`NoStrayETH`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
+`rescueStrayETH` found no ETH above the owed balances.
+
 **`NoStrayETH`** · [Surface](/docs/surface/contracts/surface#errors)\
+`rescueStrayETH` found a zero ETH balance.
+
+**`NoStrayETH`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
 `rescueStrayETH` found a zero ETH balance.
 
 **`NotAContract`** · [SurfaceFactory](/docs/surface/contracts/factory#errors)\
 The constructor was given an address with no code where a contract is required: an implementation (sequential, pooled, or minter), a nonzero default renderer, or a nonzero Catalog.
 
+**`NotAContract`** · [SurfaceFactoryV2](/docs/surface/contracts/factory-v2#errors)\
+The constructor was given an address with no code where a contract is required: an implementation (sequential or minter), a nonzero default renderer, or a nonzero Catalog.
+
 **`NotAContract`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
 `initialize` or `setPriceStrategy` was given a nonzero address with no code where a contract is required (the collection, or a price strategy).
 
+**`NotAContract`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
+`initialize` was given a nonzero collection address with no code.
+
 **`NotAContract`** · [Surface](/docs/surface/contracts/surface#errors)\
+Declared on the shared collection interface for companion use.
+
+**`NotAContract`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
 Declared on the shared collection interface for companion use.
 
 **`NotAllowlisted`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
 An allowlist root is set and the proof in `data` does not prove `to` is on the list.
 
+**`NotAllowlisted`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
+An allowlist root is set and the proof in `data` does not prove `to` is on the list.
+
 **`NotAnAdmin`** · [Surface](/docs/surface/contracts/surface#errors)\
+`removeAdmin` was called for an account that holds no grant.
+
+**`NotAnAdmin`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
 `removeAdmin` was called for an account that holds no grant.
 
 **`NotAuthorized`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
 A config setter or `rescueStrayETH` was called by an address that is neither the collection's owner nor one of its admins.
 
+**`NotAuthorized`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
+A config setter or `rescueStrayETH` was called by an address that is neither the collection's owner nor one of its admins.
+
 **`NotAuthorized`** · [Surface](/docs/surface/contracts/surface#errors)\
 An `onlyOwnerOrAdmin` function was called by neither the owner nor an admin; a pooled minter-set change was attempted by a non-owner; `removeAdmin` was called by someone other than the owner or the admin itself; `notifyMetadataUpdate` was called by neither the renderer nor an owner/admin; or `burn` was called without…
+
+**`NotAuthorized`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+An `onlyOwnerOrAdmin` function was called by neither the owner nor an admin; `removeAdmin` was called by someone other than the owner or the admin itself; `notifyMetadataUpdate` was called by neither the renderer nor an owner/admin; or `burn` was called without holder-or-approved authority.
 
 **`NotCaptureAuthorized`** · [RenderAssets](/docs/surface/contracts/render-assets#errors)\
 A capture write was attempted by an address that is not the collection's owner, one of its admins, or a granted capturer.
@@ -127,17 +229,32 @@ A capture write was attempted by an address that is not the collection's owner, 
 **`NotDeployer`** · [SurfaceFactory](/docs/surface/contracts/factory#errors)\
 `deprecate` or `setPaused` was called by an address other than the factory deployer.
 
+**`NotDeployer`** · [SurfaceFactoryV2](/docs/surface/contracts/factory-v2#errors)\
+`deprecate` or `setPaused` was called by an address other than the factory deployer.
+
 **`NothingToWithdraw`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
+`withdraw` was called for an account with a zero balance.
+
+**`NothingToWithdraw`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
 `withdraw` was called for an account with a zero balance.
 
 **`NotInitializing`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
 OpenZeppelin Initializable error: an `onlyInitializing` step ran outside an active initialization.
 
+**`NotInitializing`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
+OpenZeppelin Initializable error: an `onlyInitializing` step ran outside an active initialization.
+
 **`NotInitializing`** · [Surface](/docs/surface/contracts/surface#errors)\
+OpenZeppelin Initializable error: an `onlyInitializing` step ran outside an active initialization.
+
+**`NotInitializing`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
 OpenZeppelin Initializable error: an `onlyInitializing` step ran outside an active initialization.
 
 **`NotMinter`** · [Surface](/docs/surface/contracts/surface#errors)\
 The mint entrypoint was called by an address that is not an authorized minter.
+
+**`NotMinter`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+A mint entrypoint was called by an address that is not an authorized minter.
 
 **`NotSurfaceAdmin`** · [RenderAssets](/docs/surface/contracts/render-assets#errors)\
 A write was attempted by an address that is neither the collection's owner nor one of its admins.
@@ -148,55 +265,115 @@ A write was attempted by an address that is neither the collection's owner nor o
 **`OwnableInvalidOwner`** · [Surface](/docs/surface/contracts/surface#errors)\
 Standard OpenZeppelin Ownable error: an invalid owner address (for example the zero address) was supplied.
 
+**`OwnableInvalidOwner`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+Standard OpenZeppelin Ownable error: an invalid owner address (for example the zero address) was supplied.
+
 **`OwnableUnauthorizedAccount`** · [Surface](/docs/surface/contracts/surface#errors)\
 Standard OpenZeppelin Ownable error: an owner-gated function (`addAdmin`, `transferOwnership`, `renounceOwnership`) was called by a non-owner, or `acceptOwnership` by a non-pending-owner.
 
+**`OwnableUnauthorizedAccount`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+Standard OpenZeppelin Ownable error: an owner-gated function (`addAdmin`, `transferOwnership`, `renounceOwnership`, `seal`) was called by a non-owner, or `acceptOwnership` by a non-pending-owner.
+
 **`OwnerRequired`** · [SurfaceFactory](/docs/surface/contracts/factory#errors)\
+A create function was given the zero address as the collection `owner`.
+
+**`OwnerRequired`** · [SurfaceFactoryV2](/docs/surface/contracts/factory-v2#errors)\
 A create function was given the zero address as the collection `owner`.
 
 **`OwnerRequired`** · [Surface](/docs/surface/contracts/surface#errors)\
 `initialize` was given the zero address as the owner.
 
+**`OwnerRequired`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+`initialize` was given the zero address as the owner.
+
 **`PayoutRecipientRequired`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
+`initialize` or `setPayoutRecipient` was given the zero address.
+
+**`PayoutRecipientRequired`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
 `initialize` or `setPayoutRecipient` was given the zero address.
 
 **`PrimaryMinterNotAuthorized`** · [SurfaceFactory](/docs/surface/contracts/factory#errors)\
 `createSurfaceCustom` or `createPooledSurface` was given a nonzero `primaryMinter` that is not a member of `initialMinters` (the sole entry, for the pooled form).
 
+**`PrimaryMinterNotAuthorized`** · [SurfaceFactoryV2](/docs/surface/contracts/factory-v2#errors)\
+`createSurfaceCustom` was given a nonzero `primaryMinter` that is not a member of `initialMinters`.
+
 **`PrimaryMinterNotAuthorized`** · [Surface](/docs/surface/contracts/surface#errors)\
 `initialize` or `setPrimaryMinter` was given a nonzero primary minter that is not a member of the granted minter set (the sole entry, for the pooled form).
 
+**`PrimaryMinterNotAuthorized`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+`initialize` or `setPrimaryMinter` was given a nonzero primary minter that is not a member of the granted minter set.
+
 **`ReentrancyGuardReentrantCall`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
+OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was re-entered.
+
+**`ReentrancyGuardReentrantCall`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
 OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was re-entered.
 
 **`ReentrancyGuardReentrantCall`** · [Surface](/docs/surface/contracts/surface#errors)\
 OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was re-entered.
 
+**`ReentrancyGuardReentrantCall`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was re-entered.
+
 **`ReferralShareAboveCap`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
+`setReferralShareBps` was given a share above `MAX_REFERRAL_SHARE_BPS`.
+
+**`ReferralShareAboveCap`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
 `setReferralShareBps` was given a share above `MAX_REFERRAL_SHARE_BPS`.
 
 **`RendererIsLocked`** · [Surface](/docs/surface/contracts/surface#errors)\
 `setRenderer` or `lockRenderer` was called after `lockRenderer`.
 
+**`RendererIsLocked`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+`setRenderer` or `lockRenderer` was called after `lockRenderer`.
+
 **`RendererNotContract`** · [Surface](/docs/surface/contracts/surface#errors)\
+The renderer address has no code (carries the address).
+
+**`RendererNotContract`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
 The renderer address has no code (carries the address).
 
 **`RendererRequired`** · [Surface](/docs/surface/contracts/surface#errors)\
 `initialize` was given no renderer (neither the config nor the factory default), or `setRenderer` was passed the zero address.
 
+**`RendererRequired`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+`initialize` was given no renderer (neither the config nor the factory default), or `setRenderer` was passed the zero address.
+
 **`RescueFailed`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
+The transfer in `rescueStrayETH` reverted.
+
+**`RescueFailed`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
 The transfer in `rescueStrayETH` reverted.
 
 **`RescueFailed`** · [Surface](/docs/surface/contracts/surface#errors)\
 The transfer in `rescueStrayETH` reverted.
 
+**`RescueFailed`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+The transfer in `rescueStrayETH` reverted.
+
+**`RoyaltyIsLocked`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+`setRoyalty` or `lockRoyalty` was called after `lockRoyalty`.
+
 **`RoyaltyTooHigh`** · [Surface](/docs/surface/contracts/surface#errors)\
 `initialize` or `setRoyalty` was given a royalty above the 50% cap (5000 bps).
+
+**`RoyaltyTooHigh`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+`initialize` or `setRoyalty` was given a royalty above the 50% cap (5000 bps).
+
+**`SeedSourceNotContract`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+`initialize` was given a nonzero `seedSource` with no code.
+
+**`SelfCustodyRejected`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+A mint or transfer would land a token at this collection's own address.
 
 **`StoreNotContract`** · [ScriptyRenderer](/docs/surface/contracts/scripty-renderer#errors)\
 Reverts at construction when a code or dependency file's `store` is not a deployed contract (carries the address).
 
 **`SupplyIsLocked`** · [Surface](/docs/surface/contracts/surface#errors)\
+`setSupplyCap` or `lockSupply` was called after `lockSupply`.
+
+**`SupplyIsLocked`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
 `setSupplyCap` or `lockSupply` was called after `lockSupply`.
 
 **`TooManyMinters`** · [Surface](/docs/surface/contracts/surface#errors)\
@@ -205,26 +382,53 @@ A minter grant would exceed the pooled form's one-minter limit, via `setMinter` 
 **`Underpayment`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
 A strategy-priced mint sent less than the quote.
 
+**`Underpayment`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
+Declared on the shared `IMinter` interface for a price-strategy branch this minter does not have.
+
 **`WalletCapExceeded`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
+The call would push `mintedBy[to]` past `walletCap`.
+
+**`WalletCapExceeded`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
 The call would push `mintedBy[to]` past `walletCap`.
 
 **`WithdrawFailed`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
 The transfer in `withdraw` reverted, for example a recipient that rejects ETH.
 
+**`WithdrawFailed`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
+The transfer in `withdraw` reverted, for example a recipient that rejects ETH.
+
 **`WrongPayment`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
 A fixed-price mint did not send exactly `price * quantity`.
 
+**`WrongPayment`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
+A mint did not send exactly `price * quantity`.
+
 **`ZeroAccount`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
+`withdraw` or `rescueStrayETH` was passed the zero address.
+
+**`ZeroAccount`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
 `withdraw` or `rescueStrayETH` was passed the zero address.
 
 **`ZeroAccount`** · [Surface](/docs/surface/contracts/surface#errors)\
 `rescueStrayETH` or `addAdmin` was passed the zero address.
 
+**`ZeroAccount`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+`rescueStrayETH` or `addAdmin` was passed the zero address.
+
 **`ZeroMinter`** · [Surface](/docs/surface/contracts/surface#errors)\
+An initial minter in `initialize`, or the `setMinter` target, was the zero address.
+
+**`ZeroMinter`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
 An initial minter in `initialize`, or the `setMinter` target, was the zero address.
 
 **`ZeroQuantity`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
 `mint` was called with `quantity == 0`.
 
+**`ZeroQuantity`** · [FixedPriceMinterV2](/docs/surface/contracts/fixed-price-minter-v2#errors)\
+`mint` was called with `quantity == 0`.
+
 **`ZeroQuantity`** · [Surface](/docs/surface/contracts/surface#errors)\
 `mintTo` was called with `quantity == 0`.
+
+**`ZeroQuantity`** · [SurfaceV2](/docs/surface/contracts/surface-v2#errors)\
+`mintTo` was called with `quantity == 0`, or `mintToSeeded` with an empty `seeds` array.

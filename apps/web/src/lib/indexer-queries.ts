@@ -1663,6 +1663,35 @@ export type IndexedCollectionRow = {
   symbol: string | null
   idMode: number | null
   primaryMinter: string | null
+  /** 1 for a v1-factory collection, 2 for v2 (see SurfaceV2.version()).
+   *  Defaults to 1 when the indexer schema predates the column (see
+   *  protocolVersionColumnExists): every collection indexed before v2
+   *  shipped is a v1 collection. */
+  protocolVersion: number
+}
+
+/**
+ * Does `collections.protocol_version` exist yet? The column ships with the
+ * indexer release that adds v2 discovery; a web deploy can precede it, same
+ * risk `surfaceTablesExist` guards against for the tables themselves. Sticky
+ * once true for the process lifetime.
+ */
+let protocolVersionColumnSeen = false
+async function protocolVersionColumnExists(db: NonNullable<typeof sql>, schema: string): Promise<boolean> {
+  if (protocolVersionColumnSeen) return true
+  try {
+    const rows = (await db.unsafe(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = $1 AND table_name = 'collections' AND column_name = 'protocol_version'
+       ) AS ok`,
+      [schema],
+    )) as Array<{ ok: boolean }>
+    if (rows[0]?.ok) protocolVersionColumnSeen = true
+    return protocolVersionColumnSeen
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -1676,10 +1705,12 @@ export async function getCollectionsByOwnerFromIndexer(
 ): Promise<IndexedCollectionRow[] | null> {
   if (INDEXER_DISABLED || !sql) return null
   const db = sql
+  const schema = indexerSchema()
+  const hasVersion = await protocolVersionColumnExists(db, schema)
   return withTimeout(async () => {
     const rows = (await db.unsafe(
-      `SELECT collection, name, symbol, id_mode, primary_minter
-       FROM ${indexerSchema()}.collections
+      `SELECT collection, name, symbol, id_mode, primary_minter${hasVersion ? ", protocol_version" : ""}
+       FROM ${schema}.collections
        WHERE owner = $1 ORDER BY created_at_block DESC LIMIT 100`,
       [owner.toLowerCase()],
     )) as Array<{
@@ -1688,6 +1719,7 @@ export async function getCollectionsByOwnerFromIndexer(
       symbol: string | null
       id_mode: number | null
       primary_minter: string | null
+      protocol_version: number | null
     }>
     return rows.map((r) => ({
       collection: r.collection,
@@ -1695,6 +1727,7 @@ export async function getCollectionsByOwnerFromIndexer(
       symbol: r.symbol,
       idMode: r.id_mode,
       primaryMinter: r.primary_minter,
+      protocolVersion: r.protocol_version ?? 1,
     }))
   })
 }

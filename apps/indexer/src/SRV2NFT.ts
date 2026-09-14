@@ -3,7 +3,7 @@ import { srv2ArtistTokens } from "ponder:schema"
 
 /**
  * SuperRare V2 shared 1/1 NFT contract. Mint = Transfer(from=0x0).
- * SR mints directly to the artist, so `to` IS the creator — no follow-
+ * SR mints directly to the artist, so `to` IS the creator: no follow-
  * up read.
  */
 

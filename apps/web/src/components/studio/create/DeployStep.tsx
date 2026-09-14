@@ -24,16 +24,18 @@
  */
 
 import { useRouter } from "next/navigation"
-import { parseEventLogs, type Address, type TransactionReceipt } from "viem"
+import { type Address } from "viem"
 import { useAccount, useChainId, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
-import { surfaceFactoryAbi, renderAssetsAbi } from "@pin/abi"
+import { surfaceFactoryAbi, surfaceFactoryV2Abi, renderAssetsAbi } from "@pin/abi"
 import { formatWriteError } from "@/components/tx/tx-ui"
 import {
   ZERO_ADDRESS,
   surfaceFactory,
+  surfaceFactoryV2,
   renderAssetsAddress,
 } from "@/lib/collection"
 import { studioToolHref } from "@/lib/studio-tools"
+import { parseDeployedCollectionAddress } from "./parse-deployed-address"
 import { validateCollaborators } from "./SharedFields"
 import type { WizardState } from "./types"
 import { BTN, BTN_SECONDARY, ERROR } from "./wizard-ui"
@@ -68,7 +70,12 @@ export function DeployStep({
 }) {
   const { address } = useAccount()
   const chainId = useChainId()
-  const factory = surfaceFactory(chainId)
+  // v2 factory wins when it resolves for this chain (art-only core, no
+  // pooled mode); v1 is the fallback until v2 deploys. See
+  // docs/pnd-surface-v2-plan.md.
+  const factoryV2 = surfaceFactoryV2(chainId)
+  const factoryV1 = surfaceFactory(chainId)
+  const factory = factoryV2 ?? factoryV1
   const renderAssets = renderAssetsAddress(chainId)
 
   const deploy = useWriteContract()
@@ -76,10 +83,10 @@ export function DeployStep({
     hash: deploy.data,
   })
 
-  const deployedAddress = useDeployedAddress(receipt)
+  const deployedAddress = parseDeployedCollectionAddress(receipt, !!factoryV2)
 
   // Post-deploy configuration: presentation data lives in renderer-land. A
-  // cover image goes to RenderAssets — its own tx, authorized by the
+  // cover image goes to RenderAssets, its own tx, authorized by the
   // collection owner (the connected artist).
   const coverWrite = useWriteContract()
   const { isLoading: coverMining, isSuccess: coverDone } = useWaitForTransactionReceipt({
@@ -119,17 +126,16 @@ export function DeployStep({
     }
   }
 
-  function buildSale() {
-    // Economics are preset-independent: renderer-native works sell through
-    // the same canonical minter; only the artwork source differs. The
-    // wizard doesn't yet offer allowlist/wallet-cap/priceStrategy at deploy
-    // time — those are studio follow-up actions (mint gate tool,
-    // ActivationQueue) directly on the minter after deploy. maxMints is the
-    // exception: a sale ceiling set after the fact leaves the mint unbounded
-    // in between, so callers that need one pass it here.
+  // Economics are preset-independent: renderer-native works sell through
+  // the same canonical minter; only the artwork source differs. The wizard
+  // doesn't yet offer allowlist/wallet-cap/priceStrategy at deploy time.
+  // Those are studio follow-up actions (mint gate tool, ActivationQueue)
+  // directly on the minter after deploy. maxMints is the exception: a sale
+  // ceiling set after the fact leaves the mint unbounded in between, so
+  // callers that need one pass it here.
+  function buildSaleBase() {
     return {
       price: priceWei,
-      priceStrategy: ZERO_ADDRESS as Address,
       mintStart: state.hasWindow ? toUnix(state.startAt) : 0n,
       mintEnd: state.hasWindow ? toUnix(state.endAt) : 0n,
       payoutRecipient: (state.payout !== "" ? state.payout : ZERO_ADDRESS) as Address,
@@ -149,11 +155,34 @@ export function DeployStep({
     if (!canDeploy || !factory || !address) return
     const creators = collabCheck.ok ? collabCheck.parsed : []
     const owner = ownerOverride ?? address
+    const name = state.name.trim()
+    const symbol = state.symbol.trim()
+    const cfg = buildCfg()
+    if (factoryV2) {
+      // v2's SaleConfig drops priceStrategy (FixedPriceMinterV2 is
+      // exact-payment only). seedSource is init-only with no wizard UI (see
+      // docs/pnd-surface-v2-plan.md): every wizard-deployed v2 collection
+      // derives its own seeds.
+      deploy.writeContract({
+        address: factoryV2,
+        abi: surfaceFactoryV2Abi,
+        functionName: "createSurface",
+        args: [name, symbol, owner, cfg, buildSaleBase(), creators, ZERO_ADDRESS as Address],
+      })
+      return
+    }
     deploy.writeContract({
       address: factory,
       abi: surfaceFactoryAbi,
       functionName: "createSurface",
-      args: [state.name.trim(), state.symbol.trim(), owner, buildCfg(), buildSale(), creators],
+      args: [
+        name,
+        symbol,
+        owner,
+        cfg,
+        { ...buildSaleBase(), priceStrategy: ZERO_ADDRESS as Address },
+        creators,
+      ],
     })
   }
 
@@ -231,20 +260,6 @@ export function DeployStep({
       </button>
     </div>
   )
-}
-
-function useDeployedAddress(receipt: TransactionReceipt | undefined): Address | null {
-  if (!receipt) return null
-  try {
-    const logs = parseEventLogs({
-      abi: surfaceFactoryAbi,
-      logs: receipt.logs,
-      eventName: "SurfaceCreated",
-    })
-    return (logs[0]?.args as { collection?: Address } | undefined)?.collection ?? null
-  } catch {
-    return null
-  }
 }
 
 function SuccessScreen({

@@ -14,15 +14,19 @@ import { muriProtocolAbi } from "./abis/MURIProtocol"
 import { surfaceAbi } from "./abis/Surface"
 import { surfaceFactoryAbi } from "./abis/SurfaceFactory"
 import { fixedPriceMinterAbi } from "./abis/FixedPriceMinter"
+import { surfaceV2Abi } from "./abis/SurfaceV2"
+import { surfaceFactoryV2Abi } from "./abis/SurfaceFactoryV2"
+import { fixedPriceMinterV2Abi } from "./abis/FixedPriceMinterV2"
 import { homageCollectionAbi } from "./abis/HomageCollection"
 import { homageMinterAbi } from "./abis/HomageMinter"
+import { readSurfaceV2Deployment } from "./src/surfaceV2Deployment"
 
 /**
- * PND v2 Ponder scope — REDUCED from v1.
+ * PND v2 Ponder scope: REDUCED from v1.
  *
  * Indexed (state-machine):
  *   - SovereignAuctionHouseFactory + every clone (PND product)
- *   - NFTMarket (Foundation marketplace — legacy weight)
+ *   - NFTMarket (Foundation marketplace: legacy weight)
  *   - FoundationNFT shared 1/1 contract
  *   - SuperRareNFT shared 1/1 contract
  *   - Catalog
@@ -78,14 +82,14 @@ const MINT_FACTORY_DEPLOY_BLOCK = 21_167_599
 const TL_DEPLOYER_ADDRESS = "0x7c24805454F7972d36BEE9D139BD93423AA29f3f" as const
 const TL_DEPLOYER_DEPLOY_BLOCK = 19_062_900
 
-// MURI Protocol singleton — fixed shared media-permanence registry. Low
+// MURI Protocol singleton: fixed shared media-permanence registry. Low
 // event volume; handlers read getArtwork per data-changing event to keep
 // URI counts authoritative. Mainnet deploy block verified via eth_getCode.
 const MURI_PROTOCOL_ADDRESS =
   "0x0000000000C2A0B63ab4aA971B08B905E5875b01" as const
 const MURI_PROTOCOL_DEPLOY_BLOCK = 23_754_750
 
-// PND Surface System (contracts/src/surface/) — the general
+// PND Surface System (contracts/src/surface/): the general
 // Surface core (Editions preset + generative + backed/pooled
 // forms), deployed via a single SurfaceFactory. Mirrors the
 // SovereignAuctionHouse(Factory) pattern above: one fixed factory indexed
@@ -100,7 +104,7 @@ const SURFACE_FACTORY_ADDRESS =
   "0xdB81d3F33EF3D84685486916E0d372E247558094" as const
 const SURFACE_FACTORY_DEPLOY_BLOCK = 25_590_436
 
-// Homage ("Homage to the Punk") singleton pair — ENV-GATED (see
+// Homage ("Homage to the Punk") singleton pair: ENV-GATED (see
 // src/Homage.ts): both contracts enter `contracts` only when all four
 // env vars are set, and src/Homage.ts gates its ponder.on registrations
 // on the same vars. Gated atomically: registering handlers for a
@@ -114,7 +118,7 @@ export const HOMAGE_WIRED = Boolean(
     process.env.HOMAGE_COLLECTION_START_BLOCK,
 )
 
-// Sovereign Auction House V2 factory — ENV-GATED like Homage above (see
+// Sovereign Auction House V2 factory: ENV-GATED like Homage above (see
 // src/SovereignV2.ts): the V2 factory is not deployed yet, so both the
 // config entries and the src/SovereignV2.ts handler registrations gate on
 // the same two env vars. Set both after the mainnet factory deploy.
@@ -123,9 +127,54 @@ export const SOVEREIGN_V2_WIRED = Boolean(
     process.env.SOVEREIGN_V2_FACTORY_START_BLOCK,
 )
 
-// drpc.org free tier handles multi-address eth_getLogs for the PND
-// factory pattern. See docs/RPC-strategy.md for why publicnode /
-// llamarpc / ankr / Alchemy don't.
+// Surface v2 (contracts/src/surface/v2/, docs/pnd-surface-v2-plan.md):
+// same factory + factory() clone pattern as v1's
+// SurfaceFactory/Surface/FixedPriceMinter below, plus a sepolia
+// rehearsal instance for pre-mainnet-broadcast verification. Event
+// shapes are byte-identical to v1's, so src/Collections.ts shares one
+// set of handler functions between the two, keyed by contract name.
+//
+// SurfaceFactoryV2/SurfaceV2/FixedPriceMinterV2 are declared ONCE each,
+// unconditionally, using Ponder's per-chain `chain: { mainnet: {...},
+// sepolia: {...} }` override so the SAME contract name resolves on
+// whichever network has a real deployment. A network with NO deployment
+// yet has its key OMITTED from that chain map (not pointed at the zero
+// address): Ponder's `flattenSources` (build/config.js) does
+// `Object.entries(source.chain).map(...)`, so a missing chain key
+// contributes no source at all for that chain, no `eth_getLogs` call,
+// no `ponder_sync.factories` row. Pointing an undeployed network at the
+// zero address instead would still run a full genesis-to-head scan
+// (Ponder's single-address historical sync has no zero-address short-
+// circuit), on both chains, on every startup, burning paid mainnet RPC
+// for a contract that will never emit a log. If every network is
+// undeployed, the resulting `chain: {}` is empty; `flattenSources`
+// still runs (`Object.entries({}).map(...)` is `[]`), so the contract
+// contributes zero sources rather than erroring, confirmed against
+// Ponder 0.16.6's source and a live `ponder dev` run below.
+//
+// The KEY ITSELF (`SurfaceFactoryV2` etc.) stays unconditional: this is
+// load-bearing for typing, not style. `createConfig`'s `contracts` type
+// parameter is declared `const`, and Ponder's EventNames/Event type
+// utilities never resolve a real event-args type when the CONTRACT KEY
+// is optionally present (verified empirically: a key included via
+// `...(cond ? {A: {...}} : {})` at the top level of `contracts` makes
+// every ponder.on(...) call in the whole file resolve to `never`, not
+// just the conditional one). A conditional spread INSIDE `chain: {...}`
+// does not have this problem: the contract key is still always there,
+// only which networks it runs on varies, so typing stays real. This is
+// also why v1's contracts (below) are one flat object with no wrapping
+// condition: they have no per-network variance at all.
+const mainnetSurfaceV2 = readSurfaceV2Deployment("mainnet")
+const sepoliaSurfaceV2 = readSurfaceV2Deployment("sepolia")
+
+const surfaceCreatedEvent = parseAbiItem(
+  "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)",
+)
+
+// PONDER_RPC_URL_1 is required (same as v1, unchanged). SEPOLIA_RPC_URL
+// is optional: falls back to a free public RPC, since the sepolia side
+// only ever serves the rehearsal deploy above (low volume, no archive
+// reads).
 const RPC_URL = process.env.PONDER_RPC_URL_1
 if (!RPC_URL) {
   throw new Error(
@@ -133,6 +182,8 @@ if (!RPC_URL) {
       "https://eth.drpc.org",
   )
 }
+const SEPOLIA_RPC_URL =
+  process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 
 export default createConfig({
   chains: {
@@ -141,13 +192,13 @@ export default createConfig({
       rpc: http(RPC_URL),
       // 15s poll. Per-poll work scales linearly with the indexed-
       // contract surface, and a head-follow poll is one small getLogs
-      // batch per filter over a few blocks — free-RPC cheap. The old
+      // batch per filter over a few blocks: free-RPC cheap. The old
       // 300s setting predates the Surface launch; a live mint feed
       // (homage mint history reads collection_mints) needs rows within
       // seconds, not minutes.
       pollingInterval: 15_000,
       // drpc free tier caps eth_getLogs at 10K blocks per request and
-      // throttles at ~100 RPS. Hard limit, not soft throttle — requests
+      // throttles at ~100 RPS. Hard limit, not soft throttle: requests
       // over 10K return error code 35. Ponder auto-chunks on errors so
       // backfill still completes; setting maxRequestsPerSecond keeps
       // us comfortably under the rate limit so the auto-chunk loop
@@ -155,9 +206,14 @@ export default createConfig({
       // polls are tiny (<100 blocks per call) and unaffected.
       maxRequestsPerSecond: 25,
     },
+    sepolia: {
+      id: 11_155_111,
+      rpc: http(SEPOLIA_RPC_URL),
+      pollingInterval: 15_000,
+    },
   },
   contracts: {
-    // ── PND (Sovereign Auction House) — state-machine ─────────────────
+    // ── PND (Sovereign Auction House): state-machine ─────────────────
     SovereignAuctionHouseFactory: {
       chain: "mainnet",
       abi: sovereignAuctionHouseFactoryAbi,
@@ -194,7 +250,7 @@ export default createConfig({
     // ── Foundation collection factories (DISCOVERY-ONLY) ──────────────
     // We index NFTCollectionCreated to populate fnd_collections, which
     // tells the worker which clones to scan. We do NOT subscribe to per-
-    // clone Transfer events here in v2 — that work moves to the worker.
+    // clone Transfer events here in v2: that work moves to the worker.
     NFTCollectionFactoryV1: {
       chain: "mainnet",
       abi: nftCollectionFactoryAbi,
@@ -252,8 +308,8 @@ export default createConfig({
       startBlock: MURI_PROTOCOL_DEPLOY_BLOCK,
     },
 
-    // ── PND Surface System ────────────────────────────────────────────
-    // Fixed factory — discovery (one SurfaceCreated per artist
+    // ── PND Surface System v1 ─────────────────────────────────────────
+    // Fixed factory: discovery (one SurfaceCreated per artist
     // deploy) exactly like SovereignAuctionHouseFactory above.
     SurfaceFactory: {
       chain: "mainnet",
@@ -264,14 +320,14 @@ export default createConfig({
     // Full per-clone indexing of every deployed collection, via
     // Ponder's factory() child-address pattern (same mechanism as
     // SovereignAuctionHouse). This is a PND-owned factory, so full
-    // state-machine indexing here is in-bounds per AGENTS.md — it
+    // state-machine indexing here is in-bounds per AGENTS.md: it
     // is NOT the long-tail per-artist-platform scanning that
     // belongs in the worker.
     //
     // SurfaceCreated's third field is `primaryMinter` (primary-minter
     // discovery, docs/pnd-surface-thin-token-rearchitecture.md §3.5):
     // the chosen primary on every creation path, not just the
-    // canonical clone createSurface wires. Not `indexed` — Ponder's
+    // canonical clone createSurface wires. Not `indexed`: Ponder's
     // factory() pattern reads it from the log data regardless. The
     // trailing name/symbol fields carry the collection's ERC721
     // identity (fixed at initialize; stored on `collections` by the
@@ -284,9 +340,7 @@ export default createConfig({
       abi: surfaceAbi,
       address: factory({
         address: SURFACE_FACTORY_ADDRESS,
-        event: parseAbiItem(
-          "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)",
-        ),
+        event: surfaceCreatedEvent,
         parameter: "collection",
       }),
       startBlock: SURFACE_FACTORY_DEPLOY_BLOCK,
@@ -300,7 +354,7 @@ export default createConfig({
     // Sold/ReferralPaid resolve their owning collection via the
     // `minters` reverse-index table (see Collections.ts), since these
     // events carry no collection field. This binding is fixed at
-    // SurfaceCreated time — a later primaryMinter repoint does not
+    // SurfaceCreated time: a later primaryMinter repoint does not
     // change which minter clone's Sold/ReferralPaid events are
     // indexed here, only `collections.primaryMinter`'s value.
     FixedPriceMinter: {
@@ -308,15 +362,97 @@ export default createConfig({
       abi: fixedPriceMinterAbi,
       address: factory({
         address: SURFACE_FACTORY_ADDRESS,
-        event: parseAbiItem(
-          "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)",
-        ),
+        event: surfaceCreatedEvent,
         parameter: "primaryMinter",
       }),
       startBlock: SURFACE_FACTORY_DEPLOY_BLOCK,
     },
 
-    // ── Sovereign Auction House V2 (ENV-GATED — see SOVEREIGN_V2_WIRED) ──
+    // ── PND Surface System v2 ─────────────────────────────────────────
+    // See the comment above `mainnetSurfaceV2`/`sepoliaSurfaceV2`: each
+    // network's key is present only once that network has a real
+    // deployment; an undeployed network is omitted, not zero-addressed.
+    SurfaceFactoryV2: {
+      abi: surfaceFactoryV2Abi,
+      chain: {
+        ...(mainnetSurfaceV2
+          ? {
+              mainnet: {
+                address: mainnetSurfaceV2.surfaceFactoryV2,
+                startBlock: mainnetSurfaceV2.factoryDeployBlock,
+              },
+            }
+          : {}),
+        ...(sepoliaSurfaceV2
+          ? {
+              sepolia: {
+                address: sepoliaSurfaceV2.surfaceFactoryV2,
+                startBlock: sepoliaSurfaceV2.factoryDeployBlock,
+              },
+            }
+          : {}),
+      },
+    },
+    SurfaceV2: {
+      abi: surfaceV2Abi,
+      chain: {
+        ...(mainnetSurfaceV2
+          ? {
+              mainnet: {
+                address: factory({
+                  address: mainnetSurfaceV2.surfaceFactoryV2,
+                  event: surfaceCreatedEvent,
+                  parameter: "collection",
+                }),
+                startBlock: mainnetSurfaceV2.factoryDeployBlock,
+              },
+            }
+          : {}),
+        ...(sepoliaSurfaceV2
+          ? {
+              sepolia: {
+                address: factory({
+                  address: sepoliaSurfaceV2.surfaceFactoryV2,
+                  event: surfaceCreatedEvent,
+                  parameter: "collection",
+                }),
+                startBlock: sepoliaSurfaceV2.factoryDeployBlock,
+              },
+            }
+          : {}),
+      },
+    },
+    FixedPriceMinterV2: {
+      abi: fixedPriceMinterV2Abi,
+      chain: {
+        ...(mainnetSurfaceV2
+          ? {
+              mainnet: {
+                address: factory({
+                  address: mainnetSurfaceV2.surfaceFactoryV2,
+                  event: surfaceCreatedEvent,
+                  parameter: "primaryMinter",
+                }),
+                startBlock: mainnetSurfaceV2.factoryDeployBlock,
+              },
+            }
+          : {}),
+        ...(sepoliaSurfaceV2
+          ? {
+              sepolia: {
+                address: factory({
+                  address: sepoliaSurfaceV2.surfaceFactoryV2,
+                  event: surfaceCreatedEvent,
+                  parameter: "primaryMinter",
+                }),
+                startBlock: sepoliaSurfaceV2.factoryDeployBlock,
+              },
+            }
+          : {}),
+      },
+    },
+
+    // ── Sovereign Auction House V2 (ENV-GATED: see SOVEREIGN_V2_WIRED) ──
     // Same factory + factory() clone pattern as the V1 pair above. The V2
     // factory's AuctionHouseCreated signature is byte-identical to V1's.
     ...(SOVEREIGN_V2_WIRED
@@ -342,7 +478,7 @@ export default createConfig({
         }
       : {}),
 
-    // ── Homage singleton pair (ENV-GATED — see HOMAGE_WIRED above) ────
+    // ── Homage singleton pair (ENV-GATED: see HOMAGE_WIRED above) ────
     ...(HOMAGE_WIRED
       ? {
           HomageMinter: {

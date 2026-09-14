@@ -17,7 +17,7 @@ ponder.on(
   async ({ event, context }) => {
     const { sender, deployedContract, implementation, cType, version } =
       event.args
-    // ERC-721 clones only — matches the worker's scan scope.
+    // ERC-721 clones only: matches the worker's scan scope.
     if (!cType.startsWith("ERC721")) return
 
     await context.db

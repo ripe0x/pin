@@ -1,0 +1,551 @@
+// Auto-extracted from contracts/out/SurfaceFactoryV2.sol/SurfaceFactoryV2.json.
+// Re-run: node scripts/emit-surface-abi.mjs (add v2 emit() calls there when this becomes permanent)
+export const surfaceFactoryV2Abi = [
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "sequentialImplementation_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "minterImplementation_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "defaultRenderer_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "catalog_",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "allSurfaces",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "catalog",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "createSurface",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "symbol",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "cfg",
+        "type": "tuple",
+        "internalType": "struct SurfaceConfig",
+        "components": [
+          {
+            "name": "supplyCap",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "royaltyBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "royaltyReceiver",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "renderer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "rendererLocked",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "supplyLocked",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      },
+      {
+        "name": "sale",
+        "type": "tuple",
+        "internalType": "struct SaleConfig",
+        "components": [
+          {
+            "name": "price",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "mintStart",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "mintEnd",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "payoutRecipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "maxMints",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "allowlistRoot",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "walletCap",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "creators",
+        "type": "address[]",
+        "internalType": "address[]"
+      },
+      {
+        "name": "seedSource",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "collection",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "minter",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createSurfaceCustom",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "symbol",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "cfg",
+        "type": "tuple",
+        "internalType": "struct SurfaceConfig",
+        "components": [
+          {
+            "name": "supplyCap",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "royaltyBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "royaltyReceiver",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "renderer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "rendererLocked",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "supplyLocked",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      },
+      {
+        "name": "initialMinters",
+        "type": "address[]",
+        "internalType": "address[]"
+      },
+      {
+        "name": "primaryMinter",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "creators",
+        "type": "address[]",
+        "internalType": "address[]"
+      },
+      {
+        "name": "seedSource",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "collection",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "defaultRenderer",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "deployer",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "deprecate",
+    "inputs": [
+      {
+        "name": "successor_",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "deprecated",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isSurface",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "minterImplementation",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "paused",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "sequentialImplementation",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "setPaused",
+    "inputs": [
+      {
+        "name": "paused_",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "successor",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "totalSurfaces",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "Deprecated",
+    "inputs": [
+      {
+        "name": "successor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PausedSet",
+    "inputs": [
+      {
+        "name": "paused",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SurfaceCreated",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "collection",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "primaryMinter",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "idMode",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum IdMode"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "symbol",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AlreadyDeprecated",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FactoryDeprecated",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FactoryPaused",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FailedDeployment",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InsufficientBalance",
+    "inputs": [
+      {
+        "name": "balance",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "needed",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotAContract",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotDeployer",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OwnerRequired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PrimaryMinterNotAuthorized",
+    "inputs": []
+  }
+] as const;
