@@ -7,12 +7,16 @@ import type { AuctionShelfCard } from "@/lib/landing-auctions"
 
 /** One open-auction tile. Shared by the home shelf and the /auctions listing. */
 export function AuctionCard({ card, now }: { card: AuctionShelfCard; now: number }) {
-  const status =
-    card.endTime === 0
-      ? "Waiting for first bid"
-      : `Ends ${formatEndsIn(card.endTime - now)}`
+  // A landed bid starts the clock, so hasBid marks a live, counting-down
+  // auction; without it the lot is listed and awaiting its first bid.
+  const isLive = card.hasBid
+  // The badge already says "Awaiting first bid", so only the live lot needs
+  // the countdown in the bottom row.
+  const status = isLive ? `Ends ${formatEndsIn(card.endTime - now)}` : ""
   const quantity = BigInt(card.quantity)
-  const quantityLabel = quantity > 1n ? ` · ${quantity} editions` : ""
+  const metaLine = [status, quantity > 1n ? `${quantity} editions` : ""]
+    .filter(Boolean)
+    .join(" · ")
 
   return (
     <li>
@@ -25,10 +29,17 @@ export function AuctionCard({ card, now }: { card: AuctionShelfCard; now: number
         </div>
         <div className="space-y-3 p-4">
           <div className="flex items-center justify-between gap-3">
-            <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium uppercase tracking-wider text-status-available">
-              <span className="h-1.5 w-1.5 rounded-full bg-status-available" aria-hidden="true" />
-              Open auction
-            </span>
+            {isLive ? (
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium uppercase tracking-wider text-status-available">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-status-available" aria-hidden="true" />
+                Live
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium uppercase tracking-wider text-gray-500">
+                <span className="h-1.5 w-1.5 rounded-full bg-gray-400" aria-hidden="true" />
+                Awaiting first bid
+              </span>
+            )}
             <span className="text-[10px] font-mono text-gray-500">Artist-owned house</span>
           </div>
           <div>
@@ -60,10 +71,7 @@ export function AuctionCard({ card, now }: { card: AuctionShelfCard; now: number
                 {formatEth(BigInt(card.priceWei))}
               </p>
             </div>
-            <p className="text-right text-[11px] font-mono text-gray-600">
-              {status}
-              {quantityLabel}
-            </p>
+            <p className="text-right text-[11px] font-mono text-gray-600">{metaLine}</p>
           </div>
         </div>
       </Link>
