@@ -63,7 +63,22 @@ contract DeploySurfaceV2 is Script {
         address catalog;
     }
 
+    /// @dev CLI entrypoint: broadcasts as the sender forge supplies (--account,
+    ///      --private-key, or the default sender). See runAs for the fork-test
+    ///      path, which needs an explicit sender instead.
     function run() external returns (Deployment memory d) {
+        return _run(address(0));
+    }
+
+    /// @dev Same deploy as run(), broadcasting as `sender` instead of forge's
+    ///      default. Used by the mainnet-fork test to exercise the script
+    ///      without a prank, since vm.startBroadcast and an active prank are
+    ///      not compatible.
+    function runAs(address sender) external returns (Deployment memory d) {
+        return _run(sender);
+    }
+
+    function _run(address sender) private returns (Deployment memory d) {
         _requireChainSupported();
 
         address catalog = vm.envOr("CATALOG", address(0));
@@ -78,7 +93,11 @@ contract DeploySurfaceV2 is Script {
             revert CatalogRequired();
         }
 
-        vm.startBroadcast();
+        if (sender == address(0)) {
+            vm.startBroadcast();
+        } else {
+            vm.startBroadcast(sender);
+        }
 
         if (catalog == address(0)) {
             // Local-chain convenience only: mainnet and sepolia both require an
@@ -141,21 +160,28 @@ contract DeploySurfaceV2 is Script {
 
     /// @dev Proves the constructor wiring landed as intended and, on mainnet,
     ///      that the catalog and signer match the recorded protocol values.
+    ///      The signer is read back from factory.deployer() (msg.sender at
+    ///      the factory's construction) rather than tx.origin: vm.startBroadcast
+    ///      only overrides msg.sender/tx.origin for calls made from this
+    ///      frame outward, never for a read of tx.origin in this frame itself,
+    ///      so factory.deployer() is the only value that reflects the actual
+    ///      broadcasting signer in every caller of this script.
     function _requirePostflight(Deployment memory d, address expectedDeployer, bool landPaused) private {
+        SurfaceFactoryV2 factory = SurfaceFactoryV2(d.surfaceFactoryV2);
+        address signer = factory.deployer();
+
         if (block.chainid == MAINNET_CHAIN_ID) {
-            if (tx.origin != MAINNET_DEPLOYER) revert DeployerMismatch(MAINNET_DEPLOYER, tx.origin);
+            if (signer != MAINNET_DEPLOYER) revert DeployerMismatch(MAINNET_DEPLOYER, signer);
             if (d.catalog != MAINNET_CATALOG) revert CatalogMismatch(MAINNET_CATALOG, d.catalog);
         }
-        if (expectedDeployer != address(0) && tx.origin != expectedDeployer) {
-            revert DeployerMismatch(expectedDeployer, tx.origin);
+        if (expectedDeployer != address(0) && signer != expectedDeployer) {
+            revert DeployerMismatch(expectedDeployer, signer);
         }
 
-        SurfaceFactoryV2 factory = SurfaceFactoryV2(d.surfaceFactoryV2);
         require(factory.sequentialImplementation() == d.sequentialImplementationV2, "sequential impl mismatch");
         require(factory.minterImplementation() == d.minterImplementationV2, "minter impl mismatch");
         require(factory.defaultRenderer() == d.defaultRenderer, "default renderer mismatch");
         require(factory.catalog() == d.catalog, "catalog mismatch");
-        require(factory.deployer() == tx.origin, "factory deployer mismatch");
         require(factory.paused() == landPaused, "factory pause state mismatch");
         require(!factory.deprecated(), "factory unexpectedly deprecated");
 

@@ -76,10 +76,9 @@ contract DeploySurfaceV2Test is Test {
         vm.setEnv("DEFAULT_RENDERER", "");
         vm.setEnv("DEPLOYER", vm.toString(MAINNET_DEPLOYER));
 
-        vm.startPrank(MAINNET_DEPLOYER, MAINNET_DEPLOYER);
+        vm.deal(MAINNET_DEPLOYER, 10 ether);
         DeploySurfaceV2 deployer = new DeploySurfaceV2();
-        DeploySurfaceV2.Deployment memory d = deployer.run();
-        vm.stopPrank();
+        DeploySurfaceV2.Deployment memory d = deployer.runAs(MAINNET_DEPLOYER);
 
         assertEq(d.catalog, MAINNET_CATALOG, "should reuse the live mainnet Catalog");
         assertGt(d.surfaceFactoryV2.code.length, 0, "factory has no code");
