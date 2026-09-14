@@ -26,3 +26,12 @@ struct CodeRef {
     string name; // the file's name within that store
     CodeKind kind; // plain script or gzipped script
 }
+
+/// @notice Artist-supplied metadata text for a ScriptyRenderer. Written once
+///         at construction with no setter. Each field is omitted from the
+///         JSON it feeds when empty.
+struct MetadataText {
+    string tokenDescription; // tokenURI `description`
+    string collectionDescription; // contractURI `description`
+    string externalUrl; // tokenURI `external_url` and contractURI `external_link`
+}

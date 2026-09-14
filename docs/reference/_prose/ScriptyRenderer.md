@@ -19,6 +19,10 @@ Combined with the collection's `lockRenderer()`, which pins the renderer
 pointer at this contract, the token's presentation is fixed with no post-deploy
 step.
 
+Metadata text (a token description, a collection description, and an external
+URL) is also set once at construction, with no setter. Each field is included
+in the JSON it feeds only when non-empty.
+
 At `tokenURI` time it reads the token's seed through
 [ISurfaceView](/docs/surface/contracts/i-surface-view), injects the
 render context (`window.tokenData = { hash, tokenId, collection, chainId,
@@ -41,21 +45,25 @@ sample outputs.
 ## function tokenURI
 
 Builds the token's metadata JSON and returns it as a
-`data:application/json;base64,` URI. The `animation_url` is the assembled HTML
-document (`data:text/html;base64,...`): the work's dependency files, then the
-injected `window.tokenData` context, then the artist's code, plus a gunzip
-helper last when any file is gzipped. `attributes` carries the derived
-provenance traits (`Mint Order` in Sequential mode, plus `Seed`) followed by any
-seed-derived traits the subclass adds through `_workTraits`. An `image` field is
-included only when a subclass returns one from `_image`; by default the
-`animation_url` is the artwork. The collection name and image URI are
-JSON-escaped before embedding.
+`data:application/json;base64,` URI. `description` is included right after
+`name` when a token description was set at construction. The `animation_url`
+is the assembled HTML document (`data:text/html;base64,...`): the work's
+dependency files, then the injected `window.tokenData` context, then the
+artist's code, plus a gunzip helper last when any file is gzipped. An `image`
+field is included only when a subclass returns one from `_image`; by default
+the `animation_url` is the artwork. `external_url` is included when set at
+construction. `attributes` carries the derived provenance traits (`Mint Order`
+in Sequential mode, plus `Seed`) followed by any seed-derived traits the
+subclass adds through `_workTraits`. The collection name, description, image
+URI, and external URL are JSON-escaped before embedding.
 
 ## function contractURI
 
-Collection-level metadata as a `data:application/json;base64,` URI, currently
-just the escaped collection `name`. Consumed by marketplaces that read
-contract-level metadata.
+Collection-level metadata as a `data:application/json;base64,` URI: the
+escaped collection `name`, a `description` when a collection description was
+set at construction, the cover image when RenderAssets is wired and a cover is
+set, and an `external_link` when set at construction. Consumed by marketplaces
+that read contract-level metadata.
 
 ## function previewURI
 

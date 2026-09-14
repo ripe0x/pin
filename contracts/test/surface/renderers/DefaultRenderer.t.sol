@@ -182,7 +182,7 @@ contract DefaultRendererTest is Test {
     function test_tokenURI_image_templateRung() public {
         uint256 tokenId = _mint();
         vm.prank(artist);
-        assets.setCaptureTemplate(address(collection), "ar://manifest/{id}.png");
+        assets.setCaptureTemplate(address(collection), "ar://manifest/{id}.png", tokenId);
 
         string memory json = _decode(collection.tokenURI(tokenId));
         assertTrue(_contains(json, "ar://manifest/1.png"), "template resolves with the token id");

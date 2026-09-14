@@ -8,7 +8,7 @@ import {IRenderer, ISurfaceView} from "../interfaces/IRenderer.sol";
 import {IPreviewRenderer} from "../interfaces/IPreviewRenderer.sol";
 import {IdMode} from "../SurfaceTypes.sol";
 import {RenderAssets} from "../renderers/RenderAssets.sol";
-import {CodeKind, CodeRef} from "./CodeTypes.sol";
+import {CodeKind, CodeRef, MetadataText} from "./CodeTypes.sol";
 import {IScriptyBuilderV2} from "./vendor/scripty/interfaces/IScriptyBuilderV2.sol";
 import {HTMLRequest, HTMLTag, HTMLTagType} from "./vendor/scripty/core/ScriptyStructs.sol";
 
@@ -79,6 +79,9 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
     string private _gunzipFile;
     CodeRef[] private _code; // the artist's algorithm, chunked/named onchain
     CodeRef[] private _deps; // library files (gzipped p5 / three / etc.)
+    string private _tokenDescription; // tokenURI `description`; empty omits the field
+    string private _collectionDescription; // contractURI `description`; empty omits the field
+    string private _externalUrl; // tokenURI `external_url` / contractURI `external_link`; empty omits both
 
     error NoCode();
     error BuilderRequired();
@@ -92,7 +95,8 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
         CodeRef[] memory code_,
         CodeRef[] memory deps_,
         uint8 injectionVersion_,
-        address renderAssets_
+        address renderAssets_,
+        MetadataText memory metadataText_
     ) {
         if (scriptyBuilder_.code.length == 0) revert BuilderRequired();
         if (code_.length == 0) revert NoCode();
@@ -101,6 +105,9 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
         _gunzipFile = gunzipFile_;
         injectionVersion = injectionVersion_;
         renderAssets = RenderAssets(renderAssets_);
+        _tokenDescription = metadataText_.tokenDescription;
+        _collectionDescription = metadataText_.collectionDescription;
+        _externalUrl = metadataText_.externalUrl;
         // Every referenced file store must be a deployed contract. An EOA store
         // makes tokenURI revert; if the renderer is then locked, the break is
         // permanent. The core runs the same code-length check on the renderer
@@ -139,6 +146,8 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
 
     // ── IRenderer ────────────────────────────────────────────────────────────
 
+    /// @dev `description` and `external_url` are included only when set at
+    ///      construction; both default to omitted.
     function tokenURI(address collection, uint256 tokenId) external view override returns (string memory) {
         ISurfaceView c = ISurfaceView(collection);
         bytes32 seed = c.tokenSeed(tokenId);
@@ -150,10 +159,17 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
             LibString.escapeJSON(c.name()),
             " #",
             tokenId.toString(),
-            '","animation_url":"',
+            '"',
+            bytes(_tokenDescription).length > 0
+                ? string(abi.encodePacked(',"description":"', LibString.escapeJSON(_tokenDescription), '"'))
+                : "",
+            ',"animation_url":"',
             htmlUri,
             '"',
             bytes(image).length > 0 ? string(abi.encodePacked(',"image":"', LibString.escapeJSON(image), '"')) : "",
+            bytes(_externalUrl).length > 0
+                ? string(abi.encodePacked(',"external_url":"', LibString.escapeJSON(_externalUrl), '"'))
+                : "",
             ',"attributes":',
             _attributes(c, tokenId, seed),
             "}"
@@ -190,7 +206,9 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
     }
 
     /// @dev Contract-level metadata for the marketplace collection page.
-    ///      Includes the cover when renderAssets is wired and a cover is set.
+    ///      Includes `description` when set at construction, the cover when
+    ///      renderAssets is wired and a cover is set, and `external_link` when
+    ///      set at construction.
     function contractURI(address collection) external view override returns (string memory) {
         string memory cover =
             address(renderAssets) == address(0) ? "" : renderAssets.coverOf(collection);
@@ -198,8 +216,14 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
             '{"name":"',
             LibString.escapeJSON(ISurfaceView(collection).name()),
             '"',
+            bytes(_collectionDescription).length > 0
+                ? string(abi.encodePacked(',"description":"', LibString.escapeJSON(_collectionDescription), '"'))
+                : "",
             bytes(cover).length > 0
                 ? string(abi.encodePacked(',"image":"', LibString.escapeJSON(cover), '"'))
+                : "",
+            bytes(_externalUrl).length > 0
+                ? string(abi.encodePacked(',"external_link":"', LibString.escapeJSON(_externalUrl), '"'))
                 : "",
             "}"
         );
@@ -268,8 +292,9 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
     ///      work code SHOULD tolerate additions and treat a missing/"token"
     ///      context as the canonical render.
     function _contextJs(address collection, uint256 tokenId, bytes32 seed, string memory context)
-        private
+        internal
         view
+        virtual
         returns (bytes memory)
     {
         return abi.encodePacked(
@@ -329,8 +354,15 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
     }
 
     /// @dev Provenance traits (Mint Order in Sequential mode + Seed), then the
-    ///      work's own seed-derived traits from `_workTraits`.
-    function _attributes(ISurfaceView c, uint256 tokenId, bytes32 seed) private view returns (bytes memory) {
+    ///      work's own seed-derived traits from `_workTraits`. A chain-live work
+    ///      whose traits derive from mutable state rather than the seed overrides
+    ///      this whole method.
+    function _attributes(ISurfaceView c, uint256 tokenId, bytes32 seed)
+        internal
+        view
+        virtual
+        returns (bytes memory)
+    {
         bytes memory order = c.idMode() == IdMode.Sequential
             ? abi.encodePacked('{"trait_type":"Mint Order","value":', tokenId.toString(), "},")
             : bytes("");

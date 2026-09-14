@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {ScriptyRenderer} from "./ScriptyRenderer.sol";
-import {CodeRef} from "./CodeTypes.sol";
+import {CodeRef, MetadataText} from "./CodeTypes.sol";
 import {HTMLTag, HTMLTagType} from "./vendor/scripty/core/ScriptyStructs.sol";
 
 /// @title ExampleScriptyWork
@@ -34,9 +34,12 @@ contract ExampleScriptyWork is ScriptyRenderer {
         CodeRef[] memory code_,
         CodeRef[] memory deps_,
         uint8 injectionVersion_,
-        address renderAssets_
+        address renderAssets_,
+        MetadataText memory metadataText_
     )
-        ScriptyRenderer(scriptyBuilder_, gunzipStore_, gunzipFile_, code_, deps_, injectionVersion_, renderAssets_)
+        ScriptyRenderer(
+            scriptyBuilder_, gunzipStore_, gunzipFile_, code_, deps_, injectionVersion_, renderAssets_, metadataText_
+        )
     {}
 
     /// @dev A seed-derived trait: pick a named palette from the seed. Emitted

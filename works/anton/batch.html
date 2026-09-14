@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>untitled batch</title>
+    <style>
+      /* Matches the source app: a warm light-gray ground, frosted-glass panels
+         and pills, rounded tiles with a bold name and muted address beneath. */
+      :root {
+        color-scheme: light;
+        --bg: #d4d2d0;
+        --fg: #26262a;
+        --muted: #8a8a8f;
+        --glass: rgba(255, 255, 255, 0.45);
+        --glass-strong: rgba(255, 255, 255, 0.62);
+        --glass-border: rgba(255, 255, 255, 0.7);
+        --shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+        --tile-shadow: 0 6px 22px rgba(0, 0, 0, 0.14);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--fg);
+        font: 14px/1.45 -apple-system, system-ui, "Helvetica Neue", sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .glass {
+        background: var(--glass);
+        -webkit-backdrop-filter: blur(24px) saturate(1.4);
+        backdrop-filter: blur(24px) saturate(1.4);
+        border: 1px solid var(--glass-border);
+        box-shadow: var(--shadow);
+      }
+      /* header */
+      header {
+        position: sticky; top: 0; z-index: 10;
+        display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end;
+        margin: 18px; padding: 14px 18px; border-radius: 22px;
+      }
+      .brand { font-weight: 700; font-size: 15px; padding: 6px 4px 6px 6px; margin-right: 4px; }
+      .field { display: flex; flex-direction: column; gap: 4px; }
+      .field label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; padding-left: 4px; }
+      select, input {
+        font: inherit; color: var(--fg); padding: 7px 12px; border-radius: 999px;
+        background: var(--glass-strong); border: 1px solid var(--glass-border);
+        -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+        appearance: none;
+      }
+      input[type="number"] { width: 74px; }
+      button {
+        font: inherit; cursor: pointer; color: var(--fg); padding: 8px 18px; border-radius: 999px;
+        background: var(--glass-strong); border: 1px solid var(--glass-border);
+        -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+        transition: background .15s;
+      }
+      button:hover { background: rgba(255, 255, 255, 0.8); }
+      button.primary { background: rgba(255, 255, 255, 0.82); font-weight: 600; }
+      .spacer { flex: 1; }
+      #summary { color: var(--muted); font-size: 12px; margin: 0 30px 6px; }
+      /* grid + tiles */
+      #grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+        gap: 34px 28px; padding: 14px 30px 60px;
+      }
+      .tile { display: flex; flex-direction: column; }
+      .tile .render {
+        position: relative; aspect-ratio: 1 / 1; border-radius: 18px; overflow: hidden;
+        box-shadow: var(--tile-shadow); cursor: zoom-in; background: #c9c7c5;
+      }
+      .tile .render iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; pointer-events: none; }
+      .tile .name { margin-top: 12px; font-weight: 700; font-size: 15px; color: var(--fg); }
+      .tile .addr { margin-top: 2px; font-size: 12px; color: var(--muted); letter-spacing: .02em; }
+      /* detail modal */
+      #modal { position: fixed; inset: 0; z-index: 30; display: none; }
+      #modal.open { display: block; }
+      #modal .backdrop { position: absolute; inset: 0; background: rgba(120, 118, 116, 0.4); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+      /* Render column is square, so the 1:1 art fills it with no letterbox. */
+      #modal .panel {
+        position: absolute; inset: 0; margin: auto; height: min(74vh, 640px); width: max-content; max-width: 94vw;
+        border-radius: 26px; overflow: hidden; display: grid; grid-template-columns: min(74vh, 640px) 320px;
+      }
+      #modal .big { position: relative; aspect-ratio: 1 / 1; background: #0f1534; }
+      #modal .big iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+      #modal .side { padding: 22px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+      #modal .side h2 { margin: 0; font-size: 20px; font-weight: 700; }
+      #modal .close { position: absolute; top: 14px; right: 16px; z-index: 2; padding: 6px 14px; }
+      .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+      .chip { background: var(--glass-strong); border: 1px solid var(--glass-border); border-radius: 999px; padding: 3px 11px; font-size: 12px; }
+      .chip b { font-weight: 600; }
+      .hint { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+      pre { margin: 4px 0 0; background: rgba(255, 255, 255, 0.5); border: 1px solid var(--glass-border); border-radius: 14px; padding: 10px 12px; font: 11px/1.45 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+      .row { display: flex; gap: 8px; align-items: center; }
+      .copy { padding: 4px 12px; font-size: 12px; }
+      @media (max-width: 720px) {
+        #modal .panel { grid-template-columns: 1fr; grid-template-rows: min(84vw, 420px) auto; height: auto; max-height: 92vh; width: min(94vw, 420px); }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="glass">
+      <span class="brand">untitled</span>
+      <div class="field">
+        <label for="count">batch size</label>
+        <input id="count" type="number" min="1" max="60" value="12" />
+      </div>
+      <div class="field">
+        <label for="mode">selection</label>
+        <select id="mode">
+          <option value="random">random</option>
+          <option value="sweep-palette">sweep palettes</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="palette">palette</label>
+        <select id="palette"></select>
+      </div>
+      <div class="field">
+        <label for="tone">tone</label>
+        <select id="tone"><option value="random">random</option><option value="sun">sun</option><option value="moon">moon</option></select>
+      </div>
+      <div class="field">
+        <label for="ownerMode">owners</label>
+        <select id="ownerMode"><option value="one">one wallet</option><option value="varied">varied</option></select>
+      </div>
+      <div class="field">
+        <label for="owner">owner wallet</label>
+        <input id="owner" size="20" value="0x1111111111111111111111111111111111111111" style="width: 210px" />
+      </div>
+      <div class="field">
+        <label for="startId">first #</label>
+        <input id="startId" type="number" min="1" value="1" />
+      </div>
+      <button id="gen" class="primary">generate</button>
+      <div class="spacer"></div>
+      <button id="export">export</button>
+    </header>
+    <div id="summary"></div>
+    <div id="grid"></div>
+
+    <div id="modal">
+      <div class="backdrop"></div>
+      <div class="panel glass">
+        <button class="close">close</button>
+        <div class="big"><iframe id="modalFrame" src="about:blank"></iframe></div>
+        <div class="side" id="modalSide"></div>
+      </div>
+    </div>
+
+    <script>
+      // Vocabularies. Order is the parity contract with anton.js and
+      // AntonRenderer: index -> name here must equal the renderer's arrays.
+      // Shape and background are not minted: they morph over time in the work,
+      // synced to the owner. Per-output variety comes from the seed.
+      var PALETTES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
+      var TONES = ["sun", "moon"]; // index 0 = sun, 1 = moon
+
+      var $ = function (id) { return document.getElementById(id); };
+      PALETTES.forEach(function (p) { var o = document.createElement("option"); o.textContent = p; $("palette").appendChild(o); });
+
+      function randInt(n) { return Math.floor(Math.random() * n); }
+      function randHex(len) { var h = "0123456789abcdef", s = ""; for (var i = 0; i < len; i++) s += h[randInt(16)]; return s; }
+      function randomAddress() { return "0x" + randHex(40); }
+      function randomSeed() { return "0x" + randHex(64); }
+      function pad3(n) { return String(n).padStart(3, "0"); }
+      function shortAddr(a) { return "0x" + a.slice(2, 6).toUpperCase() + "..." + a.slice(-4).toUpperCase(); }
+      function shortSeed(s) { return s.slice(0, 10) + "…" + s.slice(-6); }
+
+      // The generator's own picks use Math.random (a UI convenience). Each output
+      // gets a sample seed standing in for the token seed assigned at mint, which
+      // drives that token's variety.
+      function buildBatch() {
+        var count = Math.max(1, Math.min(60, parseInt($("count").value || "1", 10)));
+        var mode = $("mode").value;
+        var toneSel = $("tone").value;
+        var fixedPalette = PALETTES.indexOf($("palette").value);
+        var startId = Math.max(1, parseInt($("startId").value || "1", 10));
+        function toneIdx() { return toneSel === "random" ? randInt(2) : TONES.indexOf(toneSel); }
+        var ownerMode = $("ownerMode").value;
+        var oneOwner = $("owner").value.trim();
+
+        var items = [];
+        for (var i = 0; i < count; i++) {
+          var pi = mode === "sweep-palette" ? i % PALETTES.length : randInt(PALETTES.length);
+          var owner = ownerMode === "varied" ? randomAddress() : oneOwner;
+          items.push({ mintId: startId + i, palette: pi, tone: toneIdx(), owner: owner, seed: randomSeed() });
+        }
+        return items;
+      }
+
+      // abi.encode(uint8 palette, uint8 tone): two 32-byte words. Exactly the
+      // `data` AntonMinter.mint decodes.
+      function pad32(n) { return n.toString(16).padStart(64, "0"); }
+      function mintData(it) { return "0x" + pad32(it.palette) + pad32(it.tone); }
+
+      // The metadata AntonRenderer publishes. The real seed is stamped at mint;
+      // this sample seed stands in for the preview.
+      function metadata(it) {
+        return {
+          name: "untitled #" + it.mintId,
+          attributes: [
+            { trait_type: "Mint Order", value: it.mintId },
+            { trait_type: "Seed", value: it.seed + " (sample)" },
+            { trait_type: "Palette", value: PALETTES[it.palette] },
+            { trait_type: "Tone", value: TONES[it.tone] }
+          ]
+        };
+      }
+
+      function frameSrc(it) {
+        var q = new URLSearchParams();
+        q.set("palette", PALETTES[it.palette]);
+        q.set("tone", TONES[it.tone]);
+        q.set("owner", it.owner);
+        q.set("hash", it.seed);
+        q.set("tokenId", String(it.mintId));
+        q.set("context", "token");
+        return "frame.html?" + q.toString();
+      }
+
+      function escapeHtml(s) { return s.replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
+
+      var lastBatch = [];
+
+      function render() {
+        var items = buildBatch();
+        lastBatch = items;
+        var varied = $("ownerMode").value === "varied";
+        var grid = $("grid");
+        grid.innerHTML = "";
+        items.forEach(function (it, idx) {
+          var tile = document.createElement("div");
+          tile.className = "tile";
+          tile.dataset.index = idx;
+          tile.innerHTML =
+            '<div class="render"><iframe loading="lazy" src="' + frameSrc(it) + '"></iframe></div>' +
+            '<div class="name">untitled #' + pad3(it.mintId) + "</div>" +
+            '<div class="addr">' + shortAddr(it.owner) + "</div>";
+          grid.appendChild(tile);
+        });
+        $("summary").textContent = varied
+          ? items.length + " outputs, each its own wallet and pace."
+          : items.length + " outputs for " + (items[0] ? shortAddr(items[0].owner) : "") + ", one shared pace (lockstep).";
+      }
+
+      $("grid").addEventListener("click", function (e) {
+        var tile = e.target.closest(".tile");
+        if (tile) openDetail(parseInt(tile.dataset.index, 10));
+      });
+
+      // ── detail modal ──────────────────────────────────────────────────────
+      function openDetail(idx) {
+        var it = lastBatch[idx];
+        if (!it) return;
+        var md = metadata(it);
+        var data = mintData(it);
+        $("modalFrame").src = frameSrc(it);
+        $("modalSide").innerHTML =
+          "<h2>untitled #" + pad3(it.mintId) + "</h2>" +
+          '<div class="chips">' +
+          '<span class="chip"><b>palette</b> ' + PALETTES[it.palette] + " (" + it.palette + ")</span>" +
+          '<span class="chip"><b>tone</b> ' + TONES[it.tone] + " (" + it.tone + ")</span>" +
+          "</div>" +
+          '<div><div class="hint">owner (shape + bg sync)</div>' + shortAddr(it.owner) + "</div>" +
+          '<div><div class="hint">seed (sample)</div>' + shortSeed(it.seed) + "</div>" +
+          '<div class="hint">metadata</div><pre>' + escapeHtml(JSON.stringify(md, null, 2)) + "</pre>" +
+          '<div class="row"><span class="hint">mint data</span><button class="copy" data-copy="' + data + '">copy</button></div>' +
+          "<pre>" + data + "</pre>";
+        $("modal").classList.add("open");
+      }
+      function closeDetail() {
+        $("modal").classList.remove("open");
+        $("modalFrame").src = "about:blank"; // stop the render loop
+      }
+      document.querySelector("#modal .backdrop").onclick = closeDetail;
+      document.querySelector("#modal .close").onclick = closeDetail;
+      document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDetail(); });
+      $("modalSide").addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-copy]");
+        if (!btn) return;
+        navigator.clipboard.writeText(btn.getAttribute("data-copy"));
+        var t = btn.textContent; btn.textContent = "copied"; setTimeout(function () { btn.textContent = t; }, 900);
+      });
+
+      $("gen").onclick = render;
+      $("export").onclick = function () {
+        var out = lastBatch.map(function (it) {
+          return { mintId: it.mintId, owner: it.owner, seed: it.seed, params: { palette: PALETTES[it.palette], tone: TONES[it.tone] }, indices: { palette: it.palette, tone: it.tone }, mintData: mintData(it), metadata: metadata(it) };
+        });
+        var blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "anton-batch.json";
+        a.click();
+      };
+
+      render();
+    </script>
+  </body>
+</html>

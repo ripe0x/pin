@@ -42,12 +42,13 @@ capturer-writable. Emits `CapturerSet`.
 
 access: collection owner, admin, or granted capturer (else `NotCaptureAuthorized`)
 
-Sets the collection's capture URI template ("" clears it). Every `{id}` in the
-template resolves to the token id at read time, so one write covers every token
-(for example a manifest at `ar://<manifest>/{id}.png`). A per-token capture
-overrides the template. To prompt marketplaces to re-fetch, follow with the
-collection's ERC-4906 `notifyMetadataUpdate` (owner or admin). Emits
-`CaptureTemplateSet`.
+Sets the collection's capture URI template and its coverage bound ("" clears
+both). Every `{id}` in the template resolves to the token id at read time (for
+example a manifest at `ar://<manifest>/{id}.png`). The template applies to
+token ids up to and including `maxTokenId`; higher ids resolve to the cover. A
+per-token capture overrides the template regardless of the bound. To prompt
+marketplaces to re-fetch, follow with the collection's ERC-4906
+`notifyMetadataUpdate` (owner or admin). Emits `CaptureTemplateSet`.
 
 ## function setCaptures
 
@@ -63,7 +64,8 @@ Emits `CaptureSet` per token.
 
 The image the bundled renderers serve for a token, resolved in order: the
 token's capture if one exists, else the collection's template with `{id}`
-replaced by the token id, else the collection cover, else "".
+replaced by the token id when the id is within `templateMaxTokenIdOf`, else
+the collection cover, else "".
 
 ## function coverOf
 
@@ -73,6 +75,11 @@ The collection's shared/cover image URI ("" if none set).
 
 The collection's capture URI template ("" if none set). Every `{id}` in it
 resolves to the token id when `imageFor` reads it.
+
+## function templateMaxTokenIdOf
+
+The highest token id the collection's template covers. Ids above this fall
+back to the cover.
 
 ## function isCapturer
 
@@ -90,8 +97,8 @@ Emitted per token when captures are set. Indexed by `collection` and
 
 ## event CaptureTemplateSet
 
-Emitted when a collection's capture template changes. Indexed by
-`collection`.
+Emitted when a collection's capture template or its coverage bound changes.
+Indexed by `collection`.
 
 ## event CapturerSet
 

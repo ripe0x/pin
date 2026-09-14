@@ -24,6 +24,9 @@ apps/web/.next/
 apps/worker/dist/
 apps/indexer/.ponder/
 
+# Capture tool output: rendered PNGs, verify fetches, manifest records
+apps/worker/capture-out/
+
 # Ponder codegen output (regenerate with `pnpm --filter @pin/indexer codegen`)
 apps/indexer/ponder-env.d.ts
 

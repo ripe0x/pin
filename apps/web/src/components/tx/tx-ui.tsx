@@ -57,6 +57,10 @@ const COLLECTION_ERROR_COPY: Record<string, string> = {
   MintNotStarted: "The mint window is not open.",
   MintEnded: "The mint window is not open.",
   HookRejected: "This mint has additional onchain conditions that were not met.",
+  NotAuthorized: "Only this collection's owner or an admin can do that.",
+  AlreadyAdmin: "That address is already an admin, or is the owner (who always counts as one).",
+  NotAnAdmin: "That address is not currently an admin.",
+  RendererIsLocked: "The renderer is already locked.",
 }
 
 /**

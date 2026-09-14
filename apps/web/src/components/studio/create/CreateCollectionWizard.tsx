@@ -15,10 +15,13 @@
  */
 
 import { useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { useAccount, useChainId, useSwitchChain } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { PREFERRED_CHAIN, PREFERRED_CHAIN_LABEL } from "@/components/tx/tx-ui"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
+import { parseLaunchLink } from "@/lib/create-collection-launch-link"
+import { parseEthAmount } from "@/lib/parseEthAmount"
 import type { FactoryStatus } from "@/lib/collection-onchain"
 import { initialWizardState, stepsForPreset, type StepId, type WizardState } from "./types"
 import { Stepper } from "./Stepper"
@@ -28,6 +31,53 @@ import { PreviewStep } from "./PreviewStep"
 import { UploadStep } from "./UploadStep"
 import { DeployStep } from "./DeployStep"
 import { BTN } from "./wizard-ui"
+
+/** Wei parsed from a launch link's `price` param, if any: feeds the price
+ *  input's one-time initialWei seed (see useEthAmountInput). */
+function launchLinkPriceWei(priceRaw: string | undefined): bigint | null {
+  if (!priceRaw) return null
+  const parsed = parseEthAmount(priceRaw)
+  return parsed.ok ? parsed.wei : null
+}
+
+/** Dismissible notice shown when the wizard was seeded from a launch link.
+ *  Lists any param the link carried that failed validation and was dropped,
+ *  so the artist knows to fill that field in by hand. */
+function LaunchLinkBanner({
+  ignored,
+  dismissed,
+  onDismiss,
+}: {
+  ignored: string[]
+  dismissed: boolean
+  onDismiss: () => void
+}) {
+  if (dismissed) return null
+  return (
+    <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 space-y-1.5">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs text-blue-900 leading-relaxed">
+          Prefilled from a launch link. Check every value before you deploy.
+        </p>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          className="shrink-0 text-blue-700 hover:text-blue-900 leading-none"
+        >
+          ✕
+        </button>
+      </div>
+      {ignored.length > 0 && (
+        <ul className="text-[11px] font-mono text-blue-800 space-y-0.5">
+          {ignored.map((line) => (
+            <li key={line}>Ignored: {line}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 /** Why the wizard can't offer a deploy right now, or null when it can. */
 function blockedReason(status: FactoryStatus): { headline: string; lead: string } | null {
@@ -55,14 +105,24 @@ export function CreateCollectionWizard({
   const { switchChain, isPending: isSwitchPending } = useSwitchChain()
   const wrongNetwork = !!address && chainId !== PREFERRED_CHAIN.id
 
-  const [state, setState] = useState<WizardState>(initialWizardState)
-  const [step, setStep] = useState<StepId>("preset")
+  // Launch-link prefill: read once on first render (a URL edited after
+  // mount doesn't re-seed state out from under the artist's own edits).
+  const searchParams = useSearchParams()
+  const [launchLink] = useState(() => parseLaunchLink(searchParams))
+  const [bannerDismissed, setBannerDismissed] = useState(false)
+  const hasPrefill = Object.keys(launchLink.state).length > 0
+
+  const [state, setState] = useState<WizardState>(() => ({
+    ...initialWizardState,
+    ...launchLink.state,
+  }))
+  const [step, setStep] = useState<StepId>(() => (launchLink.state.preset ? "config" : "preset"))
   const [uploadResult, setUploadResult] = useState<{
     name: string
     codeHash: `0x${string}`
   } | null>(null)
 
-  const price = useEthAmountInput()
+  const price = useEthAmountInput({ initialWei: launchLinkPriceWei(launchLink.state.priceRaw) })
 
   function set<K extends keyof WizardState>(key: K, value: WizardState[K]) {
     setState((s) => ({ ...s, [key]: value }))
@@ -105,36 +165,52 @@ export function CreateCollectionWizard({
     )
   }
 
+  const showBanner = (hasPrefill || launchLink.ignored.length > 0) && !bannerDismissed
+  const banner = showBanner && (
+    <LaunchLinkBanner
+      ignored={launchLink.ignored}
+      dismissed={bannerDismissed}
+      onDismiss={() => setBannerDismissed(true)}
+    />
+  )
+
   if (!address) {
     return (
-      <Shell>
-        <ConnectButton.Custom>
-          {({ openConnectModal }) => (
-            <button onClick={openConnectModal} className={BTN}>
-              Connect wallet to start
-            </button>
-          )}
-        </ConnectButton.Custom>
-      </Shell>
+      <div className="space-y-4">
+        {banner}
+        <Shell>
+          <ConnectButton.Custom>
+            {({ openConnectModal }) => (
+              <button onClick={openConnectModal} className={BTN}>
+                Connect wallet to start
+              </button>
+            )}
+          </ConnectButton.Custom>
+        </Shell>
+      </div>
     )
   }
 
   if (wrongNetwork) {
     return (
-      <Shell>
-        <button
-          onClick={() => switchChain({ chainId: PREFERRED_CHAIN.id })}
-          disabled={isSwitchPending}
-          className={BTN}
-        >
-          {isSwitchPending ? "Switching…" : `Switch to ${PREFERRED_CHAIN_LABEL}`}
-        </button>
-      </Shell>
+      <div className="space-y-4">
+        {banner}
+        <Shell>
+          <button
+            onClick={() => switchChain({ chainId: PREFERRED_CHAIN.id })}
+            disabled={isSwitchPending}
+            className={BTN}
+          >
+            {isSwitchPending ? "Switching…" : `Switch to ${PREFERRED_CHAIN_LABEL}`}
+          </button>
+        </Shell>
+      </div>
     )
   }
 
   return (
     <div className="space-y-6">
+      {banner}
       {step !== "preset" && <Stepper steps={steps} current={step} />}
 
       <div className="rounded-lg border border-gray-200 bg-surface p-5">

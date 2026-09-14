@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 
 import {ScriptyRenderer} from "../../../src/surface/templates/ScriptyRenderer.sol";
-import {CodeKind, CodeRef} from "../../../src/surface/templates/CodeTypes.sol";
+import {CodeKind, CodeRef, MetadataText} from "../../../src/surface/templates/CodeTypes.sol";
 
 /// @dev Audit I-02 remediation. The core refuses a non-contract renderer at the
 ///      door; this pushes the same check down to the files a ScriptyRenderer
@@ -21,23 +21,27 @@ contract ScriptyRendererStoresTest is Test {
         a[0] = CodeRef({store: store, name: "sketch.js", kind: kind});
     }
 
+    function _noText() internal pure returns (MetadataText memory) {
+        return MetadataText({tokenDescription: "", collectionDescription: "", externalUrl: ""});
+    }
+
     function test_ctor_rejectsEoaBuilder() public {
         CodeRef[] memory code = _ref(address(this), CodeKind.Script);
         vm.expectRevert(ScriptyRenderer.BuilderRequired.selector);
-        new ScriptyRenderer(eoa, address(0), "", code, new CodeRef[](0), 1, address(0));
+        new ScriptyRenderer(eoa, address(0), "", code, new CodeRef[](0), 1, address(0), _noText());
     }
 
     function test_ctor_rejectsEoaCodeStore() public {
         CodeRef[] memory code = _ref(eoa, CodeKind.Script);
         vm.expectRevert(abi.encodeWithSelector(ScriptyRenderer.StoreNotContract.selector, eoa));
-        new ScriptyRenderer(address(this), address(0), "", code, new CodeRef[](0), 1, address(0));
+        new ScriptyRenderer(address(this), address(0), "", code, new CodeRef[](0), 1, address(0), _noText());
     }
 
     function test_ctor_rejectsEoaDepStore() public {
         CodeRef[] memory code = _ref(address(this), CodeKind.Script);
         CodeRef[] memory deps = _ref(eoa, CodeKind.Script);
         vm.expectRevert(abi.encodeWithSelector(ScriptyRenderer.StoreNotContract.selector, eoa));
-        new ScriptyRenderer(address(this), address(0), "", code, deps, 1, address(0));
+        new ScriptyRenderer(address(this), address(0), "", code, deps, 1, address(0), _noText());
     }
 
     function test_ctor_rejectsMissingGunzipStore_whenGzipPresent() public {
@@ -46,13 +50,14 @@ contract ScriptyRendererStoresTest is Test {
         CodeRef[] memory code = _ref(address(this), CodeKind.Script);
         CodeRef[] memory deps = _ref(address(this), CodeKind.ScriptGzip);
         vm.expectRevert(ScriptyRenderer.GunzipStoreRequired.selector);
-        new ScriptyRenderer(address(this), address(0), "", code, deps, 1, address(0));
+        new ScriptyRenderer(address(this), address(0), "", code, deps, 1, address(0), _noText());
     }
 
     function test_ctor_acceptsContractStores() public {
         // builder + store are deployed contracts, no gzip so no gunzip needed
         CodeRef[] memory code = _ref(address(this), CodeKind.Script);
-        ScriptyRenderer r = new ScriptyRenderer(address(this), address(0), "", code, new CodeRef[](0), 1, address(0));
+        ScriptyRenderer r =
+            new ScriptyRenderer(address(this), address(0), "", code, new CodeRef[](0), 1, address(0), _noText());
         assertEq(r.injectionVersion(), 1);
     }
 
@@ -60,7 +65,7 @@ contract ScriptyRendererStoresTest is Test {
         CodeRef[] memory code = _ref(address(this), CodeKind.Script);
         CodeRef[] memory deps = _ref(address(this), CodeKind.ScriptGzip);
         ScriptyRenderer r =
-            new ScriptyRenderer(address(this), address(this), "gunzip.js", code, deps, 1, address(0));
+            new ScriptyRenderer(address(this), address(this), "gunzip.js", code, deps, 1, address(0), _noText());
         assertEq(r.gunzipStore(), address(this));
     }
 }
