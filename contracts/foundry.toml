@@ -12,9 +12,14 @@ remappings = [
     "forge-std/=lib/forge-std/src/",
     "solady/=lib/solady/src/",
 ]
-# DeploySurfaceV2.s.sol writes its deployment record here (vm.writeJson);
-# no other path is readable or writable by any script or test.
-fs_permissions = [{ access = "read-write", path = "./deployments" }]
+# DeploySurfaceV2.s.sol merges its v2 keys into these three files
+# (vm.readFile/vm.writeJson); no other path is readable or writable by any
+# script or test.
+fs_permissions = [
+    { access = "read-write", path = "./deployments.mainnet.json" },
+    { access = "read-write", path = "./deployments.sepolia.json" },
+    { access = "read-write", path = "./deployments.anvil.json" },
+]
 
 # Default-profile invariant settings: kept small so `forge test` (which picks
 # up any invariant/*.t.sol in the default run) stays fast. forge-std's own

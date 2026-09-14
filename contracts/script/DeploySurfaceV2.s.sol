@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Script, console2} from "forge-std/Script.sol";
+import {VmSafe} from "forge-std/Vm.sol";
 
 import {Catalog} from "../src/Catalog.sol";
 import {SurfaceV2} from "../src/surface/v2/SurfaceV2.sol";
@@ -43,9 +44,15 @@ contract DeploySurfaceV2 is Script {
     ///      (passed by script/deploy.sh) sends its transactions one at a time.
     address internal constant MAINNET_DEPLOYER = 0xCB43078C32423F5348Cab5885911C3B5faE217F9;
 
+    /// @dev The Surface protocol's Catalog public good, same address on every
+    ///      chain it is deployed to (see deployments.mainnet.json). Reused,
+    ///      never redeployed, by the v2 factory on mainnet.
+    address internal constant MAINNET_CATALOG = 0x467a9c39e03C595EC3075D856f19C7386b6b915d;
+
     error UnsupportedChain(uint256 chainId);
     error DeployerMismatch(address expected, address actual);
     error CatalogRequired();
+    error CatalogMismatch(address expected, address actual);
 
     struct Deployment {
         address surfaceFactoryV2;
@@ -106,12 +113,12 @@ contract DeploySurfaceV2 is Script {
         });
 
         _requirePostflight(d, expectedDeployer, landPaused);
-        // `forge script` runs this function's cheatcodes (including
-        // vm.writeJson) during a plain simulation too, before --broadcast
-        // ever sends a transaction. Skip the record write under a dry run so
-        // a simulation never leaves behind a file that looks like a real
-        // deployment record.
-        if (!_isDryRun()) _writeRecord(d);
+        // `forge script` runs every cheatcode in this function, including
+        // vm.writeJson, during a plain simulation too, before --broadcast
+        // ever sends a transaction. vm.isContext reports the actual forge
+        // execution mode, so the record is written only when this run is a
+        // real broadcast, never a dry run or a resume-in-progress replay.
+        if (vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) _writeRecord(d);
         _log(d);
     }
 
@@ -130,15 +137,12 @@ contract DeploySurfaceV2 is Script {
         return a != address(0) && a.code.length != 0;
     }
 
-    function _isDryRun() internal view returns (bool) {
-        return keccak256(bytes(vm.envOr("DRY_RUN", string("0")))) == keccak256(bytes("1"));
-    }
-
     /// @dev Proves the constructor wiring landed as intended and, on mainnet,
     ///      that the catalog and signer match the recorded protocol values.
     function _requirePostflight(Deployment memory d, address expectedDeployer, bool landPaused) private {
         if (block.chainid == MAINNET_CHAIN_ID) {
             if (tx.origin != MAINNET_DEPLOYER) revert DeployerMismatch(MAINNET_DEPLOYER, tx.origin);
+            if (d.catalog != MAINNET_CATALOG) revert CatalogMismatch(MAINNET_CATALOG, d.catalog);
         }
         if (expectedDeployer != address(0) && tx.origin != expectedDeployer) {
             revert DeployerMismatch(expectedDeployer, tx.origin);
@@ -180,16 +184,26 @@ contract DeploySurfaceV2 is Script {
         });
     }
 
-    /// @dev Writes the v2 record keys into DEPLOY_RECORD_PATH (default
-    ///      deployments/<chainId>.json). A file that already exists (an
-    ///      earlier v2 redeploy on this chain, or a future v1 migration into
-    ///      the same file) is merged key by key so unrelated keys survive;
-    ///      a missing file is created fresh with only these keys.
+    /// @dev The repo's canonical per-chain record: deployments.mainnet.json
+    ///      and deployments.sepolia.json already carry the v1 protocol's
+    ///      addresses and are read by packages/addresses/src/index.ts and
+    ///      scripts/generate-docs.ts. deployments.anvil.json is this script's
+    ///      own local-chain equivalent (gitignored, never a real deployment).
+    ///      _requireChainSupported already reverted any other chain id.
+    function _recordPath() private view returns (string memory) {
+        if (block.chainid == MAINNET_CHAIN_ID) return "deployments.mainnet.json";
+        if (block.chainid == SEPOLIA_CHAIN_ID) return "deployments.sepolia.json";
+        return "deployments.anvil.json";
+    }
+
+    /// @dev Writes the v2 record keys into the file _recordPath() names. A
+    ///      file that already exists (deployments.mainnet.json and
+    ///      deployments.sepolia.json always do) is merged key by key so the
+    ///      v1 keys this script never names survive untouched; a missing
+    ///      file (deployments.anvil.json, the first time) is created fresh
+    ///      with only these keys.
     function _writeRecord(Deployment memory d) private {
-        string memory path = vm.envOr("DEPLOY_RECORD_PATH", string(""));
-        if (bytes(path).length == 0) {
-            path = string.concat("deployments/", vm.toString(block.chainid), ".json");
-        }
+        string memory path = _recordPath();
 
         if (!vm.isFile(path)) {
             string memory json = "record";

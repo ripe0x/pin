@@ -20,6 +20,14 @@ import {FixedPriceMinterV2} from "../../../src/surface/v2/minters/FixedPriceMint
 ///           reuse) against real mainnet state. Gated the same way as
 ///           test/surface/SurfaceMainnetDeployment.t.sol: set
 ///           RUN_MAINNET_FORK_TESTS=true and MAINNET_RPC_URL to run it.
+///
+///         Neither variant asserts a record file gets written: `forge test`
+///         never runs in the ScriptBroadcast context DeploySurfaceV2 gates
+///         _writeRecord on, so both instead assert that a full run() here
+///         leaves the on-disk record untouched. The write path itself (a
+///         real broadcast producing deployments.anvil.json, and a dry run
+///         leaving deployments.sepolia.json unchanged) is verified by
+///         running script/deploy.sh directly; see contracts/README.md.
 contract DeploySurfaceV2Test is Test {
     // Mirrors deployments.mainnet.json (chainId 1): the live Catalog public
     // good this script reuses on a mainnet fork, and the deployer whose
@@ -27,17 +35,8 @@ contract DeploySurfaceV2Test is Test {
     address internal constant MAINNET_CATALOG = 0x467a9c39e03C595EC3075D856f19C7386b6b915d;
     address internal constant MAINNET_DEPLOYER = 0xCB43078C32423F5348Cab5885911C3B5faE217F9;
 
-    function setUp() public {
-        // Only this test's own scratch files, never a real deployment record
-        // that may already sit in deployments/ from a prior anvil/sepolia run.
-        if (vm.isFile("deployments/31337-test.json")) vm.removeFile("deployments/31337-test.json");
-        if (vm.isFile("deployments/1-test.json")) vm.removeFile("deployments/1-test.json");
-    }
-
     function test_LocalChain_DeployAndE2EMint() public {
         vm.chainId(31337);
-        string memory path = "deployments/31337-test.json";
-        vm.setEnv("DEPLOY_RECORD_PATH", path);
         vm.setEnv("LAND_PAUSED", "false");
         vm.setEnv("CATALOG", "");
         vm.setEnv("RENDER_ASSETS", "");
@@ -49,7 +48,7 @@ contract DeploySurfaceV2Test is Test {
 
         assertGt(d.surfaceFactoryV2.code.length, 0, "factory has no code");
         assertGt(d.catalog.code.length, 0, "catalog has no code (local chain deploys one)");
-        assertTrue(vm.isFile(path), "record was not written");
+        assertFalse(vm.isFile("deployments.anvil.json"), "record was written outside a real broadcast");
 
         SurfaceFactoryV2 factory = SurfaceFactoryV2(d.surfaceFactoryV2);
         assertFalse(factory.paused(), "factory should land unpaused (LAND_PAUSED=false)");
@@ -69,8 +68,8 @@ contract DeploySurfaceV2Test is Test {
         }
         vm.createSelectFork(rpc);
 
-        string memory path = "deployments/1-test.json";
-        vm.setEnv("DEPLOY_RECORD_PATH", path);
+        string memory recordBefore = vm.readFile("deployments.mainnet.json");
+
         vm.setEnv("LAND_PAUSED", "true");
         vm.setEnv("CATALOG", vm.toString(MAINNET_CATALOG));
         vm.setEnv("RENDER_ASSETS", "");
@@ -86,6 +85,9 @@ contract DeploySurfaceV2Test is Test {
         assertGt(d.surfaceFactoryV2.code.length, 0, "factory has no code");
         assertTrue(SurfaceFactoryV2(d.surfaceFactoryV2).paused(), "factory should land paused");
         assertEq(SurfaceFactoryV2(d.surfaceFactoryV2).deployer(), MAINNET_DEPLOYER, "deployer mismatch");
+        assertEq(
+            vm.readFile("deployments.mainnet.json"), recordBefore, "mainnet record must not change outside a real broadcast"
+        );
     }
 
     function _mintThroughFreshFactory(SurfaceFactoryV2 factory, address renderer) internal {

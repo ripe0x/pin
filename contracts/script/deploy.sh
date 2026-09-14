@@ -20,8 +20,6 @@
 #   DEPLOYER_PASSWORD_FILE  path to the keystore password (chmod 600),
 #                         instead of an interactive prompt. Shell env only.
 #   ETHERSCAN_API_KEY     required when VERIFY=1 and DRY_RUN is not set.
-#   DEPLOY_RECORD_PATH    overrides where DeploySurfaceV2.s.sol writes its
-#                         record. Default deployments/<chainId>.json.
 #   DRY_RUN=1             simulate only: REQUIRE_MAIN_BRANCH git guards still
 #                         run but only warn on failure (a real broadcast would
 #                         refuse); every other guard still hard-fails. No
@@ -56,7 +54,6 @@ ENV_FILE="script/env/${ENV_NAME}.env"
 [ -f "$ENV_FILE" ] || { echo "missing $ENV_FILE" >&2; exit 1; }
 
 DRY_RUN="${DRY_RUN:-0}"
-export DRY_RUN
 # A caller-exported RPC_URL/FOUNDRY_PROFILE wins over the env file's default;
 # snapshot before sourcing, which would otherwise overwrite it.
 RPC_URL_OVERRIDE="${RPC_URL:-}"
@@ -86,6 +83,17 @@ fi
 
 [ -n "${RPC_URL:-}" ] || { echo "refusing: no RPC_URL configured for $ENV_NAME" >&2; exit 1; }
 [ -n "${CHAIN_ID:-}" ] || { echo "refusing: $ENV_FILE has no CHAIN_ID set" >&2; exit 1; }
+
+# The repo's canonical per-chain record: DeploySurfaceV2.s.sol writes into
+# the same file for every environment (see contracts/README.md and its own
+# _recordPath()); deployments.mainnet.json and deployments.sepolia.json
+# already carry the v1 protocol's addresses, deployments.anvil.json is the
+# local-chain equivalent and is gitignored.
+case "$ENV_NAME" in
+  mainnet) RECORD_FILE="deployments.mainnet.json" ;;
+  sepolia) RECORD_FILE="deployments.sepolia.json" ;;
+  anvil) RECORD_FILE="deployments.anvil.json" ;;
+esac
 
 echo "== deploy.sh $ENV_NAME =="
 echo "  rpc      $RPC_URL"
@@ -121,7 +129,10 @@ if [ "${REQUIRE_MAIN_BRANCH:-0}" = "1" ]; then
     || git_guard_fail "local main is not the fetched origin/main commit"
   git diff --quiet && git diff --cached --quiet \
     || git_guard_fail "tracked files are dirty; deployment commit is not exact"
-  [ -z "$(git ls-files --others --exclude-standard -- . ':!deployments')" ] \
+  # deployments.anvil.json is gitignored and never appears here; a real
+  # sepolia/mainnet broadcast rewrites the already-tracked record in place,
+  # which the dirty-tree check above catches on the next run, not this one.
+  [ -z "$(git ls-files --others --exclude-standard)" ] \
     || git_guard_fail "untracked files exist; deployment commit is not exact"
   [ "$DRY_RUN" = "1" ] || echo "  ok: clean, exact, fetched main"
 fi
@@ -172,20 +183,12 @@ fi
 
 # --- run --------------------------------------------------------------
 
-# forge's typed env cheatcodes (vm.envAddress/envBool via vm.envOr) treat a
-# variable that is SET but empty as a parse error, not as "use the default":
-# an env file's blank CATALOG=/RENDER_ASSETS=/DEFAULT_RENDERER=/DEPLOYER=
-# must reach the script unset, not exported as "".
-for var in CATALOG RENDER_ASSETS DEFAULT_RENDERER DEPLOYER; do
-  if [ -z "${!var:-}" ]; then
-    unset "$var"
-  else
-    export "$var"
-  fi
-done
+# CATALOG/RENDER_ASSETS/DEFAULT_RENDERER/DEPLOYER are already exported by
+# `set -a` when the env file was sourced above, blank or not: forge's typed
+# env cheatcodes (vm.envAddress/envBool via vm.envOr) fall through to the
+# script's default on a variable that is set but empty, same as when it is
+# unset entirely (verified against forge 1.8.1).
 export LAND_PAUSED="${LAND_PAUSED:-true}"
-DEPLOY_RECORD_PATH="${DEPLOY_RECORD_PATH:-deployments/${CHAIN_ID}.json}"
-export DEPLOY_RECORD_PATH
 BROADCAST_FILE="broadcast/DeploySurfaceV2.s.sol/${CHAIN_ID}/run-latest.json"
 
 if [ "$DRY_RUN" = "1" ]; then
@@ -210,9 +213,9 @@ forge "${FORGE_ARGS[@]}"
 #     record, read wiring back on chain ----------------------------------
 
 [ -f "$BROADCAST_FILE" ] || { echo "no broadcast file at $BROADCAST_FILE" >&2; exit 1; }
-[ -f "$DEPLOY_RECORD_PATH" ] || { echo "no record written at $DEPLOY_RECORD_PATH" >&2; exit 1; }
+[ -f "$RECORD_FILE" ] || { echo "no record written at $RECORD_FILE" >&2; exit 1; }
 
-FACTORY_ADDRESS="$(jq -r '.surfaceFactoryV2' "$DEPLOY_RECORD_PATH")"
+FACTORY_ADDRESS="$(jq -r '.surfaceFactoryV2' "$RECORD_FILE")"
 FACTORY_TX="$(jq -r --arg addr "$FACTORY_ADDRESS" \
   '.receipts[] | select(.contractAddress != null) | select((.contractAddress | ascii_downcase) == ($addr | ascii_downcase)) | .transactionHash' \
   "$BROADCAST_FILE" | tail -1)"
@@ -222,8 +225,8 @@ if [[ "$FACTORY_TX" =~ ^0x[0-9a-fA-F]{64}$ ]]; then
   TMP_RECORD="$(mktemp)"
   jq --arg block "$FACTORY_BLOCK" --arg tx "$FACTORY_TX" \
     '.factoryDeployBlock = ($block | tonumber) | .txHashes = { surfaceFactoryV2: $tx }' \
-    "$DEPLOY_RECORD_PATH" > "$TMP_RECORD"
-  mv "$TMP_RECORD" "$DEPLOY_RECORD_PATH"
+    "$RECORD_FILE" > "$TMP_RECORD"
+  mv "$TMP_RECORD" "$RECORD_FILE"
   echo "  ok: factory deploy block $FACTORY_BLOCK, tx $FACTORY_TX"
 else
   echo "  warn: could not resolve the factory's creation tx from $BROADCAST_FILE" >&2
@@ -242,4 +245,4 @@ case "$ENV_NAME" in
   anvil) : ;;
 esac
 
-echo "deploy complete for $ENV_NAME: $DEPLOY_RECORD_PATH"
+echo "deploy complete for $ENV_NAME: $RECORD_FILE"
