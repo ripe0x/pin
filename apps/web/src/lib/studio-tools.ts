@@ -120,11 +120,9 @@ export const STUDIO_TOOLS: StudioTool[] = [
     label: "Collection settings",
     description:
       "Manage a collection contract itself: swap or lock the renderer, set or lock the supply cap, grant extension minters, edit the cover and attribution roster. Locks are one-way.",
-    // The owner/admin levers live on the collection contract, so this ships
-    // dark until Surface is live on mainnet (or a dev/sepolia factory override
-    // is set), same gate as the sale/mint-gate tools.
-    available: () =>
-      surfaceFactory(MAINNET_CHAIN_ID) !== null || process.env.NEXT_PUBLIC_SURFACE_FACTORY !== undefined,
+    // Same gate as mint-gate/sale: works against a v1 or v2 collection,
+    // routed by protocolVersion at the panel, not here.
+    available: anySurfaceFactoryLive,
   },
 ]
 

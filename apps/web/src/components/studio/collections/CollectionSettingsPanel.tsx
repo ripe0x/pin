@@ -5,14 +5,18 @@
  * collection contract itself (as opposed to its minter — that's the Sale
  * tool). Current state is read once via the cached /settings API (no client
  * chain read); every change is a wallet tx written straight to the
- * collection's owner-only setters (surfaceAbi), authority enforced onchain.
- * One-way locks require typing the collection name to confirm.
+ * collection's owner-or-admin setters, authority enforced onchain. Each
+ * write picks surfaceAbi or surfaceV2Abi by the collection's own
+ * protocolVersion (see collectionAbi) — v1 and v2 share every selector this
+ * panel uses except lockRoyalty/seal, which exist only on v2. One-way locks
+ * require typing the collection name to confirm; seal additionally requires
+ * the collection owner specifically, not an admin.
  */
 
 import { useCallback, useEffect, useState } from "react"
 import { isAddress, type Address } from "viem"
 import { useBytecode, useWaitForTransactionReceipt, useWriteContract } from "wagmi"
-import { surfaceAbi, renderAssetsAbi } from "@pin/abi"
+import { surfaceAbi, surfaceV2Abi, renderAssetsAbi } from "@pin/abi"
 import { formatWriteError } from "@/components/tx/tx-ui"
 import { BTN, BTN_SECONDARY, ERROR, HELP, INPUT, LABEL } from "@/components/studio/create/wizard-ui"
 import { shortAddress } from "@/lib/collection"
@@ -22,9 +26,13 @@ const ZERO = "0x0000000000000000000000000000000000000000" as Address
 type Settings = {
   name: string
   owner: Address
+  protocolVersion: number
   renderer: Address
   isRendererLocked: boolean
   isSupplyLocked: boolean
+  isMinterLocked: boolean
+  isRoyaltyLocked: boolean
+  sealed: boolean
   supplyCap: string
   minted: string
   royaltyBps: number
@@ -32,6 +40,14 @@ type Settings = {
   cover: string
   renderAssets: Address | null
   creators: { creator: Address; confirmed: boolean }[]
+}
+
+/** The write ABI for a collection: surfaceV2Abi for a v2 row (adds
+ *  lockRoyalty/seal/isRoyaltyLocked/permanence), surfaceAbi otherwise.
+ *  Every selector this panel calls on v1 also exists on v2 with the same
+ *  name and arguments, so this is the only branch point a write needs. */
+export function collectionAbi(protocolVersion: number) {
+  return protocolVersion === 2 ? surfaceV2Abi : surfaceAbi
 }
 
 async function fetchSettings(collection: string): Promise<Settings | null> {
@@ -106,12 +122,18 @@ export function CollectionSettingsPanel({ collection }: { collection: `0x${strin
 
   return (
     <div className="space-y-4">
+      {s.sealed && (
+        <p className="rounded border border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+          This collection is sealed. Every lock is engaged, ownership is
+          renounced, and no further changes are possible.
+        </p>
+      )}
       <RendererSection collection={collection} s={s} onDone={refetch} />
       <LocksSection collection={collection} s={s} onDone={refetch} />
       <SupplySection collection={collection} s={s} onDone={refetch} />
       <RoyaltySection collection={collection} s={s} onDone={refetch} />
       <CoverSection collection={collection} s={s} onDone={refetch} />
-      <MintersSection collection={collection} onDone={refetch} />
+      <MintersSection collection={collection} s={s} onDone={refetch} />
       <CreatorsSection collection={collection} s={s} onDone={refetch} />
     </div>
   )
@@ -127,7 +149,7 @@ function RendererSection({
   onDone: () => void
 }) {
   const [next, setNext] = useState("")
-  const setter = useSetter(collection, surfaceAbi, onDone)
+  const setter = useSetter(collection, collectionAbi(s.protocolVersion), onDone)
   const trimmed = next.trim()
   const valid = isAddress(trimmed)
   // A non-contract renderer bricks tokenURI: soft-check the pasted address has
@@ -166,7 +188,7 @@ function RendererSection({
           )}
           <button
             type="button"
-            disabled={!valid || !isContract || setter.busy}
+            disabled={!valid || !isContract || setter.busy || s.sealed}
             onClick={() => setter.run("setRenderer", [trimmed as Address])}
             className={BTN}
           >
@@ -182,21 +204,25 @@ function RendererSection({
 /** A one-way lock with type-to-confirm on the collection name. */
 function LockButton({
   collection,
+  abi,
   name,
   locked,
+  disabled,
   fn,
   actionLabel,
   onDone,
 }: {
   collection: Address
+  abi: unknown
   name: string
   locked: boolean
-  fn: "lockRenderer" | "lockSupply"
+  disabled: boolean
+  fn: "lockRenderer" | "lockSupply" | "lockRoyalty"
   actionLabel: string
   onDone: () => void
 }) {
   const [confirm, setConfirm] = useState("")
-  const setter = useSetter(collection, surfaceAbi, onDone)
+  const setter = useSetter(collection, abi, onDone)
   const matches = confirm.trim() === name
 
   if (locked) {
@@ -219,13 +245,62 @@ function LockButton({
       />
       <button
         type="button"
-        disabled={!matches || setter.busy}
+        disabled={!matches || setter.busy || disabled}
         onClick={() => setter.run(fn, [])}
         className={BTN}
       >
         {setter.label ?? actionLabel}
       </button>
       {setter.error && <p className={ERROR}>{formatWriteError(setter.error, actionLabel)}</p>}
+    </div>
+  )
+}
+
+/** v2-only: engages every remaining lock and renounces ownership in one
+ *  transaction. Owner-only (seal has no admin path), so shown with its own
+ *  copy rather than reusing LockButton's generic label. */
+function SealControl({ collection, s, onDone }: { collection: Address; s: Settings; onDone: () => void }) {
+  const [confirm, setConfirm] = useState("")
+  const setter = useSetter(collection, surfaceV2Abi, onDone)
+  const matches = confirm.trim() === s.name
+
+  if (s.sealed) {
+    return (
+      <div className="space-y-1.5">
+        <p className={LABEL}>Seal</p>
+        <p className="text-xs text-gray-500">Sealed: every lock is engaged and ownership is renounced.</p>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-1.5 border-t border-gray-100 pt-3">
+      <p className={LABEL}>Seal</p>
+      <p className="text-xs text-gray-500 leading-relaxed">
+        Engages every remaining lock (renderer, supply, minter, royalty) and
+        renounces ownership, in one transaction. Only the collection owner
+        can call this; a granted admin cannot. A sealed collection with zero
+        granted minters can never mint again. This is permanent and cannot
+        be undone. Type the collection name
+        <span className="font-mono"> {s.name} </span>
+        to confirm.
+      </p>
+      <input
+        type="text"
+        value={confirm}
+        onChange={(e) => setConfirm(e.target.value)}
+        placeholder={s.name}
+        spellCheck={false}
+        className={INPUT}
+      />
+      <button
+        type="button"
+        disabled={!matches || setter.busy}
+        onClick={() => setter.run("seal", [])}
+        className={BTN}
+      >
+        {setter.label ?? "Seal permanently"}
+      </button>
+      {setter.error && <p className={ERROR}>{formatWriteError(setter.error, "seal")}</p>}
     </div>
   )
 }
@@ -239,18 +314,22 @@ function LocksSection({
   s: Settings
   onDone: () => void
 }) {
+  const isV2 = s.protocolVersion === 2
+  const abi = collectionAbi(s.protocolVersion)
   return (
     <Section
       title="Permanence locks"
       help="One-way promises. Locking the renderer pins how tokens render forever; locking supply fixes the cap forever."
     >
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className={`grid grid-cols-1 gap-4 ${isV2 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
         <div className="space-y-1.5">
           <p className={LABEL}>Renderer</p>
           <LockButton
             collection={collection}
+            abi={abi}
             name={s.name}
             locked={s.isRendererLocked}
+            disabled={s.sealed}
             fn="lockRenderer"
             actionLabel="Lock renderer forever"
             onDone={onDone}
@@ -260,14 +339,32 @@ function LocksSection({
           <p className={LABEL}>Supply</p>
           <LockButton
             collection={collection}
+            abi={abi}
             name={s.name}
             locked={s.isSupplyLocked}
+            disabled={s.sealed}
             fn="lockSupply"
             actionLabel="Lock supply forever"
             onDone={onDone}
           />
         </div>
+        {isV2 && (
+          <div className="space-y-1.5">
+            <p className={LABEL}>Royalty</p>
+            <LockButton
+              collection={collection}
+              abi={abi}
+              name={s.name}
+              locked={s.isRoyaltyLocked}
+              disabled={s.sealed}
+              fn="lockRoyalty"
+              actionLabel="Lock royalty forever"
+              onDone={onDone}
+            />
+          </div>
+        )}
       </div>
+      {isV2 && <SealControl collection={collection} s={s} onDone={onDone} />}
     </Section>
   )
 }
@@ -282,7 +379,7 @@ function SupplySection({
   onDone: () => void
 }) {
   const [cap, setCap] = useState("")
-  const setter = useSetter(collection, surfaceAbi, onDone)
+  const setter = useSetter(collection, collectionAbi(s.protocolVersion), onDone)
   const current = s.supplyCap === "0" ? "Open (no cap)" : s.supplyCap
   const parsed = cap.trim() === "" ? null : (() => { try { return BigInt(cap.trim()) } catch { return null } })()
   const valid = parsed !== null && parsed >= BigInt(s.minted)
@@ -312,7 +409,7 @@ function SupplySection({
           )}
           <button
             type="button"
-            disabled={!valid || setter.busy}
+            disabled={!valid || setter.busy || s.sealed}
             onClick={() => parsed !== null && setter.run("setSupplyCap", [parsed])}
             className={BTN}
           >
@@ -336,7 +433,7 @@ function RoyaltySection({
 }) {
   const [bps, setBps] = useState(String(s.royaltyBps))
   const [receiver, setReceiver] = useState(s.royaltyReceiver === ZERO ? "" : s.royaltyReceiver)
-  const setter = useSetter(collection, surfaceAbi, onDone)
+  const setter = useSetter(collection, collectionAbi(s.protocolVersion), onDone)
   const bpsNum = Number(bps || "0")
   const receiverAddr = receiver.trim() === "" ? s.owner : receiver.trim()
   const valid = bpsNum >= 0 && bpsNum <= 10_000 && isAddress(receiverAddr)
@@ -350,6 +447,10 @@ function RoyaltySection({
         Current: {s.royaltyBps / 100}% to{" "}
         {s.royaltyReceiver === ZERO ? "owner (default)" : shortAddress(s.royaltyReceiver)}
       </p>
+      {s.isRoyaltyLocked ? (
+        <p className="text-xs text-gray-500">Royalty is locked; these terms are permanent.</p>
+      ) : (
+        <>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <label className="block">
           <span className={LABEL}>Basis points</span>
@@ -376,13 +477,15 @@ function RoyaltySection({
       {bpsNum > 10_000 && <p className={ERROR}>Basis points cannot exceed 10000 (100%).</p>}
       <button
         type="button"
-        disabled={!valid || setter.busy}
+        disabled={!valid || setter.busy || s.sealed}
         onClick={() => setter.run("setRoyalty", [bpsNum, receiverAddr as Address])}
         className={BTN}
       >
         {setter.label ?? "Set royalty"}
       </button>
       {setter.error && <p className={ERROR}>{formatWriteError(setter.error, "set royalty")}</p>}
+        </>
+      )}
     </Section>
   )
 }
@@ -425,7 +528,7 @@ function CoverSection({
           />
           <button
             type="button"
-            disabled={!changed || setter.busy}
+            disabled={!changed || setter.busy || s.sealed}
             onClick={() => setter.run("setCover", [collection, uri.trim()])}
             className={BTN}
           >
@@ -438,9 +541,9 @@ function CoverSection({
   )
 }
 
-function MintersSection({ collection, onDone }: { collection: Address; onDone: () => void }) {
+function MintersSection({ collection, s, onDone }: { collection: Address; s: Settings; onDone: () => void }) {
   const [addr, setAddr] = useState("")
-  const setter = useSetter(collection, surfaceAbi, onDone)
+  const setter = useSetter(collection, collectionAbi(s.protocolVersion), onDone)
   const trimmed = addr.trim()
   const valid = isAddress(trimmed)
   const { data: code } = useBytecode({
@@ -448,6 +551,17 @@ function MintersSection({ collection, onDone }: { collection: Address; onDone: (
     query: { enabled: valid },
   })
   const isContract = !!code && code !== "0x"
+
+  if (s.isMinterLocked) {
+    return (
+      <Section
+        title="Extension minters"
+        help="Grant or revoke a minter contract's right to mint. The collection has no enumeration getter, so minters are managed by address, not listed."
+      >
+        <p className="text-xs text-gray-500">Minters are locked; the authorized set is permanent.</p>
+      </Section>
+    )
+  }
 
   return (
     <Section
@@ -468,7 +582,7 @@ function MintersSection({ collection, onDone }: { collection: Address; onDone: (
       <div className="flex gap-2">
         <button
           type="button"
-          disabled={!valid || !isContract || setter.busy}
+          disabled={!valid || !isContract || setter.busy || s.sealed}
           onClick={() => setter.run("setMinter", [trimmed as Address, true])}
           className={BTN}
         >
@@ -476,7 +590,7 @@ function MintersSection({ collection, onDone }: { collection: Address; onDone: (
         </button>
         <button
           type="button"
-          disabled={!valid || setter.busy}
+          disabled={!valid || setter.busy || s.sealed}
           onClick={() => setter.run("setMinter", [trimmed as Address, false])}
           className={BTN_SECONDARY}
         >
@@ -498,7 +612,7 @@ function CreatorsSection({
   onDone: () => void
 }) {
   const [addr, setAddr] = useState("")
-  const setter = useSetter(collection, surfaceAbi, onDone)
+  const setter = useSetter(collection, collectionAbi(s.protocolVersion), onDone)
   const trimmed = addr.trim()
   const valid = isAddress(trimmed)
 
@@ -518,7 +632,7 @@ function CreatorsSection({
                 </span>
                 <button
                   type="button"
-                  disabled={setter.busy}
+                  disabled={setter.busy || s.sealed}
                   onClick={() => setter.run("setCreators", [[c.creator], false])}
                   className="text-[10px] font-mono uppercase tracking-wider text-gray-400 underline hover:text-fg"
                 >
@@ -542,7 +656,7 @@ function CreatorsSection({
         />
         <button
           type="button"
-          disabled={!valid || setter.busy}
+          disabled={!valid || setter.busy || s.sealed}
           onClick={() => setter.run("setCreators", [[trimmed as Address], true])}
           className={BTN}
         >

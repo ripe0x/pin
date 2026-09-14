@@ -183,6 +183,9 @@ export type Collection = {
   isSupplyLocked: boolean
   renderer: Address
   cfg: SurfaceConfig
+  /** Freezes the authorized-minter set (see SurfaceCore/SurfaceV2.lockMinter).
+   *  Present on both versions. */
+  isMinterLocked: boolean
   /** v2 only (see SurfaceV2.lockRoyalty); always false for v1, which has no
    *  royalty lock. */
   isRoyaltyLocked: boolean
@@ -296,32 +299,105 @@ export type PermanenceTuple = readonly [boolean, boolean, boolean, boolean, bool
 export type Locks = {
   isRendererLocked: boolean
   isSupplyLocked: boolean
+  isMinterLocked: boolean
   isRoyaltyLocked: boolean
   sealed: boolean
 }
 
 /**
  * The lock/seal facts for a collection. For a v2 row with a successful
- * permanence() call, every flag (renderer, supply, royalty, sealed) comes
- * from that single tuple, the source of truth for v2. Otherwise (v1, or a
- * v2 row whose permanence() call itself failed) falls back to the
- * individual isRendererLocked/isSupplyLocked reads, with isRoyaltyLocked
- * and sealed false: v1 has no royalty lock and no seal.
+ * permanence() call, every flag (renderer, supply, minter, royalty, sealed)
+ * comes from that single tuple, the source of truth for v2. Otherwise (v1,
+ * or a v2 row whose permanence() call itself failed) falls back to the
+ * individual isRendererLocked/isSupplyLocked/isMinterLocked reads, with
+ * isRoyaltyLocked and sealed false: v1 has no royalty lock and no seal.
  */
 export function decodeLocks(
   protocolVersion: number,
-  individual: { isRendererLocked: boolean; isSupplyLocked: boolean },
+  individual: { isRendererLocked: boolean; isSupplyLocked: boolean; isMinterLocked: boolean },
   permanence: MulticallEntry<PermanenceTuple> | undefined,
 ): Locks {
   if (protocolVersion === 2 && permanence?.status === "success") {
-    const [rendererLocked, supplyLocked, , royaltyLocked, sealed] = permanence.result
-    return { isRendererLocked: rendererLocked, isSupplyLocked: supplyLocked, isRoyaltyLocked: royaltyLocked, sealed }
+    const [rendererLocked, supplyLocked, minterLocked, royaltyLocked, sealed] = permanence.result
+    return {
+      isRendererLocked: rendererLocked,
+      isSupplyLocked: supplyLocked,
+      isMinterLocked: minterLocked,
+      isRoyaltyLocked: royaltyLocked,
+      sealed,
+    }
   }
   return {
     isRendererLocked: individual.isRendererLocked,
     isSupplyLocked: individual.isSupplyLocked,
+    isMinterLocked: individual.isMinterLocked,
     isRoyaltyLocked: false,
     sealed: false,
+  }
+}
+
+/** The studio Collection Settings tool's /settings API response shape. */
+export type CollectionSettings = {
+  name: string
+  owner: Address
+  protocolVersion: number
+  renderer: Address
+  isRendererLocked: boolean
+  isSupplyLocked: boolean
+  isMinterLocked: boolean
+  isRoyaltyLocked: boolean
+  sealed: boolean
+  supplyCap: string
+  minted: string
+  royaltyBps: number
+  royaltyReceiver: Address
+  cover: string
+  renderAssets: Address | null
+  creators: { creator: Address; confirmed: boolean }[]
+}
+
+/**
+ * Builds the /settings API response from an already-read Collection, a
+ * separately-fetched creator roster, and the network's RenderAssets
+ * address. A pure formatter (no chain/DB reads of its own) so the API
+ * route's response shape is unit-testable against a fabricated Collection.
+ */
+export function buildCollectionSettings(
+  c: Pick<
+    Collection,
+    | "name"
+    | "owner"
+    | "protocolVersion"
+    | "renderer"
+    | "isRendererLocked"
+    | "isSupplyLocked"
+    | "isMinterLocked"
+    | "isRoyaltyLocked"
+    | "sealed"
+    | "cfg"
+    | "cover"
+    | "minted"
+  >,
+  creators: { creator: Address; confirmed: boolean }[],
+  renderAssets: Address | null,
+): CollectionSettings {
+  return {
+    name: c.name,
+    owner: c.owner,
+    protocolVersion: c.protocolVersion,
+    renderer: c.renderer,
+    isRendererLocked: c.isRendererLocked,
+    isSupplyLocked: c.isSupplyLocked,
+    isMinterLocked: c.isMinterLocked,
+    isRoyaltyLocked: c.isRoyaltyLocked,
+    sealed: c.sealed,
+    supplyCap: c.cfg.supplyCap.toString(),
+    minted: c.minted.toString(),
+    royaltyBps: c.cfg.royaltyBps,
+    royaltyReceiver: c.cfg.royaltyReceiver,
+    cover: c.cover,
+    renderAssets,
+    creators,
   }
 }
 

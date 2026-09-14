@@ -375,6 +375,7 @@ export async function getCollection(address: Address): Promise<Collection | null
           { ...base, functionName: "owner" },
           { ...base, functionName: "isRendererLocked" },
           { ...base, functionName: "isSupplyLocked" },
+          { ...base, functionName: "isMinterLocked" },
           { ...base, functionName: "renderer" },
           // idMode is a structural fact read separately since the Sequential/
           // Pooled split moved it out of the config struct. v2 keeps idMode()
@@ -402,6 +403,7 @@ export async function getCollection(address: Address): Promise<Collection | null
         ownerRes,
         rendererLockedRes,
         supplyLockedRes,
+        minterLockedRes,
         rendererRes,
         idModeRes,
         primaryMinterRes,
@@ -420,6 +422,7 @@ export async function getCollection(address: Address): Promise<Collection | null
         ownerRes.status !== "success" ||
         rendererLockedRes.status !== "success" ||
         supplyLockedRes.status !== "success" ||
+        minterLockedRes.status !== "success" ||
         rendererRes.status !== "success" ||
         idModeRes.status !== "success" ||
         primaryMinterRes.status !== "success" ||
@@ -458,13 +461,18 @@ export async function getCollection(address: Address): Promise<Collection | null
 
       const locks = decodeLocks(
         protocolVersion,
-        { isRendererLocked: rendererLockedRes.result as boolean, isSupplyLocked: supplyLockedRes.result as boolean },
+        {
+          isRendererLocked: rendererLockedRes.result as boolean,
+          isSupplyLocked: supplyLockedRes.result as boolean,
+          isMinterLocked: minterLockedRes.result as boolean,
+        },
         permanenceRes as MulticallEntry<PermanenceTuple>,
       )
 
       return {
         address,
         protocolVersion,
+        isMinterLocked: locks.isMinterLocked,
         isRoyaltyLocked: locks.isRoyaltyLocked,
         sealed: locks.sealed,
         name: nameRes.result as string,
