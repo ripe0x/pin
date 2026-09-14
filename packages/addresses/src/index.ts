@@ -193,14 +193,14 @@ export const SURFACE_FACTORY: Record<number, Address> = {
   [SEPOLIA_CHAIN_ID]: "0xAB8F7b96e6c8f850B6089447F903dbC4aE6e4ac0",
 }
 
-// SurfaceFactoryV2: art-only core beside v1 (sequential ids only, no
-// pooled mode; see docs/pnd-surface-v2-plan.md). Not yet deployed to
-// either network; fill from contracts/deployments.<network>.json once
-// the deploy lands. For local Anvil dev, set
-// NEXT_PUBLIC_SURFACE_FACTORY_V2 instead of editing this file.
+// SurfaceFactoryV2: art-only core beside v1 (sequential ids only; see
+// docs/pnd-surface-v2-plan.md). Values come from
+// contracts/deployments.<network>.json. Sepolia deployed 2026-09-14 at
+// block 11704552; mainnet is undeployed (zero address). For local Anvil
+// dev, set NEXT_PUBLIC_SURFACE_FACTORY_V2 instead of editing this file.
 export const SURFACE_FACTORY_V2: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
-  [SEPOLIA_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+  [SEPOLIA_CHAIN_ID]: "0x48Fa2D562650F962acad67C5dE9C7a1ED6ed61DE",
 }
 
 // RenderAssets — renderer-land registry of static display assets (cover +
