@@ -110,3 +110,22 @@ emit({
   exportName: "iPreviewRendererAbi",
   outFiles: ["packages/abi/src/iPreviewRenderer.ts"],
 });
+
+// Surface v2 (art-only core, sequential ids only). Lives beside v1;
+// not emitted to apps/indexer/abis here (indexer v2 support ships
+// separately).
+emit({
+  artifact: "SurfaceV2.sol/SurfaceV2.json",
+  exportName: "surfaceV2Abi",
+  outFiles: ["packages/abi/src/surfaceV2.ts"],
+});
+emit({
+  artifact: "SurfaceFactoryV2.sol/SurfaceFactoryV2.json",
+  exportName: "surfaceFactoryV2Abi",
+  outFiles: ["packages/abi/src/surfaceFactoryV2.ts"],
+});
+emit({
+  artifact: "FixedPriceMinterV2.sol/FixedPriceMinterV2.json",
+  exportName: "fixedPriceMinterV2Abi",
+  outFiles: ["packages/abi/src/fixedPriceMinterV2.ts"],
+});
