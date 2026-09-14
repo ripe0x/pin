@@ -257,7 +257,10 @@ export function getAddressOrNull(
   addresses: Record<number, Address>,
   chainId: number,
 ): Address | null {
-  const addr = addresses[chainId]
+  // Guard an undefined map (a missing export under package version skew reads
+  // as undefined, not an empty object) so lookups degrade to null instead of
+  // throwing a TypeError on `addresses[chainId]`.
+  const addr = addresses?.[chainId]
   if (!addr || addr === "0x0000000000000000000000000000000000000000") return null
   return addr
 }
@@ -267,7 +270,7 @@ export function getAddress(
   addresses: Record<number, Address>,
   chainId: number
 ): Address {
-  const addr = addresses[chainId]
+  const addr = addresses?.[chainId]
   if (!addr || addr === "0x0000000000000000000000000000000000000000") {
     throw new Error(`No address configured for chainId ${chainId}`)
   }

@@ -28,8 +28,10 @@ export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as cons
 export const REFERRAL_SHARE_BPS = 1000 // 10%
 
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
-// Must match wagmi.ts `forkChain` (31339) so wallet/link/chain checks agree.
-const FORK_CHAIN_ID = 31339
+// Must match wagmi.ts `forkChain` so wallet/link/chain checks agree; honors the
+// same NEXT_PUBLIC_FORK_CHAIN_ID override (default 31339, e.g. set 31337 to
+// target an anvil forked at Hardhat's id).
+const FORK_CHAIN_ID = Number(process.env.NEXT_PUBLIC_FORK_CHAIN_ID || "31339")
 // Opt-in sepolia instance for running the Homage mint surface against a live
 // testnet deployment. Mutually exclusive with FORK_MODE; a no-op when unset,
 // so mainnet production stays byte-identical.
