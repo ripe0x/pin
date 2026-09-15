@@ -28,14 +28,15 @@ import {
   getCollectionTokenRenders,
   getRecentTokenMarks,
   getRendererSamplePreview,
-  getContractDescription,
+  getContractMetadata,
   getRendererTokenPreview,
   getRouterBatches,
   isBatchRenderRouter,
   type RenderableSample,
 } from "@/lib/collection-onchain"
 import { getCollectionMintedIdsFromIndexer } from "@/lib/indexer-queries"
-import { selectPreMintHero } from "@/lib/collection-hero"
+import { selectCollectionHeroMode, selectPreMintHero } from "@/lib/collection-hero"
+import type { ContractMetadata } from "@/lib/collection-preview"
 import { selectGridTokenIds } from "@/lib/collection-grid-tokens"
 import { detectHomageMinter } from "@/lib/homage/detect.server"
 import { isEscapeRenderer, ESCAPE_DESCRIPTION, ESCAPE_PIECE_TITLE } from "@/lib/escape-render"
@@ -78,6 +79,53 @@ import {
 // Grid tile ceiling: the post-mint OnchainMosaic never fetches or shows
 // more than this many minted ids.
 const GRID_TOKEN_CAP = 12
+
+/** A short address, linked to the explorer (evm.now). Used in the two
+ *  single-visual layout branches' facts lists. */
+function addressLink(a: Address) {
+  return (
+    <a
+      href={evmNowAddressUrl(a, PND_CHAIN_ID)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
+    >
+      {shortAddress(a)}
+    </a>
+  )
+}
+
+/** Whether the renderer is locked, a fact about the Surface protocol
+ *  rather than the collection's own content. Shown in both hero layouts. */
+function RendererPermanenceNote({ permanent }: { permanent: boolean }) {
+  return (
+    <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+      {permanent
+        ? "The renderer is locked: this collection renders through its current contract forever. The contract itself has had no upgrade path since deploy."
+        : "The contract is immutable from deploy. The renderer can change until the artist locks it."}
+    </p>
+  )
+}
+
+/** How to mint this collection from another interface, routing the
+ *  referral share to the caller instead of PND. Shown only when the
+ *  collection sells through a primary minter. */
+function SelfHostNote({ minter, referralShareBps }: { minter: Address; referralShareBps: number }) {
+  return (
+    <div className="pt-2">
+      <h3 className="mb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+        Self host this mint
+      </h3>
+      <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+        This collection sells through its own primary minter and can be
+        minted from any interface. From your own page, call{" "}
+        <code className="text-fg">mint(to, qty, yourAddress, 0x)</code> on{" "}
+        <code className="break-all text-fg">{minter}</code> so the{" "}
+        {formatBps(referralShareBps)} referral share routes to you, not PND.
+      </p>
+    </div>
+  )
+}
 
 type Params = Promise<{ address: string }>
 
@@ -131,7 +179,15 @@ export default async function CollectionPage({
     getRecentTokenMarks(addr, c.minted, c.cfg.idMode),
   ])
 
-  const hasCover = c.cover.length > 0
+  // The collection's own contractURI() metadata: its description (shown
+  // verbatim in place of any PND placeholder copy) and, when RenderAssets
+  // has no cover, a fallback cover image. Skipped for the homage skin,
+  // which owns its own art and copy. One eth_call, cached.
+  const contractMeta: ContractMetadata = homageSkin
+    ? { description: null, image: null }
+    : await getContractMetadata(addr, c.renderer)
+  const effectiveCover = c.cover.length > 0 ? c.cover : (contractMeta.image ?? "")
+  const hasCover = effectiveCover.length > 0
   const hasWork = c.work.code.length > 0
   const preMint = c.minted === 0n
   // Layout selection: a data lookup (collection address -> layoutKind), not
@@ -178,6 +234,11 @@ export default async function CollectionPage({
       ? await getCollectionTokenRenders(addr, c.renderer, gridTokenIds)
       : new Map<number, RenderableSample | null>()
 
+  // Which shape the hero renders in: one visual beside the title and mint
+  // info (pre-mint, or a minted collection with no token grid to show), or
+  // the wide banner plus token grid (see selectCollectionHeroMode).
+  const heroMode = selectCollectionHeroMode(preMint, gridTokenIds.length)
+
   // The number a collector reads as "the edition": the collection's cap when
   // it has one, otherwise the minter's ceiling, which is what bounds an
   // open-supply release run in batches. 0 when nothing bounds it.
@@ -195,9 +256,8 @@ export default async function CollectionPage({
   // has one, else the work's mirrored description for the escape special case
   // (its tokenURI, where the literal lives, cannot be read). Null shows no
   // blurb rather than inventing one.
-  const contractDescription = await getContractDescription(addr)
   const isEscape = await isEscapeRenderer(c.renderer)
-  const editionDescription = contractDescription ?? (isEscape ? ESCAPE_DESCRIPTION : null)
+  const description = contractMeta.description ?? (isEscape ? ESCAPE_DESCRIPTION : null)
   // The piece's own title, shown under the collection name when it differs.
   const pieceTitle = isEscape ? ESCAPE_PIECE_TITLE : null
 
@@ -253,7 +313,7 @@ export default async function CollectionPage({
         <BatchGrid collection={addr} batches={batches} images={batchImages} />
       ) : preMint ? (
         preMintSource === "cover" ? (
-          <TokenMedia imageUrl={c.cover} animationUrl={null} title={c.name} />
+          <TokenMedia imageUrl={effectiveCover} animationUrl={null} title={c.name} />
         ) : preMintSource === "sample" ? (
           <TokenMedia
             imageUrl={sharedArt?.image ?? ""}
@@ -265,23 +325,13 @@ export default async function CollectionPage({
         )
       ) : sharedArt?.animationUrl || sharedArt?.image || hasCover ? (
         <TokenMedia
-          imageUrl={hasCover ? c.cover : sharedArt?.image ?? ""}
+          imageUrl={hasCover ? effectiveCover : sharedArt?.image ?? ""}
           animationUrl={sharedArt?.animationUrl ?? null}
           title={c.name}
         />
       ) : (
         fallbackLine
       )
-    const addressLink = (a: Address) => (
-      <a
-        href={evmNowAddressUrl(a, PND_CHAIN_ID)}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
-      >
-        {shortAddress(a)}
-      </a>
-    )
     return (
       <EditionMintLayout
         name={c.name}
@@ -326,7 +376,9 @@ export default async function CollectionPage({
           />
         }
         subtitle={pieceTitle}
-        description={editionDescription ? <p>{editionDescription}</p> : undefined}
+        description={
+          description ? <p className="whitespace-pre-line">{description}</p> : undefined
+        }
         history={<CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />}
         about={
           batches.length > 0 ? (
@@ -335,6 +387,85 @@ export default async function CollectionPage({
               artwork. See the batch grid for the full release.
             </p>
           ) : undefined
+        }
+        facts={[
+          { label: "Contract", value: addressLink(addr) },
+          { label: "Owner", value: addressLink(c.owner) },
+          { label: "Renderer", value: addressLink(c.renderer) },
+          {
+            label: "Royalty",
+            value: c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none",
+          },
+          { label: "Sale mode", value: pooled ? "Pooled (via minter)" : "Sequential" },
+        ]}
+      />
+    )
+  }
+
+  // A renderer-native collection whose hero is one visual rather than a
+  // grid (selectCollectionHeroMode: pre-mint, or minted with no token grid
+  // to show). Routes through the same two-column layout as the "edition"
+  // layoutKind branch above instead of the banner+grid masthead below, so
+  // the two single-visual cases render identically.
+  if (!homageSkin && isDefaultLayout && !hasWork && heroMode === "single") {
+    const singleArtists = attribution.length > 0 ? attribution.map((a) => a.creator) : [c.owner]
+    return (
+      <EditionMintLayout
+        name={c.name}
+        subtitle={pieceTitle}
+        byline={
+          <>
+            by{" "}
+            {singleArtists.map((a, i) => (
+              <span key={a}>
+                {i > 0 && ", "}
+                <a
+                  href={evmNowAddressUrl(a, PND_CHAIN_ID)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
+                >
+                  <ArtistName address={a} />
+                </a>
+              </span>
+            ))}
+          </>
+        }
+        hero={<PreMintHero cover={hasCover ? effectiveCover : null} sample={sample} name={c.name} />}
+        mintInstrument={
+          <MintCollectionCTA
+            collection={addr}
+            minter={c.primaryMinter}
+            work={null}
+            snapshot={{
+              price: (c.sale?.price ?? 0n).toString(),
+              priceStrategy: c.sale?.priceStrategy ?? ZERO_ADDRESS,
+              mintStart: (c.sale?.mintStart ?? 0n).toString(),
+              mintEnd: (c.sale?.mintEnd ?? 0n).toString(),
+              payout: c.sale?.payout ?? ZERO_ADDRESS,
+              allowlistRoot: c.sale?.allowlistRoot ?? ("0x" + "0".repeat(64) as `0x${string}`),
+              walletCap: (c.sale?.walletCap ?? 0n).toString(),
+              supplyCap: c.cfg.supplyCap.toString(),
+              maxMints: (c.sale?.maxMints ?? 0n).toString(),
+              minted: c.minted.toString(),
+              referralShareBps: c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS,
+            }}
+          />
+        }
+        description={
+          description ? <p className="whitespace-pre-line">{description}</p> : undefined
+        }
+        history={<CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />}
+        about={
+          <div className="space-y-4">
+            <RendererPermanenceNote permanent={permanent} />
+            {c.primaryMinter && (
+              <SelfHostNote
+                minter={c.primaryMinter}
+                referralShareBps={c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS}
+              />
+            )}
+          </div>
         }
         facts={[
           { label: "Contract", value: addressLink(addr) },
@@ -390,13 +521,13 @@ export default async function CollectionPage({
       minted={c.minted.toString()}
     />
   ) : preMint ? (
-    <PreMintHero cover={hasCover ? c.cover : null} sample={sample} name={c.name} />
+    <PreMintHero cover={hasCover ? effectiveCover : null} sample={sample} name={c.name} />
   ) : (
     <OnchainMosaic
       collection={addr}
       tokenIds={gridTokenIds}
       renders={Object.fromEntries(gridRenders)}
-      cover={hasCover ? c.cover : null}
+      cover={hasCover ? effectiveCover : null}
     />
   )
 
@@ -447,19 +578,6 @@ export default async function CollectionPage({
                     </a>
                   </span>
                 ))
-              )}
-              {!homageSkin && (
-                <>
-                  {" · "}
-                  {hasWork
-                    ? "long-form generative work, rendered live in your browser"
-                    : sample
-                      ? "long-form generative work, rendered by its own onchain contract"
-                      : pooled
-                        ? "a work sold through its own minter"
-                        : "an edition on the artist's own contract"}
-                  {c.cfg.supplyCap > 0n && ` · ${c.cfg.supplyCap.toString()} editions`}
-                </>
               )}
             </p>
           )
@@ -548,56 +666,22 @@ export default async function CollectionPage({
             <HomageAbout headingClassName="text-[10px] font-mono uppercase tracking-wider text-gray-400" />
           ) : (
             <div className="space-y-6">
-              <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                About this work
-              </h2>
-              {hasWork ? (
-                <p className="text-sm leading-relaxed text-fg-muted">
-                  Every token is generated by the collection&apos;s own algorithm from a
-                  seed written onchain at mint. The render is a pure function of
-                  chain state: this code, that seed, forever. No server keeps the
-                  artwork alive, and every image on this page is the algorithm
-                  running live in your browser.
-                </p>
-              ) : sample ? (
-                <p className="text-sm leading-relaxed text-fg-muted">
-                  Every token is generated onchain by the collection&apos;s own
-                  renderer contract from a seed written at mint. The render is a
-                  pure function of chain state, and every example on this page
-                  was rendered by that contract, live.
-                </p>
-              ) : pooled ? (
-                <p className="text-sm leading-relaxed text-fg-muted">
-                  A work on the artist&apos;s own contract, rendered by its own custom
-                  renderer and sold through its own minter. Every token carries a
-                  distinct onchain Mint Mark: its place in the collection&apos;s
-                  history, recorded at mint.
-                </p>
-              ) : (
-                <p className="text-sm leading-relaxed text-fg-muted">
-                  An edition on the artist&apos;s own contract. Every token carries a
-                  distinct onchain Mint Mark: its place in the collection&apos;s
-                  history, recorded at mint.
-                </p>
-              )}
-              <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-                {permanent
-                  ? "The renderer is locked: this collection renders through its current contract forever. The contract itself has had no upgrade path since deploy."
-                  : "The contract is immutable from deploy. The renderer can change until the artist locks it."}
-              </p>
-              {c.primaryMinter && (
-                <div className="pt-2">
-                  <h3 className="mb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                    Self host this mint
-                  </h3>
-                  <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-                    This collection sells through its own primary minter and can be
-                    minted from any interface. From your own page, call{" "}
-                    <code className="text-fg">mint(to, qty, yourAddress, 0x)</code> on{" "}
-                    <code className="break-all text-fg">{c.primaryMinter}</code> so the{" "}
-                    {formatBps(c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS)} referral share routes to you, not PND.
+              {description && (
+                <>
+                  <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                    About this work
+                  </h2>
+                  <p className="text-sm leading-relaxed text-fg-muted whitespace-pre-line">
+                    {description}
                   </p>
-                </div>
+                </>
+              )}
+              <RendererPermanenceNote permanent={permanent} />
+              {c.primaryMinter && (
+                <SelfHostNote
+                  minter={c.primaryMinter}
+                  referralShareBps={c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS}
+                />
               )}
             </div>
           )}
