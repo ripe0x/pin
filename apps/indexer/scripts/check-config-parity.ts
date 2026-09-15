@@ -2,11 +2,21 @@
  * Run with: npx tsx scripts/check-config-parity.ts (from apps/indexer).
  *
  * Proves that adding sepolia-only mode (PONDER_CHAIN_ID=11155111, see
- * ponder.config.ts) did not change the config ponder.config.ts produces
- * in production mode (PONDER_CHAIN_ID unset). Compares the current file
- * against the pre-change version fetched from origin/main via `git
- * show`, both imported under the same (unset) env, so any accidental
- * production-mode behavior change surfaces as a diff.
+ * ponder.config.ts) did not change the config apps/indexer/
+ * ponder.config.ts itself produces in production mode (PONDER_CHAIN_ID
+ * unset). Compares the current apps/indexer/ponder.config.ts against
+ * the pre-change version of that same file fetched from origin/main via
+ * `git show`, both imported under the same (unset) env, so any
+ * accidental production-mode behavior change in ponder.config.ts
+ * surfaces as a diff.
+ *
+ * Only ponder.config.ts's own content is swapped: the baseline copy is
+ * written next to the real file (apps/indexer/ponder.config.baseline.
+ * gen.ts), so its relative imports (`./abis/...`,
+ * `./src/surfaceV2Deployment`) resolve to the CURRENT worktree's abis/
+ * and src/ files on both sides, not to origin/main's versions of those
+ * files. This check does not cover changes to the abi modules or
+ * surfaceV2Deployment.ts themselves.
  *
  * Uses tsx, not the plain node loader: ponder.config.ts's imports
  * (`./abis/...`, `./src/surfaceV2Deployment`) are extensionless, which
@@ -57,7 +67,9 @@ async function main() {
     )
 
     console.log(
-      "OK: mainnet-mode config (PONDER_CHAIN_ID unset) is deep-equal to origin/main.",
+      "OK: apps/indexer/ponder.config.ts in mainnet mode (PONDER_CHAIN_ID unset) " +
+        "is deep-equal to origin/main's ponder.config.ts, both resolving " +
+        "./abis and ./src/surfaceV2Deployment from the current worktree.",
     )
   } finally {
     if (existsSync(baselinePath)) rmSync(baselinePath)

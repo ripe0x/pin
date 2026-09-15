@@ -394,10 +394,15 @@ export default createConfig({
     // See the comment above `mainnetSurfaceV2`/`sepoliaSurfaceV2`: each
     // network's key is present only once that network has a real
     // deployment; an undeployed network is omitted, not zero-addressed.
+    // The mainnet entry is also gated on `!SEPOLIA_ONLY_MODE`, matching
+    // every other mainnet contract below: without that gate, sepolia
+    // mode would emit a `mainnet` chain key here once
+    // contracts/deployments.mainnet.json records a real deployment,
+    // even though `chains.mainnet` itself is omitted in that mode.
     SurfaceFactoryV2: {
       abi: surfaceFactoryV2Abi,
       chain: {
-        ...(mainnetSurfaceV2
+        ...(!SEPOLIA_ONLY_MODE && mainnetSurfaceV2
           ? {
               mainnet: {
                 address: mainnetSurfaceV2.surfaceFactoryV2,
@@ -418,7 +423,7 @@ export default createConfig({
     SurfaceV2: {
       abi: surfaceV2Abi,
       chain: {
-        ...(mainnetSurfaceV2
+        ...(!SEPOLIA_ONLY_MODE && mainnetSurfaceV2
           ? {
               mainnet: {
                 address: factory({
@@ -447,7 +452,7 @@ export default createConfig({
     FixedPriceMinterV2: {
       abi: fixedPriceMinterV2Abi,
       chain: {
-        ...(mainnetSurfaceV2
+        ...(!SEPOLIA_ONLY_MODE && mainnetSurfaceV2
           ? {
               mainnet: {
                 address: factory({
