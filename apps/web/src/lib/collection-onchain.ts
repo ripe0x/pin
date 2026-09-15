@@ -17,7 +17,7 @@ import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache, pgCacheHas } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
 import { buildEscapeArtwork, isEscapeRenderer } from "./escape-render"
-import { decodePreviewURI, type PreviewDecodeResult } from "./collection-preview"
+import { decodeContractURI, decodePreviewURI, type ContractMetadata, type PreviewDecodeResult } from "./collection-preview"
 import {
   getCollectionAddressesFromIndexer,
   getCollectionPrimaryMinterFromIndexer,
@@ -1166,28 +1166,25 @@ export async function getAttribution(_collection: Address): Promise<CreatorEntry
   return []
 }
 
-/** The collection's own description from its contractURI() metadata (a data-URI
- *  JSON), or null. Used to feed the "About this work" copy from the contract
- *  instead of hardcoded text. Cached — collection metadata is near-static. */
-export async function getContractDescription(address: Address): Promise<string | null> {
-  return pgCache(`contract-desc:${lc(address)}`, 3600, async () => {
+/**
+ * The collection's own contractURI() metadata: description (shown verbatim
+ * in place of any PND placeholder copy) and image (a fallback cover when
+ * RenderAssets has none). Keyed on collection + renderer since a renderer
+ * swap changes what contractURI returns for the same address. Same TTL as
+ * getCollection (sc-collection) since both read live collection state; one
+ * eth_call, try/catch.
+ */
+export async function getContractMetadata(address: Address, renderer: Address): Promise<ContractMetadata> {
+  return pgCache(`sc-contract-uri:${lc(address)}:${lc(renderer)}`, 20, async () => {
     try {
       const uri = (await getClient().readContract({
         address,
         abi: surfaceAbi,
         functionName: "contractURI",
       })) as string
-      const comma = uri.indexOf(",")
-      if (comma === -1) return null
-      const payload = uri.slice(comma + 1)
-      const json = uri.slice(0, comma).includes("base64")
-        ? Buffer.from(payload, "base64").toString("utf8")
-        : decodeURIComponent(payload)
-      const meta = JSON.parse(json) as { description?: string }
-      const d = typeof meta.description === "string" ? meta.description.trim() : ""
-      return d || null
+      return decodeContractURI(uri)
     } catch {
-      return null
+      return { description: null, image: null }
     }
   })
 }

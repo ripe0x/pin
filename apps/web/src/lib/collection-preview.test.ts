@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { decodePreviewURI } from "./collection-preview.ts"
+import { decodeContractURI, decodePreviewURI } from "./collection-preview.ts"
 
 test("decodePreviewURI: unsupported for a non-data-URI string", () => {
   assert.deepEqual(decodePreviewURI("not a uri"), { kind: "unsupported" })
@@ -30,4 +30,26 @@ test("decodePreviewURI: a non-base64 data:application/json URI also decodes", ()
   const json = encodeURIComponent(JSON.stringify({ image: "ipfs://bafytest" }))
   const uri = `data:application/json,${json}`
   assert.deepEqual(decodePreviewURI(uri), { kind: "image", src: "ipfs://bafytest" })
+})
+
+test("decodeContractURI: description and image both present", () => {
+  const json = JSON.stringify({ name: "x", description: "an artist's own words", image: "ipfs://cover" })
+  const uri = `data:application/json;base64,${btoa(json)}`
+  assert.deepEqual(decodeContractURI(uri), { description: "an artist's own words", image: "ipfs://cover" })
+})
+
+test("decodeContractURI: name only, no description or image", () => {
+  const json = JSON.stringify({ name: "test v2 deploy" })
+  const uri = `data:application/json;base64,${btoa(json)}`
+  assert.deepEqual(decodeContractURI(uri), { description: null, image: null })
+})
+
+test("decodeContractURI: blank description trims to null", () => {
+  const json = JSON.stringify({ name: "x", description: "   " })
+  const uri = `data:application/json;base64,${btoa(json)}`
+  assert.deepEqual(decodeContractURI(uri), { description: null, image: null })
+})
+
+test("decodeContractURI: not a data URI decodes to nulls", () => {
+  assert.deepEqual(decodeContractURI("not a uri"), { description: null, image: null })
 })

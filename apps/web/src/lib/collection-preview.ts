@@ -64,3 +64,27 @@ export function decodePreviewURI(uri: string): PreviewDecodeResult {
 
   return { kind: "unsupported" }
 }
+
+export type ContractMetadata = { description: string | null; image: string | null }
+
+/**
+ * Decode a collection's contractURI() return value into its own
+ * description and image. Both null when the URI doesn't decode to JSON or
+ * the field is absent, so the collection page shows nothing rather than
+ * inventing copy for a contract that set no description.
+ */
+export function decodeContractURI(uri: string): ContractMetadata {
+  const outer = decodeDataUri(uri)
+  if (!outer || !outer.contentType.includes("json")) return { description: null, image: null }
+
+  let meta: { description?: unknown; image?: unknown }
+  try {
+    meta = JSON.parse(outer.text)
+  } catch {
+    return { description: null, image: null }
+  }
+
+  const description = typeof meta.description === "string" ? meta.description.trim() : ""
+  const image = typeof meta.image === "string" ? meta.image.trim() : ""
+  return { description: description || null, image: image || null }
+}
