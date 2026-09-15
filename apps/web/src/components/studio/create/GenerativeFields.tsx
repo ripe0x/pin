@@ -36,24 +36,6 @@ export function GenerativeFields({
   return (
     <div className="space-y-5">
       <div>
-        <label className={LABEL} htmlFor="cc-cover">
-          Cover art URI (optional)
-        </label>
-        <input
-          id="cc-cover"
-          className={INPUT}
-          value={state.artworkURI}
-          onChange={(e) => set("artworkURI", e.target.value.trim())}
-          placeholder="ipfs://…"
-          disabled={disabled}
-        />
-        <p className={HELP}>
-          Shown as the static image alongside the live render. Optional: the
-          generative output is the artwork.
-        </p>
-      </div>
-
-      <div>
         <div className="flex items-center justify-between mb-1.5">
           <label className={LABEL} htmlFor="cc-script">
             Script

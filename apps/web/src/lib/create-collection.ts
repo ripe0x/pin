@@ -11,7 +11,7 @@
 
 import { bytesToHex, keccak256, type Address } from "viem"
 import { ETHFS_V2_FILE_STORAGE, SCRIPTY_STORAGE_V2, getAddressOrNull } from "@pin/addresses"
-import { CodeKind, type CodeRef } from "./collection"
+import { CodeKind, ZERO_ADDRESS, defaultRendererAddress, type CodeRef } from "./collection"
 
 export { CodeKind }
 
@@ -30,6 +30,42 @@ export const PRESET_DESCRIPTION: Record<Preset, string> = {
   edition: "Fixed artwork, priced mint. No code required.",
   generative: "Your script runs onchain, one output per token.",
   renderer: "A custom renderer contract is the artwork.",
+}
+
+// ── artwork URI ──────────────────────────────────────────────────────────
+
+/** Schemes accepted for the wizard's cover/artwork URI field. */
+export const ARTWORK_URI_SCHEMES = ["ipfs://", "ar://", "https://"] as const
+
+/** True when `uri` is a `scheme://something` with a non-empty path. */
+export function isValidArtworkURI(uri: string): boolean {
+  const trimmed = uri.trim()
+  return ARTWORK_URI_SCHEMES.some(
+    (scheme) => trimmed.startsWith(scheme) && trimmed.length > scheme.length,
+  )
+}
+
+/**
+ * True when `rendererAddress` resolves to DefaultRenderer on `chainId`. The
+ * factory substitutes DefaultRenderer for the zero address at create, so the
+ * zero address counts as DefaultRenderer here too.
+ */
+export function isDefaultRenderer(rendererAddress: string, chainId: number): boolean {
+  if (rendererAddress.toLowerCase() === ZERO_ADDRESS) return true
+  const def = defaultRendererAddress(chainId)
+  return !!def && rendererAddress.toLowerCase() === def.toLowerCase()
+}
+
+/**
+ * Whether the wizard must collect a cover/artwork URI for this preset.
+ * Edition and a renderer preset resolving to DefaultRenderer read their
+ * image from RenderAssets and have no other artwork source; a genuine
+ * custom renderer implements tokenURI itself.
+ */
+export function artworkRequired(preset: Preset, customRenderer: string, chainId: number): boolean {
+  if (preset === "edition") return true
+  if (preset === "renderer") return isDefaultRenderer(customRenderer, chainId)
+  return false
 }
 
 // ── known onchain dependency libraries (v1) ─────────────────────────────
