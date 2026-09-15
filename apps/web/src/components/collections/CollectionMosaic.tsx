@@ -26,6 +26,7 @@ import type { Address } from "viem"
 
 import { TokenPreview, type TokenData } from "@/lib/collection-render"
 import type { OnchainPreview } from "@/lib/collection-onchain"
+import { selectMosaicTileVisual, type MosaicTileVisual } from "@/lib/collection-mosaic-tile"
 import type { WorkConfig } from "@/lib/collection"
 import {
   entryTokenData,
@@ -340,10 +341,15 @@ const ONCHAIN_MAX_INDEX = 48 // hard ceiling on distinct sample eth_calls ever
 export function OnchainMosaic({
   collection,
   previews,
+  cover = null,
   sampleLabel = "Sample outputs · every mint is generated from its own transaction",
 }: {
   collection: `0x${string}`
   previews: OnchainPreview[]
+  /** The collection's own cover (contractURI image), shown on a tile whose
+   *  preview has neither an image nor a live-rendered slot (see
+   *  selectMosaicTileVisual). Null when the collection has no cover. */
+  cover?: string | null
   /** Caption above the field. Homage passes a minimal label (no meta copy). */
   sampleLabel?: string
 }) {
@@ -413,12 +419,14 @@ export function OnchainMosaic({
         key: `p${pos}`,
         overline: "Sample output",
         isSample: true,
-        // Static SVG in the grid: clean and cheap, no interactive overlay.
-        thumb: p.image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={p.image} alt="sample output" className="h-full w-full object-cover" />
-        ) : (
-          <div className="h-full w-full" />
+        thumb: renderMosaicTileThumb(
+          selectMosaicTileVisual({
+            image: p.image,
+            animationUrl: p.animationUrl,
+            cover,
+            number: pos + 1,
+            position: pos,
+          }),
         ),
         // Interactive HTML in focus when the renderer provides it.
         full: p.animationUrl ? (
@@ -437,7 +445,7 @@ export function OnchainMosaic({
           <div className="h-full w-full" />
         ),
       })),
-    [display],
+    [display, cover],
   )
 
   if (items.length === 0) return null
@@ -450,4 +458,41 @@ export function OnchainMosaic({
       onRerollItem={rerollItem}
     />
   )
+}
+
+/** Renders a grid tile from selectMosaicTileVisual's choice. `pointer-events-none`
+ *  on the iframe so a click still reaches the tile's own button (an iframe's
+ *  content is a separate document and never bubbles its clicks to the parent). */
+function renderMosaicTileThumb(visual: MosaicTileVisual) {
+  switch (visual.kind) {
+    case "image":
+      // eslint-disable-next-line @next/next/no-img-element
+      return <img src={visual.src} alt="sample output" className="h-full w-full object-cover" />
+    case "cover":
+      return (
+        <div className="relative h-full w-full">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={visual.src} alt="sample output" className="h-full w-full object-cover" />
+          <span className="absolute bottom-2 right-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-mono text-white">
+            #{visual.number}
+          </span>
+        </div>
+      )
+    case "iframe":
+      return (
+        <iframe
+          title="sample output"
+          sandbox="allow-scripts"
+          loading="lazy"
+          src={visual.src}
+          className="h-full w-full border-0 pointer-events-none"
+        />
+      )
+    case "number":
+      return (
+        <div className="flex h-full w-full items-center justify-center bg-neutral-100 dark:bg-neutral-900">
+          <span className="font-mono text-xs text-neutral-400">#{visual.number}</span>
+        </div>
+      )
+  }
 }

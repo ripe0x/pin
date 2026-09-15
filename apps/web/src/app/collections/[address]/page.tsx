@@ -359,7 +359,7 @@ export default async function CollectionPage({
   ) : preMint ? (
     <PreMintHero cover={hasCover ? c.cover : null} sample={preMintSample} name={c.name} />
   ) : onchainPreviews ? (
-    <OnchainMosaic collection={addr} previews={onchainPreviews} />
+    <OnchainMosaic collection={addr} previews={onchainPreviews} cover={hasCover ? c.cover : null} />
   ) : !hasCover && rendererArt?.animationUrl ? (
     <div className="flex justify-center border-y border-gray-200 bg-gray-100 px-6 py-10 dark:bg-bg lg:py-16">
       <TokenMedia
