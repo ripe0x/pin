@@ -952,13 +952,17 @@ export type RenderableSample = Exclude<PreviewDecodeResult, { kind: "unsupported
  * metadata, so it skips fetchMetadataForUri's remote-URL fetch. Null when
  * the renderer doesn't implement previewURI, the call reverts, or the
  * decoded result is unsupported.
+ *
+ * 1 hour TTL: the key includes the renderer, and previewURI is deterministic
+ * for a fixed collection/renderer/seed, so a setRenderer changes the key
+ * instead of requiring invalidation.
  */
 export async function getRendererSamplePreview(
   collection: Address,
   renderer: Address,
 ): Promise<RenderableSample | null> {
   if (renderer.toLowerCase() === ZERO_ADDRESS) return null
-  return pgCache(`sc-premint-sample:${lc(collection)}:${lc(renderer)}`, 20, async () => {
+  return pgCache(`sc-premint-sample:${lc(collection)}:${lc(renderer)}`, 3600, async () => {
     const client = getClient()
     const seed = keccak256(stringToBytes(collection.toLowerCase()))
     const uri = await client
@@ -1170,12 +1174,14 @@ export async function getAttribution(_collection: Address): Promise<CreatorEntry
  * The collection's own contractURI() metadata: description (shown verbatim
  * in place of any PND placeholder copy) and image (a fallback cover when
  * RenderAssets has none). Keyed on collection + renderer since a renderer
- * swap changes what contractURI returns for the same address. Same TTL as
- * getCollection (sc-collection) since both read live collection state; one
- * eth_call, try/catch.
+ * swap changes what contractURI returns for the same address. One eth_call,
+ * try/catch.
+ *
+ * 1 hour TTL: the key already includes the renderer, so a setRenderer
+ * changes the key instead of requiring invalidation.
  */
 export async function getContractMetadata(address: Address, renderer: Address): Promise<ContractMetadata> {
-  return pgCache(`sc-contract-uri:${lc(address)}:${lc(renderer)}`, 20, async () => {
+  return pgCache(`sc-contract-uri:${lc(address)}:${lc(renderer)}`, 3600, async () => {
     try {
       const uri = (await getClient().readContract({
         address,
