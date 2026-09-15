@@ -173,6 +173,7 @@ export default async function CollectionPage({
   // render the quiet "mints through its minter" notice instead of the
   // direct buy flow.
   const pooled = sellsViaMinterOnly(c.cfg.idMode) || !c.primaryMinter
+  const referralShareBps = c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS
   const strategy = hasPriceStrategy(c.sale?.priceStrategy ?? ZERO_ADDRESS)
 
   // Batch view (docs/pnd-surface-second-launch.md): interface-driven, not a
@@ -530,15 +531,15 @@ export default async function CollectionPage({
               ) : pooled ? (
                 <p className="text-sm leading-relaxed text-fg-muted">
                   A work on the artist&apos;s own contract, rendered by its own custom
-                  renderer and sold through its own minter. Every token carries a
-                  distinct onchain Mint Mark: its place in the collection&apos;s
-                  history, recorded at mint.
+                  renderer and sold through its own minter. Each token id is its
+                  mint order, and every mint is recorded onchain in the Minted
+                  event.
                 </p>
               ) : (
                 <p className="text-sm leading-relaxed text-fg-muted">
-                  An edition on the artist&apos;s own contract. Every token carries a
-                  distinct onchain Mint Mark: its place in the collection&apos;s
-                  history, recorded at mint.
+                  An edition on the artist&apos;s own contract. Each token id is its
+                  mint order, and every mint is recorded onchain in the Minted
+                  event.
                 </p>
               )}
               <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
@@ -552,11 +553,17 @@ export default async function CollectionPage({
                     Self host this mint
                   </h3>
                   <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-                    This collection sells through its own primary minter and can be
-                    minted from any interface. From your own page, call{" "}
-                    <code className="text-fg">mint(to, qty, yourAddress, 0x)</code> on{" "}
-                    <code className="break-all text-fg">{c.primaryMinter}</code> so the{" "}
-                    {formatBps(c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS)} referral share routes to you, not PND.
+                    This collection sells through its own primary minter,{" "}
+                    <code className="break-all text-fg">{c.primaryMinter}</code>, and can
+                    be minted from any interface.
+                    {referralShareBps > 0 && (
+                      <>
+                        {" "}
+                        Call <code className="text-fg">mint(to, qty, referrer, 0x)</code>{" "}
+                        and the {formatBps(referralShareBps)} referral share routes to
+                        the referrer address passed to mint.
+                      </>
+                    )}
                   </p>
                 </div>
               )}
