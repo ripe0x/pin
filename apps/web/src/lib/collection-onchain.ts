@@ -14,7 +14,7 @@ import {
 } from "@pin/abi"
 import { ARTIST_RECORD_REGISTRY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
-import { pgCache } from "./pg-cache"
+import { pgCache, pgCacheHas } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
 import { buildEscapeArtwork, isEscapeRenderer } from "./escape-render"
 import { decodePreviewURI, type PreviewDecodeResult } from "./collection-preview"
@@ -937,27 +937,8 @@ export async function getRendererPreview(
   })
 }
 
-/** The first `count` onchain previews, or null when the renderer doesn't
- *  support them (probed with index 0; unsupported renderers cost exactly
- *  one cached failed call). */
-export async function getRendererPreviews(
-  collection: Address,
-  renderer: Address,
-  nextTokenId: bigint,
-  count: number,
-): Promise<OnchainPreview[] | null> {
-  const first = await getRendererPreview(collection, renderer, nextTokenId, 0)
-  if (!first) return null
-  const rest = await Promise.all(
-    Array.from({ length: count - 1 }, (_, i) =>
-      getRendererPreview(collection, renderer, nextTokenId, i + 1),
-    ),
-  )
-  return [first, ...rest.filter((p): p is OnchainPreview => p !== null)]
-}
-
 /** A decoded sample renderable by the pre-mint hero: an inline HTML
- *  document or an image source. Never "unsupported" — see
+ *  document or an image source. Never "unsupported", see
  *  getRendererSamplePreview, which maps that case to null. */
 export type RenderableSample = Exclude<PreviewDecodeResult, { kind: "unsupported" }>
 
@@ -967,7 +948,7 @@ export type RenderableSample = Exclude<PreviewDecodeResult, { kind: "unsupported
  * previewURI(collection, 1, seed) with a seed fixed by the collection
  * address (stable across page loads and cacheable, not a rolled sample).
  * Decoded with decodePreviewURI, the same decoder the create wizard's
- * renderer check uses — this is a display sample, not resolved token
+ * renderer check uses. This is a display sample, not resolved token
  * metadata, so it skips fetchMetadataForUri's remote-URL fetch. Null when
  * the renderer doesn't implement previewURI, the call reverts, or the
  * decoded result is unsupported.
@@ -1061,6 +1042,67 @@ export async function getRendererTokenPreview(
     if (!meta) return null
     return { image: meta.image ?? null, animationUrl: meta.animation_url ?? null }
   })
+}
+
+// A token's render is deterministic for a fixed (collection, renderer,
+// tokenId): the same three inputs always decode the same visual, so the
+// cache key includes the renderer (a setRenderer call invalidates by
+// pointing at a fresh key) and the TTL is long, not the 20s/300s the rest
+// of this file uses for live chain state.
+const TOKEN_RENDER_TTL_SEC = 30 * 24 * 60 * 60
+
+/**
+ * Real per-token renders for the post-mint collection grid: `tokenIds`'
+ * tokenURI, read from the renderer directly and decoded with
+ * decodePreviewURI (image, else inline HTML animation_url). One multicall
+ * covers every id whose render isn't already cached; ids already cached
+ * cost nothing beyond the Postgres lookup, so a warm page pays zero eth_calls
+ * here. Grid ids come from selectGridTokenIds, never from a speculative
+ * "next N ids" guess, so no call is spent on an id nothing minted.
+ */
+export async function getCollectionTokenRenders(
+  collection: Address,
+  renderer: Address,
+  tokenIds: number[],
+): Promise<Map<number, RenderableSample | null>> {
+  const result = new Map<number, RenderableSample | null>()
+  if (tokenIds.length === 0 || renderer.toLowerCase() === ZERO_ADDRESS) return result
+
+  const keyFor = (id: number) => `sc-token-render:${lc(collection)}:${lc(renderer)}:${id}`
+  const cachedFlags = await Promise.all(tokenIds.map((id) => pgCacheHas(keyFor(id))))
+  const missingIds = tokenIds.filter((_, i) => !cachedFlags[i])
+
+  // The one multicall a cold page load pays: every uncached id's tokenURI,
+  // in a single round trip regardless of how many ids are missing.
+  const fetched = new Map<number, string | null>()
+  if (missingIds.length > 0) {
+    const client = getClient()
+    const calls = await client.multicall({
+      allowFailure: true,
+      contracts: missingIds.map((id) => ({
+        address: renderer,
+        abi: rendererTokenUriAbi,
+        functionName: "tokenURI" as const,
+        args: [collection, BigInt(id)] as const,
+      })),
+    })
+    calls.forEach((r, i) => {
+      fetched.set(missingIds[i], r.status === "success" ? (r.result as string) : null)
+    })
+  }
+
+  await Promise.all(
+    tokenIds.map(async (id) => {
+      const decoded = await pgCache(keyFor(id), TOKEN_RENDER_TTL_SEC, async () => {
+        const uri = fetched.get(id) ?? null
+        if (!uri) return null
+        const d = decodePreviewURI(uri)
+        return d.kind === "unsupported" ? null : d
+      })
+      result.set(id, decoded)
+    }),
+  )
+  return result
 }
 
 export type RecentTokenEntry = {

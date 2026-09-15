@@ -25,8 +25,8 @@ import {
   getAttribution,
   getCollection,
   getCollectionMintHistory,
+  getCollectionTokenRenders,
   getRecentTokenMarks,
-  getRendererPreviews,
   getRendererSamplePreview,
   getContractDescription,
   getRendererTokenPreview,
@@ -34,7 +34,9 @@ import {
   isBatchRenderRouter,
   type RenderableSample,
 } from "@/lib/collection-onchain"
+import { getCollectionMintedIdsFromIndexer } from "@/lib/indexer-queries"
 import { selectPreMintHero } from "@/lib/collection-hero"
+import { selectGridTokenIds } from "@/lib/collection-grid-tokens"
 import { detectHomageMinter } from "@/lib/homage/detect.server"
 import { isEscapeRenderer, ESCAPE_DESCRIPTION, ESCAPE_PIECE_TITLE } from "@/lib/escape-render"
 import { getLayoutKindForCollection } from "@/lib/launch-descriptors"
@@ -72,6 +74,10 @@ import {
 
 // TODO: Collection Graph (edges) is not yet exposed by the data layer —
 // skipping the graph view for v1; add it once the data layer grows the read.
+
+// Grid tile ceiling: the post-mint OnchainMosaic never fetches or shows
+// more than this many minted ids.
+const GRID_TOKEN_CAP = 12
 
 type Params = Promise<{ address: string }>
 
@@ -128,37 +134,49 @@ export default async function CollectionPage({
   const hasCover = c.cover.length > 0
   const hasWork = c.work.code.length > 0
   const preMint = c.minted === 0n
-  // Renderer-native works (custom or Solidity-SVG renderers with no parity
-  // work config): if the renderer implements the OPTIONAL previewURI
-  // extension, the wall explores it straight from the chain. One cached
-  // probe when unsupported. Read only once a token exists to explore
-  // against — before the first mint the hero uses preMintSample below
-  // instead of this multi-sample field.
-  const onchainPreviews = !hasWork && !preMint
-    ? await getRendererPreviews(addr, c.renderer, c.minted + 1n, 15)
-    : null
-  // With no cover, no work config and no preview extension, the collection
-  // still has a renderer that can describe its work. Read that directly
-  // rather than a minted token's tokenURI: the renderer answers for any id in
-  // range, so the piece shows before the first mint instead of the page
-  // reading as empty. Cached, and only reached once the cheaper sources are
-  // exhausted.
-  const rendererArt =
-    !hasCover && !hasWork && !preMint && !onchainPreviews
-      ? await getRendererTokenPreview(addr, c.renderer, 1n)
-      : null
-  const firstTokenImage = rendererArt?.image ?? ""
-  // Pre-mint hero sample: one deterministic previewURI render for a plain
-  // custom-renderer collection (no cover, no work config) before its first
-  // mint, replacing the sample-field components below — those fill their
-  // grid with previewURI samples whose thumbnails are blank whenever a
-  // renderer answers with animation_url only and no image field, which
-  // reads as a wall of empty tiles for a renderer-first launch. Fires once
-  // here on the collection page's server render, never on the client and
-  // never per component render. Cached 20s at
+  // Layout selection: a data lookup (collection address -> layoutKind), not
+  // a hardcoded per-address component branch (see AGENTS.md's note on the
+  // Homage anti-pattern this deliberately avoids repeating). Read this early
+  // (a pure lookup, no chain/indexer cost) so the default layout's hero
+  // reads below can skip themselves entirely on an edition-layout collection,
+  // which builds its own hero from sharedArt further down.
+  const layoutKind = getLayoutKindForCollection(addr)
+  const isDefaultLayout = !homageSkin && layoutKind !== "edition"
+
+  // A renderer-native collection (no work config) may implement the
+  // OPTIONAL previewURI extension. One cached probe (previewURI(collection,
+  // 1, a seed fixed to the collection address), decoded with
+  // decodePreviewURI) serves two needs: the "long-form generative work"
+  // byline/about copy below, and the pre-mint hero's sample when there is
+  // no cover. Fires once here on the collection page's server render,
+  // never on the client and never per component render. Cached 20s at
   // sc-premint-sample:<collection>:<renderer> (see getRendererSamplePreview).
-  const preMintSample: RenderableSample | null =
-    preMint && !hasCover && !hasWork ? await getRendererSamplePreview(addr, c.renderer) : null
+  const sample: RenderableSample | null =
+    isDefaultLayout && !hasWork ? await getRendererSamplePreview(addr, c.renderer) : null
+
+  // Post-mint grid: only ids that actually minted, never a speculative
+  // "next N ids" guess (that used to fill the grid with previewURI samples
+  // for ids nothing minted, some of which rendered as empty tiles for a
+  // renderer answering animation_url with no image field). Ids come from
+  // the indexer's collection_tokens for this collection, newest first, else
+  // a sequential 1..min(minted, cap) fallback when the indexer has no rows
+  // yet (selectGridTokenIds). hasWork collections use ParityMosaic's own
+  // mint feed instead and skip this read entirely.
+  const gridTokenIds =
+    isDefaultLayout && !hasWork && !preMint
+      ? selectGridTokenIds(
+          (await getCollectionMintedIdsFromIndexer(addr, GRID_TOKEN_CAP)) ?? [],
+          c.minted,
+          GRID_TOKEN_CAP,
+        )
+      : []
+  // Each grid id's real tokenURI, read server-side. One multicall covers
+  // every id whose render isn't already cached; see getCollectionTokenRenders's
+  // own doc comment for the cache key and TTL.
+  const gridRenders =
+    gridTokenIds.length > 0
+      ? await getCollectionTokenRenders(addr, c.renderer, gridTokenIds)
+      : new Map<number, RenderableSample | null>()
 
   // The number a collector reads as "the edition": the collection's cap when
   // it has one, otherwise the minter's ceiling, which is what bounds an
@@ -213,10 +231,6 @@ export default async function CollectionPage({
     firstBatchArt = imgs[0] ?? null
   }
 
-  // Layout selection: a data lookup (collection address -> layoutKind),
-  // not a hardcoded per-address component branch (see AGENTS.md's note on
-  // the Homage anti-pattern this deliberately avoids repeating).
-  const layoutKind = getLayoutKindForCollection(addr)
   if (!homageSkin && layoutKind === "edition") {
     const editionArtists = attribution.length > 0 ? attribution.map((a) => a.creator) : [c.owner]
     // An edition shows one artwork for every token, so the hero renders the
@@ -225,9 +239,30 @@ export default async function CollectionPage({
     // grid is only for a multi-batch release; a single-artwork edition shows
     // the piece itself, not a one-card grid.
     const sharedArt = batches.length > 0 ? firstBatchArt : await getRendererTokenPreview(addr, c.renderer, 1n)
+    const fallbackLine = (
+      <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+        Artwork renders per token
+      </p>
+    )
+    // Pre-mint follows the same cover, then sample, then line order as the
+    // default layout's PreMintHero (selectPreMintHero), so cover always wins
+    // here too instead of an animation_url racing ahead of it.
+    const preMintSource = selectPreMintHero(hasCover, !!(sharedArt?.image || sharedArt?.animationUrl))
     const editionHero =
       batches.length > 1 ? (
         <BatchGrid collection={addr} batches={batches} images={batchImages} />
+      ) : preMint ? (
+        preMintSource === "cover" ? (
+          <TokenMedia imageUrl={c.cover} animationUrl={null} title={c.name} />
+        ) : preMintSource === "sample" ? (
+          <TokenMedia
+            imageUrl={sharedArt?.image ?? ""}
+            animationUrl={sharedArt?.animationUrl ?? null}
+            title={c.name}
+          />
+        ) : (
+          fallbackLine
+        )
       ) : sharedArt?.animationUrl || sharedArt?.image || hasCover ? (
         <TokenMedia
           imageUrl={hasCover ? c.cover : sharedArt?.image ?? ""}
@@ -235,9 +270,7 @@ export default async function CollectionPage({
           title={c.name}
         />
       ) : (
-        <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-          Artwork renders per token
-        </p>
+        fallbackLine
       )
     const addressLink = (a: Address) => (
       <a
@@ -357,28 +390,15 @@ export default async function CollectionPage({
       minted={c.minted.toString()}
     />
   ) : preMint ? (
-    <PreMintHero cover={hasCover ? c.cover : null} sample={preMintSample} name={c.name} />
-  ) : onchainPreviews ? (
-    <OnchainMosaic collection={addr} previews={onchainPreviews} cover={hasCover ? c.cover : null} />
-  ) : !hasCover && rendererArt?.animationUrl ? (
-    <div className="flex justify-center border-y border-gray-200 bg-gray-100 px-6 py-10 dark:bg-bg lg:py-16">
-      <TokenMedia
-        imageUrl={firstTokenImage}
-        animationUrl={rendererArt.animationUrl}
-        title={c.name}
-      />
-    </div>
-  ) : hasCover || firstTokenImage ? (
-    <div className="flex justify-center border-y border-gray-200 bg-gray-100 px-6 py-10 dark:bg-bg lg:py-16">
-      <OptimizedImage
-        src={hasCover ? c.cover : firstTokenImage}
-        alt={c.name}
-        width={1600}
-        loading="eager"
-        className="max-h-[70vh] w-auto max-w-full object-contain"
-      />
-    </div>
-  ) : null
+    <PreMintHero cover={hasCover ? c.cover : null} sample={sample} name={c.name} />
+  ) : (
+    <OnchainMosaic
+      collection={addr}
+      tokenIds={gridTokenIds}
+      renders={Object.fromEntries(gridRenders)}
+      cover={hasCover ? c.cover : null}
+    />
+  )
 
   return (
     <div className={homageSkin ? "dark homage-terminal collection-homage-skin" : undefined}>
@@ -433,7 +453,7 @@ export default async function CollectionPage({
                   {" · "}
                   {hasWork
                     ? "long-form generative work, rendered live in your browser"
-                    : onchainPreviews
+                    : sample
                       ? "long-form generative work, rendered by its own onchain contract"
                       : pooled
                         ? "a work sold through its own minter"
@@ -539,7 +559,7 @@ export default async function CollectionPage({
                   artwork alive, and every image on this page is the algorithm
                   running live in your browser.
                 </p>
-              ) : onchainPreviews ? (
+              ) : sample ? (
                 <p className="text-sm leading-relaxed text-fg-muted">
                   Every token is generated onchain by the collection&apos;s own
                   renderer contract from a seed written at mint. The render is a
