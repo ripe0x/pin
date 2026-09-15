@@ -2,30 +2,32 @@
 
 /**
  * The mosaic: a generative collection's hero is its MULTIPLICITY, not one
- * framed picture. An edge-to-edge field of outputs — the engine throwing off
- * variations — with one featured cell breaking the grid, and a focus overlay
- * for any single output. The art tiles flush to the viewport with only
- * hairline seams; no gray field, no captions per cell, no chrome competing.
- * Color comes entirely from the work.
+ * framed picture. An edge-to-edge field of outputs, one featured cell
+ * breaking the grid, and a focus overlay for any single output. The art
+ * tiles flush to the viewport with only hairline seams: no gray field, no
+ * captions per cell, no chrome competing. Color comes entirely from the
+ * work.
  *
- * When the field is sample outputs (any pre-mint collection, or the fill
- * behind a few real mints), it says so, reshuffles on every page load, and
- * offers a Regenerate control that rolls a fresh set. Real mints are never
- * shuffled or relabeled — they are the collection, shown as themselves.
- *
- * Two engines feed the same shell: ParityMosaic renders works whose code we
+ * ParityMosaic mixes real mints with sample outputs for works whose code we
  * hold (live client iframes, sample seeds generated client-side, free to
- * roll); OnchainMosaic renders renderer-native works from their onchain
- * previewURI (static SVG in the grid, interactive in focus; new samples cost
- * a cached eth_call so they roll on user action, never per render).
+ * roll, with a Regenerate control); it says so, and reshuffles on every
+ * page load. Real mints there are never shuffled or relabeled: they are the
+ * collection, shown as themselves.
+ *
+ * OnchainMosaic shows only real mints for renderer-native works: each
+ * tile's own tokenURI, read server-side and decoded once per token (see
+ * getCollectionTokenRenders), with no sample fill and no reroll, since the
+ * grid is exactly the minted set.
  */
 
 import Link from "next/link"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import type { Address } from "viem"
 
 import { TokenPreview, type TokenData } from "@/lib/collection-render"
-import type { OnchainPreview } from "@/lib/collection-onchain"
+import type { RenderableSample } from "@/lib/collection-onchain"
+import { selectMosaicTileVisual, type MosaicTileVisual } from "@/lib/collection-mosaic-tile"
+import { OptimizedImage } from "@/components/OptimizedImage"
 import type { WorkConfig } from "@/lib/collection"
 import {
   entryTokenData,
@@ -54,15 +56,6 @@ function randomSeed(): `0x${string}` {
   const b = new Uint8Array(32)
   crypto.getRandomValues(b)
   return `0x${Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("")}`
-}
-
-function shuffle<T>(arr: readonly T[]): T[] {
-  const r = arr.slice()
-  for (let i = r.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[r[i], r[j]] = [r[j], r[i]]
-  }
-  return r
 }
 
 // ── presentational shell ────────────────────────────────────────────────
@@ -334,120 +327,120 @@ export function ParityMosaic({
 
 // ── onchain engine (renderer-native works via previewURI) ───────────────
 
-const ONCHAIN_REGEN_BATCH = 6 // fresh samples fetched per Regenerate press
-const ONCHAIN_MAX_INDEX = 48 // hard ceiling on distinct sample eth_calls ever
-
 export function OnchainMosaic({
   collection,
-  previews,
-  sampleLabel = "Sample outputs · every mint is generated from its own transaction",
+  tokenIds,
+  renders,
+  cover = null,
 }: {
   collection: `0x${string}`
-  previews: OnchainPreview[]
-  /** Caption above the field. Homage passes a minimal label (no meta copy). */
-  sampleLabel?: string
+  /** The minted ids this grid shows, from selectGridTokenIds. Never a
+   *  speculative "next N" guess: every id here is a real mint. */
+  tokenIds: number[]
+  /** Each id's decoded tokenURI (see getCollectionTokenRenders), keyed by
+   *  token id. An id with no entry, or a null entry, falls through to the
+   *  cover then a numbered placeholder like any other id with nothing of
+   *  its own to show. */
+  renders: Record<number, RenderableSample | null>
+  /** The collection's own cover (contractURI image), shown on a tile whose
+   *  render has neither an image nor a live-rendered slot. Null when the
+   *  collection has no cover. */
+  cover?: string | null
 }) {
-  const [display, setDisplay] = useState<OnchainPreview[]>(previews)
-  const [busy, setBusy] = useState(false)
-  // Next unused seed index (server sent 0..previews.length-1).
-  const nextIndex = useRef(previews.length)
-
-  // Shuffle on mount: different arrangement (and featured output) each load,
-  // with zero new RPC — the server pool is already cached.
-  useEffect(() => {
-    setDisplay(shuffle(previews))
-  }, [previews])
-
-  const fetchPreview = useCallback(
-    async (i: number): Promise<OnchainPreview | null> => {
-      const res = await fetch(`/api/collections/${collection.toLowerCase()}/preview?i=${i}`)
-      return res.ok ? ((await res.json()) as OnchainPreview) : null
-    },
-    [collection],
-  )
-
-  const regenerate = useCallback(async () => {
-    setBusy(true)
-    try {
-      const batch = await Promise.all(
-        Array.from({ length: ONCHAIN_REGEN_BATCH }, () => {
-          const i = nextIndex.current
-          if (i >= ONCHAIN_MAX_INDEX) return Promise.resolve(null)
-          nextIndex.current += 1
-          return fetchPreview(i)
-        }),
-      )
-      const fresh = batch.filter((p): p is OnchainPreview => p !== null)
-      // Fresh samples lead, then a reshuffle of the rest; the whole field
-      // reorders so the load reads as regenerated even when the pool is capped.
-      setDisplay((prev) => shuffle([...fresh, ...prev]))
-    } finally {
-      setBusy(false)
-    }
-  }, [fetchPreview])
-
-  const rerollItem = useCallback(
-    async (pos: number) => {
-      const i = nextIndex.current
-      if (i >= ONCHAIN_MAX_INDEX) {
-        setDisplay((prev) => shuffle(prev))
-        return
-      }
-      nextIndex.current += 1
-      const p = await fetchPreview(i)
-      if (p) {
-        setDisplay((prev) => {
-          const next = prev.slice()
-          next[pos] = p
-          return next
-        })
-      }
-    },
-    [fetchPreview],
-  )
-
   const items = useMemo<MosaicItem[]>(
     () =>
-      display.map((p, pos) => ({
-        // Key by position so an in-place reroll swaps content, not the node.
-        key: `p${pos}`,
-        overline: "Sample output",
-        isSample: true,
-        // Static SVG in the grid: clean and cheap, no interactive overlay.
-        thumb: p.image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={p.image} alt="sample output" className="h-full w-full object-cover" />
-        ) : (
-          <div className="h-full w-full" />
-        ),
-        // Interactive HTML in focus when the renderer provides it.
-        full: p.animationUrl ? (
-          <iframe
-            title="sample output"
-            sandbox="allow-scripts"
-            allow="autoplay"
-            referrerPolicy="no-referrer"
-            src={p.animationUrl}
-            className="aspect-square h-full w-full"
-          />
-        ) : p.image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={p.image} alt="sample output" className="h-full w-full object-contain" />
-        ) : (
-          <div className="h-full w-full" />
-        ),
-      })),
-    [display],
+      tokenIds.map((id, position) => {
+        const render = renders[id] ?? null
+        const visual = selectMosaicTileVisual({
+          image: render?.kind === "image" ? render.src : null,
+          html: render?.kind === "html" ? render.html : null,
+          cover,
+          number: id,
+          position,
+        })
+        return {
+          key: `t${id}`,
+          overline: `Token #${id}`,
+          isSample: false,
+          href: `/collections/${collection.toLowerCase()}/${id}`,
+          thumb: renderMosaicTileThumb(visual),
+          full: renderMosaicTileFull(render, cover, id),
+        }
+      }),
+    [tokenIds, renders, cover, collection],
   )
 
   if (items.length === 0) return null
+  return <MosaicShell items={items} framing={null} />
+}
+
+/** Renders a grid tile from selectMosaicTileVisual's choice. `pointer-events-none`
+ *  on the iframe so a click still reaches the tile's own button: an iframe's
+ *  content is a separate document and never bubbles its clicks to the parent. */
+function renderMosaicTileThumb(visual: MosaicTileVisual) {
+  switch (visual.kind) {
+    case "image":
+      // eslint-disable-next-line @next/next/no-img-element
+      return <img src={visual.src} alt="token" className="h-full w-full object-cover" />
+    case "cover":
+      return (
+        <div className="relative h-full w-full">
+          <OptimizedImage src={visual.src} alt="token" width={300} className="h-full w-full object-cover" />
+          <span className="absolute bottom-2 right-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-mono text-white">
+            #{visual.number}
+          </span>
+        </div>
+      )
+    case "iframe":
+      return (
+        <iframe
+          title="token"
+          sandbox="allow-scripts"
+          loading="lazy"
+          srcDoc={visual.html}
+          className="h-full w-full border-0 pointer-events-none"
+        />
+      )
+    case "number":
+      return (
+        <div className="flex h-full w-full items-center justify-center bg-neutral-100 dark:bg-neutral-900">
+          <span className="font-mono text-xs text-neutral-400">#{visual.number}</span>
+        </div>
+      )
+  }
+}
+
+/** The focus overlay for one grid tile: the full render, not the thumb's
+ *  iframe-count cap (a single enlarged tile costs nothing extra to render
+ *  live, cap or no cap). */
+function renderMosaicTileFull(render: RenderableSample | null, cover: string | null, id: number) {
+  if (render?.kind === "html") {
+    return (
+      <iframe
+        title={`Token #${id}`}
+        sandbox="allow-scripts"
+        srcDoc={render.html}
+        className="aspect-square h-full w-full border-0"
+      />
+    )
+  }
+  if (render?.kind === "image") {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={render.src} alt={`Token #${id}`} className="h-full w-full object-contain" />
+  }
+  if (cover) {
+    return (
+      <OptimizedImage
+        src={cover}
+        alt={`Token #${id}`}
+        width={1200}
+        className="h-full w-full object-contain"
+      />
+    )
+  }
   return (
-    <MosaicShell
-      items={items}
-      framing={sampleLabel}
-      onRegenerate={regenerate}
-      regenerating={busy}
-      onRerollItem={rerollItem}
-    />
+    <div className="flex h-full w-full items-center justify-center bg-neutral-100 dark:bg-neutral-900">
+      <span className="font-mono text-sm text-neutral-400">#{id}</span>
+    </div>
   )
 }

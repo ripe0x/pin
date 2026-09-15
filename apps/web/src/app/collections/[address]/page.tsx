@@ -25,13 +25,19 @@ import {
   getAttribution,
   getCollection,
   getCollectionMintHistory,
+  getCollectionTokenRenders,
   getRecentTokenMarks,
-  getRendererPreviews,
-  getContractDescription,
+  getRendererSamplePreview,
+  getContractMetadata,
   getRendererTokenPreview,
   getRouterBatches,
   isBatchRenderRouter,
+  type RenderableSample,
 } from "@/lib/collection-onchain"
+import { getCollectionMintedIdsFromIndexer } from "@/lib/indexer-queries"
+import { selectCollectionHeroMode, selectPreMintHero } from "@/lib/collection-hero"
+import type { ContractMetadata } from "@/lib/collection-preview"
+import { selectGridTokenIds } from "@/lib/collection-grid-tokens"
 import { detectHomageMinter } from "@/lib/homage/detect.server"
 import { isEscapeRenderer, ESCAPE_DESCRIPTION, ESCAPE_PIECE_TITLE } from "@/lib/escape-render"
 import { getLayoutKindForCollection } from "@/lib/launch-descriptors"
@@ -69,6 +75,57 @@ import {
 
 // TODO: Collection Graph (edges) is not yet exposed by the data layer —
 // skipping the graph view for v1; add it once the data layer grows the read.
+
+// Grid tile ceiling: the post-mint OnchainMosaic never fetches or shows
+// more than this many minted ids.
+const GRID_TOKEN_CAP = 12
+
+/** A short address, linked to the explorer (evm.now). Used in the two
+ *  single-visual layout branches' facts lists. */
+function addressLink(a: Address) {
+  return (
+    <a
+      href={evmNowAddressUrl(a, PND_CHAIN_ID)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
+    >
+      {shortAddress(a)}
+    </a>
+  )
+}
+
+/** Whether the renderer is locked, a fact about the Surface protocol
+ *  rather than the collection's own content. Shown in both hero layouts. */
+function RendererPermanenceNote({ permanent }: { permanent: boolean }) {
+  return (
+    <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+      {permanent
+        ? "The renderer is locked: this collection renders through its current contract forever. The contract itself has had no upgrade path since deploy."
+        : "The contract is immutable from deploy. The renderer can change until the artist locks it."}
+    </p>
+  )
+}
+
+/** How to mint this collection from another interface, routing the
+ *  referral share to the caller instead of PND. Shown only when the
+ *  collection sells through a primary minter. */
+function SelfHostNote({ minter, referralShareBps }: { minter: Address; referralShareBps: number }) {
+  return (
+    <div className="pt-2">
+      <h3 className="mb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+        Self host this mint
+      </h3>
+      <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+        This collection sells through its own primary minter and can be
+        minted from any interface. From your own page, call{" "}
+        <code className="text-fg">mint(to, qty, yourAddress, 0x)</code> on{" "}
+        <code className="break-all text-fg">{minter}</code> so the{" "}
+        {formatBps(referralShareBps)} referral share routes to you, not PND.
+      </p>
+    </div>
+  )
+}
 
 type Params = Promise<{ address: string }>
 
@@ -122,26 +179,65 @@ export default async function CollectionPage({
     getRecentTokenMarks(addr, c.minted, c.cfg.idMode),
   ])
 
-  const hasCover = c.cover.length > 0
+  // The collection's own contractURI() metadata: its description (shown
+  // verbatim in place of any PND placeholder copy) and, when RenderAssets
+  // has no cover, a fallback cover image. Skipped for the homage skin,
+  // which owns its own art and copy. One eth_call, cached.
+  const contractMeta: ContractMetadata = homageSkin
+    ? { description: null, image: null }
+    : await getContractMetadata(addr, c.renderer)
+  const effectiveCover = c.cover.length > 0 ? c.cover : (contractMeta.image ?? "")
+  const hasCover = effectiveCover.length > 0
   const hasWork = c.work.code.length > 0
-  // Renderer-native works (custom or Solidity-SVG renderers with no parity
-  // work config): if the renderer implements the OPTIONAL previewURI
-  // extension, the wall explores it straight from the chain. One cached
-  // probe when unsupported.
-  const onchainPreviews = !hasWork
-    ? await getRendererPreviews(addr, c.renderer, c.minted + 1n, 15)
-    : null
-  // With no cover, no work config and no preview extension, the collection
-  // still has a renderer that can describe its work. Read that directly
-  // rather than a minted token's tokenURI: the renderer answers for any id in
-  // range, so the piece shows before the first mint instead of the page
-  // reading as empty. Cached, and only reached once the cheaper sources are
-  // exhausted.
-  const rendererArt =
-    !hasCover && !hasWork && !onchainPreviews
-      ? await getRendererTokenPreview(addr, c.renderer, 1n)
-      : null
-  const firstTokenImage = rendererArt?.image ?? ""
+  const preMint = c.minted === 0n
+  // Layout selection: a data lookup (collection address -> layoutKind), not
+  // a hardcoded per-address component branch (see AGENTS.md's note on the
+  // Homage anti-pattern this deliberately avoids repeating). Read this early
+  // (a pure lookup, no chain/indexer cost) so the default layout's hero
+  // reads below can skip themselves entirely on an edition-layout collection,
+  // which builds its own hero from sharedArt further down.
+  const layoutKind = getLayoutKindForCollection(addr)
+  const isDefaultLayout = !homageSkin && layoutKind !== "edition"
+
+  // A renderer-native collection (no work config) may implement the
+  // OPTIONAL previewURI extension. One cached probe (previewURI(collection,
+  // 1, a seed fixed to the collection address), decoded with
+  // decodePreviewURI) serves two needs: the "long-form generative work"
+  // byline/about copy below, and the pre-mint hero's sample when there is
+  // no cover. Fires once here on the collection page's server render,
+  // never on the client and never per component render. Cached 20s at
+  // sc-premint-sample:<collection>:<renderer> (see getRendererSamplePreview).
+  const sample: RenderableSample | null =
+    isDefaultLayout && !hasWork ? await getRendererSamplePreview(addr, c.renderer) : null
+
+  // Post-mint grid: only ids that actually minted, never a speculative
+  // "next N ids" guess (that used to fill the grid with previewURI samples
+  // for ids nothing minted, some of which rendered as empty tiles for a
+  // renderer answering animation_url with no image field). Ids come from
+  // the indexer's collection_tokens for this collection, newest first, else
+  // a sequential 1..min(minted, cap) fallback when the indexer has no rows
+  // yet (selectGridTokenIds). hasWork collections use ParityMosaic's own
+  // mint feed instead and skip this read entirely.
+  const gridTokenIds =
+    isDefaultLayout && !hasWork && !preMint
+      ? selectGridTokenIds(
+          (await getCollectionMintedIdsFromIndexer(addr, GRID_TOKEN_CAP)) ?? [],
+          c.minted,
+          GRID_TOKEN_CAP,
+        )
+      : []
+  // Each grid id's real tokenURI, read server-side. One multicall covers
+  // every id whose render isn't already cached; see getCollectionTokenRenders's
+  // own doc comment for the cache key and TTL.
+  const gridRenders =
+    gridTokenIds.length > 0
+      ? await getCollectionTokenRenders(addr, c.renderer, gridTokenIds)
+      : new Map<number, RenderableSample | null>()
+
+  // Which shape the hero renders in: one visual beside the title and mint
+  // info (pre-mint, or a minted collection with no token grid to show), or
+  // the wide banner plus token grid (see selectCollectionHeroMode).
+  const heroMode = selectCollectionHeroMode(preMint, gridTokenIds.length)
 
   // The number a collector reads as "the edition": the collection's cap when
   // it has one, otherwise the minter's ceiling, which is what bounds an
@@ -160,9 +256,8 @@ export default async function CollectionPage({
   // has one, else the work's mirrored description for the escape special case
   // (its tokenURI, where the literal lives, cannot be read). Null shows no
   // blurb rather than inventing one.
-  const contractDescription = await getContractDescription(addr)
   const isEscape = await isEscapeRenderer(c.renderer)
-  const editionDescription = contractDescription ?? (isEscape ? ESCAPE_DESCRIPTION : null)
+  const description = contractMeta.description ?? (isEscape ? ESCAPE_DESCRIPTION : null)
   // The piece's own title, shown under the collection name when it differs.
   const pieceTitle = isEscape ? ESCAPE_PIECE_TITLE : null
 
@@ -196,10 +291,6 @@ export default async function CollectionPage({
     firstBatchArt = imgs[0] ?? null
   }
 
-  // Layout selection: a data lookup (collection address -> layoutKind),
-  // not a hardcoded per-address component branch (see AGENTS.md's note on
-  // the Homage anti-pattern this deliberately avoids repeating).
-  const layoutKind = getLayoutKindForCollection(addr)
   if (!homageSkin && layoutKind === "edition") {
     const editionArtists = attribution.length > 0 ? attribution.map((a) => a.creator) : [c.owner]
     // An edition shows one artwork for every token, so the hero renders the
@@ -208,30 +299,39 @@ export default async function CollectionPage({
     // grid is only for a multi-batch release; a single-artwork edition shows
     // the piece itself, not a one-card grid.
     const sharedArt = batches.length > 0 ? firstBatchArt : await getRendererTokenPreview(addr, c.renderer, 1n)
+    const fallbackLine = (
+      <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+        Artwork renders per token
+      </p>
+    )
+    // Pre-mint follows the same cover, then sample, then line order as the
+    // default layout's PreMintHero (selectPreMintHero), so cover always wins
+    // here too instead of an animation_url racing ahead of it.
+    const preMintSource = selectPreMintHero(hasCover, !!(sharedArt?.image || sharedArt?.animationUrl))
     const editionHero =
       batches.length > 1 ? (
         <BatchGrid collection={addr} batches={batches} images={batchImages} />
+      ) : preMint ? (
+        preMintSource === "cover" ? (
+          <TokenMedia imageUrl={effectiveCover} animationUrl={null} title={c.name} />
+        ) : preMintSource === "sample" ? (
+          <TokenMedia
+            imageUrl={sharedArt?.image ?? ""}
+            animationUrl={sharedArt?.animationUrl ?? null}
+            title={c.name}
+          />
+        ) : (
+          fallbackLine
+        )
       ) : sharedArt?.animationUrl || sharedArt?.image || hasCover ? (
         <TokenMedia
-          imageUrl={hasCover ? c.cover : sharedArt?.image ?? ""}
+          imageUrl={hasCover ? effectiveCover : sharedArt?.image ?? ""}
           animationUrl={sharedArt?.animationUrl ?? null}
           title={c.name}
         />
       ) : (
-        <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-          Artwork renders per token
-        </p>
+        fallbackLine
       )
-    const addressLink = (a: Address) => (
-      <a
-        href={evmNowAddressUrl(a, PND_CHAIN_ID)}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
-      >
-        {shortAddress(a)}
-      </a>
-    )
     return (
       <EditionMintLayout
         name={c.name}
@@ -276,7 +376,9 @@ export default async function CollectionPage({
           />
         }
         subtitle={pieceTitle}
-        description={editionDescription ? <p>{editionDescription}</p> : undefined}
+        description={
+          description ? <p className="whitespace-pre-line">{description}</p> : undefined
+        }
         history={<CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />}
         about={
           batches.length > 0 ? (
@@ -285,6 +387,85 @@ export default async function CollectionPage({
               artwork. See the batch grid for the full release.
             </p>
           ) : undefined
+        }
+        facts={[
+          { label: "Contract", value: addressLink(addr) },
+          { label: "Owner", value: addressLink(c.owner) },
+          { label: "Renderer", value: addressLink(c.renderer) },
+          {
+            label: "Royalty",
+            value: c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none",
+          },
+          { label: "Sale mode", value: pooled ? "Pooled (via minter)" : "Sequential" },
+        ]}
+      />
+    )
+  }
+
+  // A renderer-native collection whose hero is one visual rather than a
+  // grid (selectCollectionHeroMode: pre-mint, or minted with no token grid
+  // to show). Routes through the same two-column layout as the "edition"
+  // layoutKind branch above instead of the banner+grid masthead below, so
+  // the two single-visual cases render identically.
+  if (!homageSkin && isDefaultLayout && !hasWork && heroMode === "single") {
+    const singleArtists = attribution.length > 0 ? attribution.map((a) => a.creator) : [c.owner]
+    return (
+      <EditionMintLayout
+        name={c.name}
+        subtitle={pieceTitle}
+        byline={
+          <>
+            by{" "}
+            {singleArtists.map((a, i) => (
+              <span key={a}>
+                {i > 0 && ", "}
+                <a
+                  href={evmNowAddressUrl(a, PND_CHAIN_ID)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
+                >
+                  <ArtistName address={a} />
+                </a>
+              </span>
+            ))}
+          </>
+        }
+        hero={<PreMintHero cover={hasCover ? effectiveCover : null} sample={sample} name={c.name} />}
+        mintInstrument={
+          <MintCollectionCTA
+            collection={addr}
+            minter={c.primaryMinter}
+            work={null}
+            snapshot={{
+              price: (c.sale?.price ?? 0n).toString(),
+              priceStrategy: c.sale?.priceStrategy ?? ZERO_ADDRESS,
+              mintStart: (c.sale?.mintStart ?? 0n).toString(),
+              mintEnd: (c.sale?.mintEnd ?? 0n).toString(),
+              payout: c.sale?.payout ?? ZERO_ADDRESS,
+              allowlistRoot: c.sale?.allowlistRoot ?? ("0x" + "0".repeat(64) as `0x${string}`),
+              walletCap: (c.sale?.walletCap ?? 0n).toString(),
+              supplyCap: c.cfg.supplyCap.toString(),
+              maxMints: (c.sale?.maxMints ?? 0n).toString(),
+              minted: c.minted.toString(),
+              referralShareBps: c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS,
+            }}
+          />
+        }
+        description={
+          description ? <p className="whitespace-pre-line">{description}</p> : undefined
+        }
+        history={<CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />}
+        about={
+          <div className="space-y-4">
+            <RendererPermanenceNote permanent={permanent} />
+            {c.primaryMinter && (
+              <SelfHostNote
+                minter={c.primaryMinter}
+                referralShareBps={c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS}
+              />
+            )}
+          </div>
         }
         facts={[
           { label: "Contract", value: addressLink(addr) },
@@ -339,27 +520,16 @@ export default async function CollectionPage({
       entries={recent}
       minted={c.minted.toString()}
     />
-  ) : onchainPreviews ? (
-    <OnchainMosaic collection={addr} previews={onchainPreviews} />
-  ) : !hasCover && rendererArt?.animationUrl ? (
-    <div className="flex justify-center border-y border-gray-200 bg-gray-100 px-6 py-10 dark:bg-bg lg:py-16">
-      <TokenMedia
-        imageUrl={firstTokenImage}
-        animationUrl={rendererArt.animationUrl}
-        title={c.name}
-      />
-    </div>
-  ) : hasCover || firstTokenImage ? (
-    <div className="flex justify-center border-y border-gray-200 bg-gray-100 px-6 py-10 dark:bg-bg lg:py-16">
-      <OptimizedImage
-        src={hasCover ? c.cover : firstTokenImage}
-        alt={c.name}
-        width={1600}
-        loading="eager"
-        className="max-h-[70vh] w-auto max-w-full object-contain"
-      />
-    </div>
-  ) : null
+  ) : preMint ? (
+    <PreMintHero cover={hasCover ? effectiveCover : null} sample={sample} name={c.name} />
+  ) : (
+    <OnchainMosaic
+      collection={addr}
+      tokenIds={gridTokenIds}
+      renders={Object.fromEntries(gridRenders)}
+      cover={hasCover ? effectiveCover : null}
+    />
+  )
 
   return (
     <div className={homageSkin ? "dark homage-terminal collection-homage-skin" : undefined}>
@@ -408,19 +578,6 @@ export default async function CollectionPage({
                     </a>
                   </span>
                 ))
-              )}
-              {!homageSkin && (
-                <>
-                  {" · "}
-                  {hasWork
-                    ? "long-form generative work, rendered live in your browser"
-                    : onchainPreviews
-                      ? "long-form generative work, rendered by its own onchain contract"
-                      : pooled
-                        ? "a work sold through its own minter"
-                        : "an edition on the artist's own contract"}
-                  {c.cfg.supplyCap > 0n && ` · ${c.cfg.supplyCap.toString()} editions`}
-                </>
               )}
             </p>
           )
@@ -509,56 +666,22 @@ export default async function CollectionPage({
             <HomageAbout headingClassName="text-[10px] font-mono uppercase tracking-wider text-gray-400" />
           ) : (
             <div className="space-y-6">
-              <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                About this work
-              </h2>
-              {hasWork ? (
-                <p className="text-sm leading-relaxed text-fg-muted">
-                  Every token is generated by the collection&apos;s own algorithm from a
-                  seed written onchain at mint. The render is a pure function of
-                  chain state: this code, that seed, forever. No server keeps the
-                  artwork alive, and every image on this page is the algorithm
-                  running live in your browser.
-                </p>
-              ) : onchainPreviews ? (
-                <p className="text-sm leading-relaxed text-fg-muted">
-                  Every token is generated onchain by the collection&apos;s own
-                  renderer contract from a seed written at mint. The render is a
-                  pure function of chain state, and every example on this page
-                  was rendered by that contract, live.
-                </p>
-              ) : pooled ? (
-                <p className="text-sm leading-relaxed text-fg-muted">
-                  A work on the artist&apos;s own contract, rendered by its own custom
-                  renderer and sold through its own minter. Every token carries a
-                  distinct onchain Mint Mark: its place in the collection&apos;s
-                  history, recorded at mint.
-                </p>
-              ) : (
-                <p className="text-sm leading-relaxed text-fg-muted">
-                  An edition on the artist&apos;s own contract. Every token carries a
-                  distinct onchain Mint Mark: its place in the collection&apos;s
-                  history, recorded at mint.
-                </p>
-              )}
-              <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-                {permanent
-                  ? "The renderer is locked: this collection renders through its current contract forever. The contract itself has had no upgrade path since deploy."
-                  : "The contract is immutable from deploy. The renderer can change until the artist locks it."}
-              </p>
-              {c.primaryMinter && (
-                <div className="pt-2">
-                  <h3 className="mb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                    Self host this mint
-                  </h3>
-                  <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-                    This collection sells through its own primary minter and can be
-                    minted from any interface. From your own page, call{" "}
-                    <code className="text-fg">mint(to, qty, yourAddress, 0x)</code> on{" "}
-                    <code className="break-all text-fg">{c.primaryMinter}</code> so the{" "}
-                    {formatBps(c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS)} referral share routes to you, not PND.
+              {description && (
+                <>
+                  <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                    About this work
+                  </h2>
+                  <p className="text-sm leading-relaxed text-fg-muted whitespace-pre-line">
+                    {description}
                   </p>
-                </div>
+                </>
+              )}
+              <RendererPermanenceNote permanent={permanent} />
+              {c.primaryMinter && (
+                <SelfHostNote
+                  minter={c.primaryMinter}
+                  referralShareBps={c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS}
+                />
               )}
             </div>
           )}
@@ -799,6 +922,58 @@ export default async function CollectionPage({
         <HomageStickyMintBar minter={homageMinter} anchorId="mint-instrument" chipId="mint-chip" />
       ) : (
         <StickyMintBar snapshot={placard} anchorId="mint-instrument" />
+      )}
+    </div>
+  )
+}
+
+/** Pre-mint hero: cover first, else one sample render from the renderer
+ *  (getRendererSamplePreview's fixed-seed previewURI call), else the plain
+ *  fallback line. See selectPreMintHero for the selection order. */
+function PreMintHero({
+  cover,
+  sample,
+  name,
+}: {
+  cover: string | null
+  sample: RenderableSample | null
+  name: string
+}) {
+  const source = selectPreMintHero(!!cover, !!sample)
+  if (source === "fallback") {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center border-y border-gray-200 bg-gray-100 dark:bg-bg">
+        <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+          Artwork renders per token
+        </p>
+      </div>
+    )
+  }
+  return (
+    <div className="flex justify-center border-y border-gray-200 bg-gray-100 px-6 py-10 dark:bg-bg lg:py-16">
+      {source === "cover" ? (
+        <OptimizedImage
+          src={cover as string}
+          alt={name}
+          width={1600}
+          loading="eager"
+          className="max-h-[70vh] w-auto max-w-full object-contain"
+        />
+      ) : sample?.kind === "html" ? (
+        <iframe
+          sandbox="allow-scripts"
+          srcDoc={sample.html}
+          title={name}
+          className="aspect-square h-[70vh] max-h-[70vh] w-auto max-w-full border-0"
+        />
+      ) : (
+        <OptimizedImage
+          src={(sample as { kind: "image"; src: string }).src}
+          alt={name}
+          width={1600}
+          loading="eager"
+          className="max-h-[70vh] w-auto max-w-full object-contain"
+        />
       )}
     </div>
   )
