@@ -1,144 +1,148 @@
 /**
  * Shared, client-safe helpers for the studio create-collection wizard
  * (app/studio/[address]/create). Kept out of the components so the
- * chunking/naming/dep-list logic is independently testable and so the
+ * validation/decoding/summary logic is independently testable and so the
  * wizard components stay focused on state + markup.
  *
- * See docs/pnd-surface-system.md, docs/injection-convention.md, and
- * contracts/src/surface/SurfaceTypes.sol for the source-of-truth
- * shapes this mirrors.
+ * The wizard targets one artist: someone who already deployed their own
+ * renderer contract and wants to launch a token contract against it. See
+ * docs/pnd-surface-system.md, docs/injection-convention.md, and
+ * contracts/src/surface/interfaces/IRenderer.sol / IPreviewRenderer.sol for
+ * the source-of-truth shapes this mirrors.
  */
 
-import { bytesToHex, keccak256, type Address } from "viem"
-import { ETHFS_V2_FILE_STORAGE, SCRIPTY_STORAGE_V2, getAddressOrNull } from "@pin/addresses"
-import { CodeKind, type CodeRef } from "./collection"
+import { isAddress } from "viem"
+import type { WizardState } from "@/components/studio/create/types"
 
-export { CodeKind }
+// ── artwork URI ──────────────────────────────────────────────────────────
 
-// ── presets ──────────────────────────────────────────────────────────────
+/** Schemes accepted for the wizard's optional cover-image URI field. */
+export const ARTWORK_URI_SCHEMES = ["ipfs://", "ar://", "https://"] as const
 
-export const PRESETS = ["edition", "generative", "renderer"] as const
-export type Preset = (typeof PRESETS)[number]
-
-export const PRESET_LABEL: Record<Preset, string> = {
-  edition: "Edition",
-  generative: "Generative",
-  renderer: "Renderer native",
-}
-
-export const PRESET_DESCRIPTION: Record<Preset, string> = {
-  edition: "Fixed artwork, priced mint. No code required.",
-  generative: "Your script runs onchain, one output per token.",
-  renderer: "A custom renderer contract is the artwork.",
-}
-
-// ── known onchain dependency libraries (v1) ─────────────────────────────
-
-/**
- * Known gzipped library files already stored on the EthFS v2 file store,
- * offered as checkboxes in the GENERATIVE preset's dependency picker.
- *
- * Both entries are verified against the real mainnet EthFS store:
- * p5 via contracts/test/collection/renderers/GenerativeRendererFork.t.sol,
- * three.js via a direct getContent probe (407KB of content at exactly
- * "three-v0.147.0.min.js.gz", 2026-07-06). Any further library added to
- * this list must pass the same check: a non-empty getContent read at the
- * exact name, before it ships to artists.
- */
-export const KNOWN_DEPENDENCIES: {
-  id: string
-  label: string
-  file: string
-  verified: boolean
-}[] = [
-  { id: "p5", label: "p5.js 1.5.0", file: "p5-v1.5.0.min.js.gz", verified: true },
-  {
-    id: "three",
-    label: "three.js 0.147.0",
-    file: "three-v0.147.0.min.js.gz",
-    verified: true,
-  },
-]
-
-// The scripty/EthFS contracts are chain-agnostic singletons; dev chains
-// fork mainnet, so the mainnet entry is the fallback for chain ids without
-// their own entry. Use these resolvers instead of raw getAddressOrNull for
-// anything scripty-related.
-export function scriptyStorageAddress(chainId: number) {
-  return getAddressOrNull(SCRIPTY_STORAGE_V2, chainId) ?? getAddressOrNull(SCRIPTY_STORAGE_V2, 1)
-}
-
-export function ethfsStorageAddress(chainId: number) {
-  return (
-    getAddressOrNull(ETHFS_V2_FILE_STORAGE, chainId) ?? getAddressOrNull(ETHFS_V2_FILE_STORAGE, 1)
+/** True when `uri` is a `scheme://something` with a non-empty path. */
+export function isValidArtworkURI(uri: string): boolean {
+  const trimmed = uri.trim()
+  return ARTWORK_URI_SCHEMES.some(
+    (scheme) => trimmed.startsWith(scheme) && trimmed.length > scheme.length,
   )
 }
 
-export function dependencyCodeRef(file: string, chainId: number): CodeRef | null {
-  const store = ethfsStorageAddress(chainId)
-  return store ? { store, name: file, kind: CodeKind.ScriptGzip } : null
+// ── renderer address validation ─────────────────────────────────────────
+
+/** Sync classification of the renderer address field's raw text, before any
+ *  chain read. Drives the field's error message; `RendererStep` layers the
+ *  async bytecode/preview check on top once this is "valid". */
+export type RendererAddressSyntax = "empty" | "invalid" | "valid"
+
+export function rendererAddressSyntax(input: string): RendererAddressSyntax {
+  const trimmed = input.trim()
+  if (trimmed === "") return "empty"
+  return isAddress(trimmed) ? "valid" : "invalid"
 }
 
-// ── naming ───────────────────────────────────────────────────────────────
-
-/** Lowercase, hyphenated, alnum-only slug for a collection name. */
-export function slugify(name: string): string {
-  const s = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-  return s || "untitled"
+/** True when a `getBytecode` result means a contract is deployed there
+ *  (neither absent nor the empty-code sentinel an EOA or unused address
+ *  returns). */
+export function hasBytecode(code: `0x${string}` | undefined | null): boolean {
+  return !!code && code !== "0x"
 }
 
-/**
- * The ScriptyStorage content name for an artist's generative script:
- * `pnd-<artist address>-<slug>-v<n>`. Namespaced by artist address so two
- * artists can pick the same title without colliding on the shared
- * ScriptyStorageV2 contract's global `contents` name mapping. The version
- * suffix bumps on a name collision (see `nextAvailableContentName`) rather
- * than ever reusing/overwriting a name — ScriptyStorage content is
- * append-only per name and a collision means "something is already stored
- * there", not necessarily this artist's own prior attempt.
- */
-export function contentName(artist: Address, slug: string, version: number): string {
-  return `pnd-${artist.toLowerCase()}-${slug}-v${version}`
-}
+// ── preview decoding ────────────────────────────────────────────────────
 
-// ── chunking ─────────────────────────────────────────────────────────────
+export type PreviewDecodeResult =
+  | { kind: "html"; html: string }
+  | { kind: "image"; src: string }
+  | { kind: "unsupported" }
 
-/**
- * Byte size of each addChunkToContent call. Chosen well under the ~24KB
- * contract code-size ceiling and typical calldata/gas comfort zone for a
- * single wallet-confirmed write; matches the task spec's ~15000-byte target.
- */
-export const CHUNK_SIZE_BYTES = 15_000
-
-/** Split UTF-8 script bytes into fixed-size chunks, in upload order. */
-export function chunkScript(bytes: Uint8Array, chunkSize = CHUNK_SIZE_BYTES): Uint8Array[] {
-  const chunks: Uint8Array[] = []
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    chunks.push(bytes.slice(i, i + chunkSize))
+/** Decode a `data:` URI into its content type and text body. Returns null
+ *  for anything that isn't a `data:` URI or fails to decode. Browser-safe
+ *  (atob/TextDecoder, no Buffer) so it runs in the wizard's client component
+ *  as well as under node:test. */
+function decodeDataUri(uri: string): { contentType: string; text: string } | null {
+  const match = /^data:([^;,]*)(;base64)?,(.*)$/is.exec(uri.trim())
+  if (!match) return null
+  const contentType = (match[1] || "text/plain").toLowerCase()
+  const isBase64 = !!match[2]
+  try {
+    if (isBase64) {
+      const binary = atob(match[3])
+      const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0))
+      return { contentType, text: new TextDecoder().decode(bytes) }
+    }
+    return { contentType, text: decodeURIComponent(match[3]) }
+  } catch {
+    return null
   }
-  // An empty script still needs at least a zero-length placeholder chunk
-  // so `contents(name).size` reflects "created" rather than "created but
-  // never touched" — but in practice the wizard requires non-empty code
-  // before reaching the upload step, so this only guards against a
-  // theoretical empty-string submit.
-  return chunks.length > 0 ? chunks : [new Uint8Array(0)]
 }
 
-/** UTF-8 encode the artist's script (RAW JS — v1 never gzips artist code). */
-export function scriptBytes(source: string): Uint8Array {
-  return new TextEncoder().encode(source)
+/**
+ * Decode a renderer's `previewURI` return value into something the wizard
+ * can display: an HTML document (sandboxed iframe srcdoc), an image (img
+ * src), or unsupported (the renderer returned something that isn't a data
+ * URI, or JSON with no image/animation_url field). Mirrors tokenURI output
+ * shape: `data:application/json;base64,<...>` with `image` and/or
+ * `animation_url` fields; `animation_url` wins when it decodes to inline
+ * HTML.
+ */
+export function decodePreviewURI(uri: string): PreviewDecodeResult {
+  const outer = decodeDataUri(uri)
+  if (!outer) return { kind: "unsupported" }
+  if (outer.contentType.startsWith("image/")) return { kind: "image", src: uri }
+  if (!outer.contentType.includes("json")) return { kind: "unsupported" }
+
+  let meta: { image?: unknown; animation_url?: unknown }
+  try {
+    meta = JSON.parse(outer.text)
+  } catch {
+    return { kind: "unsupported" }
+  }
+
+  const animation = typeof meta.animation_url === "string" ? meta.animation_url.trim() : ""
+  if (animation) {
+    const inner = decodeDataUri(animation)
+    if (inner && inner.contentType.includes("html")) return { kind: "html", html: inner.text }
+  }
+
+  const image = typeof meta.image === "string" ? meta.image.trim() : ""
+  if (image) return { kind: "image", src: image }
+
+  return { kind: "unsupported" }
 }
 
-/** keccak256 of the script bytes, for WorkConfig.codeHash. */
-export function scriptCodeHash(bytes: Uint8Array): `0x${string}` {
-  return keccak256(bytes)
+// ── review summary ──────────────────────────────────────────────────────
+
+export type SummaryRow = { label: string; value: string }
+
+function formatWindow(state: WizardState): string {
+  if (!state.hasWindow) return "Open now, no end"
+  const start = state.startAt ? new Date(state.startAt).toLocaleString() : "now"
+  const end = state.endAt ? new Date(state.endAt).toLocaleString() : "no end"
+  return `${start} to ${end}`
 }
 
-/** bytes -> 0x hex, for addChunkToContent's `bytes` calldata arg. */
-export function toHexChunk(bytes: Uint8Array): `0x${string}` {
-  return bytesToHex(bytes)
+/** Builds the Review step's field-by-field summary from wizard state. Pure
+ *  (no chain reads): `priceEthLabel` is the already-formatted price string
+ *  (e.g. from useEthAmountInput's rawValue) so this stays chain/hook-free. */
+export function buildReviewSummary(state: WizardState, priceEthLabel: string): SummaryRow[] {
+  return [
+    { label: "Renderer", value: state.rendererAddress || "None" },
+    { label: "Name", value: state.name || "None" },
+    { label: "Symbol", value: state.symbol || "None" },
+    { label: "Price", value: priceEthLabel.trim() === "" ? "0 ETH (gas only)" : `${priceEthLabel} ETH` },
+    { label: "Supply", value: state.openSupply ? "Open (no cap)" : state.supplyCap || "None" },
+    { label: "Mint window", value: formatWindow(state) },
+    { label: "Royalty", value: `${state.royaltyPct || "0"}%` },
+    { label: "Payout", value: state.payout || "You (connected wallet)" },
+    {
+      label: "Collaborators",
+      value:
+        state.collaborators.filter((r) => r.address.trim() !== "").length > 0
+          ? state.collaborators
+              .filter((r) => r.address.trim() !== "")
+              .map((r) => r.address)
+              .join(", ")
+          : "None",
+    },
+    { label: "Cover image", value: state.artworkURI || "None" },
+  ]
 }

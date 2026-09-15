@@ -2,14 +2,13 @@
 
 /**
  * Seeded deploy page for a launch descriptor (docs/pnd-surface-second-launch.md
- * "Deploy page"): the RENDERER preset only, pre-filled from
- * lib/launch-descriptors.ts and fully editable before signing. Reuses the
- * studio wizard's own ConfigStep + DeployStep — buildCfg/buildSale and the
- * createSurface write live there, not duplicated here (see
- * components/studio/create/DeployStep.tsx). This component owns seeding,
- * the owner-is-the-connected-wallet guarantee, the extra validation the
- * launch doc calls for (renderer code check, mint-window ordering), and
- * the plain-language review card.
+ * "Deploy page"): pre-filled from lib/launch-descriptors.ts and fully
+ * editable before signing. Reuses the studio wizard's own shared field
+ * groups + DeployStep — buildCfg/buildSale and the createSurface write live
+ * there, not duplicated here (see components/studio/create/DeployStep.tsx).
+ * This component owns seeding, the owner-is-the-connected-wallet guarantee,
+ * the extra validation the launch doc calls for (renderer code check,
+ * mint-window ordering), and the plain-language review card.
  */
 
 import { useMemo, useState } from "react"
@@ -18,19 +17,26 @@ import { useAccount, useChainId, usePublicClient, useSwitchChain } from "wagmi"
 import { PREFERRED_CHAIN, PREFERRED_CHAIN_LABEL } from "@/components/tx/tx-ui"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import { formatBps } from "@/lib/collection"
+import { isValidArtworkURI, rendererAddressSyntax } from "@/lib/create-collection"
 import type { LaunchDescriptor } from "@/lib/launch-descriptors"
-import { ConfigStep } from "@/components/studio/create/ConfigStep"
 import { DeployStep } from "@/components/studio/create/DeployStep"
-import { validateCollaborators } from "@/components/studio/create/SharedFields"
+import {
+  IdentityFields,
+  ArtworkField,
+  PriceSupplyWindowFields,
+  RoyaltyPayoutFields,
+  CollaboratorFields,
+  validateCollaborators,
+} from "@/components/studio/create/SharedFields"
 import type { WizardState } from "@/components/studio/create/types"
 import { BTN, BTN_SECONDARY, ERROR, HELP, INPUT, LABEL } from "@/components/studio/create/wizard-ui"
 
 function descriptorToState(d: LaunchDescriptor): WizardState {
   return {
-    preset: "renderer",
+    rendererAddress: d.renderer,
     name: d.name,
     symbol: d.symbol,
-    artworkURI: "",
+    collaborators: d.creators.map((address) => ({ address })),
     priceRaw: "",
     openSupply: d.supplyCap.trim() === "",
     supplyCap: d.supplyCap.trim() === "" ? "100" : d.supplyCap,
@@ -39,15 +45,7 @@ function descriptorToState(d: LaunchDescriptor): WizardState {
     endAt: d.mintEnd,
     royaltyPct: (d.royaltyBps / 100).toString(),
     payout: d.payoutRecipient,
-    collaborators: d.creators.map((address) => ({ address })),
-    script: "",
-    scriptFileName: null,
-    selectedDeps: [],
-    renderParams: "",
-    customRenderer: d.renderer,
-    contentNameChosen: null,
-    chunksUploaded: 0,
-    totalChunks: 0,
+    artworkURI: "",
     deployedAddress: null,
   }
 }
@@ -80,20 +78,20 @@ export function SeededDeployWizard({ descriptor }: { descriptor: LaunchDescripto
   }
 
   async function checkRendererCode() {
-    if (!publicClient || !isAddress(state.customRenderer)) return
+    if (!publicClient || !isAddress(state.rendererAddress)) return
     setCodeCheck("checking")
     try {
-      const code = await publicClient.getBytecode({ address: state.customRenderer as Address })
+      const code = await publicClient.getBytecode({ address: state.rendererAddress as Address })
       setCodeCheck(code && code !== "0x" ? "has-code" : "no-code")
     } catch {
       setCodeCheck("error")
     }
   }
 
-  // Extra validation beyond ConfigStep's own gate (which already enforces
-  // royaltyBps <= 5000 and a valid renderer address): mint-window ordering,
-  // since the deploy tx will happily accept start >= end and produce a
-  // window that never opens.
+  // Extra validation beyond the config step's own gate (which already
+  // enforces royaltyBps <= 5000 and a valid renderer address): mint-window
+  // ordering, since the deploy tx will happily accept start >= end and
+  // produce a window that never opens.
   const windowOk = useMemo(() => {
     if (!state.hasWindow || !state.startAt || !state.endAt) return true
     return new Date(state.startAt).getTime() < new Date(state.endAt).getTime()
@@ -131,48 +129,95 @@ export function SeededDeployWizard({ descriptor }: { descriptor: LaunchDescripto
     )
   }
 
+  const rendererSyntax = rendererAddressSyntax(state.rendererAddress)
+  const royaltyBps = Math.round(Number(state.royaltyPct || "0") * 100)
+  const royaltyOk = royaltyBps >= 0 && royaltyBps <= 5_000
+  const capOk =
+    state.openSupply || (Number(state.supplyCap) > 0 && Number.isFinite(Number(state.supplyCap)))
+  const payoutOk = state.payout === "" || isAddress(state.payout)
+  const priceOk = price.isEmpty || price.isValid
+  const artworkTrimmed = state.artworkURI.trim()
+  const artworkOk = artworkTrimmed === "" || isValidArtworkURI(artworkTrimmed)
+  const identityOk = state.name.trim().length > 0 && state.symbol.trim().length > 0
+  const configCollabCheck = validateCollaborators(state.collaborators)
+
+  const configCanProceed =
+    identityOk &&
+    rendererSyntax === "valid" &&
+    artworkOk &&
+    priceOk &&
+    royaltyOk &&
+    capOk &&
+    payoutOk &&
+    configCollabCheck.ok &&
+    maxMintsOk
+
   if (step === "config") {
     return (
       <Shell>
-        <ConfigStep
-          state={state}
-          set={set}
-          price={price}
-          disabled={false}
-          onNext={() => setStep("review")}
-          supplySlotOk={maxMintsOk}
-          supplySlot={
-            <div className="space-y-2">
-              <label className={LABEL} htmlFor="cc-maxmints">
-                How many can be minted now
-              </label>
-              <input
-                id="cc-maxmints"
-                className={`${INPUT} w-40`}
-                inputMode="numeric"
-                value={maxMintsInput}
-                onChange={(e) => setMaxMintsInput(e.target.value)}
-                placeholder="no limit"
-              />
-              {!maxMintsOk && (
-                <p className={ERROR}>Enter a whole number, or leave empty for no limit.</p>
-              )}
-              <p className={HELP}>
-                The sale ceiling on this collection&apos;s minter, set in the deploy
-                transaction. Raise it later to release the next batch (Studio, Sale
-                settings). Empty means anyone can mint without limit as soon as the
-                collection is live.
-              </p>
-            </div>
-          }
-        />
+        <div className="space-y-5">
+          <IdentityFields state={state} set={set} disabled={false} />
+
+          <div>
+            <label className={LABEL} htmlFor="cc-renderer">
+              Renderer contract address
+            </label>
+            <input
+              id="cc-renderer"
+              className={INPUT}
+              value={state.rendererAddress}
+              onChange={(e) => set("rendererAddress", e.target.value.trim())}
+              placeholder="0x…"
+            />
+            {rendererSyntax === "invalid" && <p className={ERROR}>Invalid address.</p>}
+          </div>
+
+          <PriceSupplyWindowFields state={state} set={set} price={price} disabled={false} />
+
+          <div className="space-y-2">
+            <label className={LABEL} htmlFor="cc-maxmints">
+              How many can be minted now
+            </label>
+            <input
+              id="cc-maxmints"
+              className={`${INPUT} w-40`}
+              inputMode="numeric"
+              value={maxMintsInput}
+              onChange={(e) => setMaxMintsInput(e.target.value)}
+              placeholder="no limit"
+            />
+            {!maxMintsOk && (
+              <p className={ERROR}>Enter a whole number, or leave empty for no limit.</p>
+            )}
+            <p className={HELP}>
+              The sale ceiling on this collection&apos;s minter, set in the deploy
+              transaction. Raise it later to release the next batch (Studio, Sale
+              settings). Empty means anyone can mint without limit as soon as the
+              collection is live.
+            </p>
+          </div>
+
+          <RoyaltyPayoutFields state={state} set={set} disabled={false} />
+          <ArtworkField state={state} set={set} disabled={false} />
+          <CollaboratorFields state={state} set={set} disabled={false} />
+
+          {!identityOk && <p className={ERROR}>Name and symbol are required.</p>}
+
+          <button
+            onClick={() => setStep("review")}
+            disabled={!configCanProceed}
+            className={BTN}
+          >
+            Continue
+          </button>
+        </div>
       </Shell>
     )
   }
 
   // step === "review"
   const collabCheck = validateCollaborators(state.collaborators)
-  const rendererOk = isAddress(state.customRenderer)
+  const rendererOk = isAddress(state.rendererAddress)
   const canDeploy = windowOk && rendererOk && collabCheck.ok && maxMintsOk
 
   return (
@@ -212,7 +257,7 @@ export function SeededDeployWizard({ descriptor }: { descriptor: LaunchDescripto
             label="Mintable now"
             value={maxMints === 0n ? "No limit" : `${maxMints.toString()} tokens`}
           />
-          <ReviewRow label="Renderer" value={state.customRenderer} />
+          <ReviewRow label="Renderer" value={state.rendererAddress} />
         </div>
 
         {!windowOk && (
@@ -262,8 +307,8 @@ export function SeededDeployWizard({ descriptor }: { descriptor: LaunchDescripto
           {showAdvancedRenderer && (
             <input
               className={INPUT}
-              value={state.customRenderer}
-              onChange={(e) => set("customRenderer", e.target.value.trim())}
+              value={state.rendererAddress}
+              onChange={(e) => set("rendererAddress", e.target.value.trim())}
               placeholder="0x…"
             />
           )}
@@ -293,10 +338,11 @@ export function SeededDeployWizard({ descriptor }: { descriptor: LaunchDescripto
           <DeployStep
             state={state}
             artistAddress={address}
-            priceWei={price.wei ?? 0n}
+            price={price}
             onBack={() => setStep("config")}
             ownerOverride={ownerOverride}
             maxMints={maxMints}
+            hideSummary
           />
         ) : (
           <div className="space-y-3">

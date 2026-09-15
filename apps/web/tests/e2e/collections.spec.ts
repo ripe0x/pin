@@ -4,15 +4,14 @@
  * real Anvil mainnet fork, then verify the resulting onchain state through
  * the app's own read paths (the collection page, the token page).
  *
- * The currently supported Renderer-native preset runs end to end: deploy,
- * mint, and verify through the app's collection and token read paths. The
- * test also asserts the guided Edition and Generative presets remain disabled
- * while the mainnet factory has no default/shared renderer.
+ * The wizard targets one artist: someone who already deployed a renderer
+ * contract and wants to launch a token contract against it. Fixed step
+ * graph: Renderer -> Details -> Sale -> Review and deploy.
  *
  * Selector strategy: role/label selectors throughout (getByRole, getByLabel,
  * getByText), matching the wizard's real accessible names — the wizard forms
- * already wire every input's `id`/`htmlFor` correctly (see SharedFields.tsx,
- * GenerativeFields.tsx), so no test ids were needed and none were added.
+ * already wire every input's `id`/`htmlFor` correctly (see SharedFields.tsx),
+ * so no test ids were needed and none were added.
  *
  * The studio URL uses the LOWERCASE impersonated account address deliberately
  * — the studio layout redirects any non-canonical-case address to its
@@ -22,41 +21,44 @@
  */
 import { e2eTest as test, expect } from "./fixtures/test"
 
-test.describe("Collections: create-and-mint (Renderer native)", () => {
+test.describe("Collections: create-and-mint", () => {
   let collectionAddress: `0x${string}`
 
-  test("deploy a renderer-native collection end to end", async ({ page, state }) => {
+  test("deploy a collection against an existing renderer, end to end", async ({ page, state }) => {
     const studioUrl = `/studio/${state.impersonate.toLowerCase()}/create`
     await page.goto(studioUrl)
 
     // OwnerGate needs the mock connector's auto-connect to land before the
-    // wizard renders; the "Create a collection" header only appears once
+    // wizard renders; the "Launch a collection" header only appears once
     // `isOwner` is true, so waiting for it also proves auto-connect worked.
-    await expect(page.getByRole("heading", { name: "Create a collection" })).toBeVisible({
+    await expect(page.getByRole("heading", { name: "Launch a collection" })).toBeVisible({
       timeout: 30_000,
     })
 
-    // ── Preset step ──
-    await expect(page.getByRole("button", { name: /^Edition\b/ })).toBeDisabled()
-    await expect(page.getByRole("button", { name: /^Generative\b/ })).toBeDisabled()
-    const rendererPreset = page.getByRole("button", { name: /^Renderer native\b/ })
-    await expect(rendererPreset).toBeEnabled()
-    await rendererPreset.click()
+    // ── Step 1: Renderer ──
+    await page.getByLabel("Renderer contract address").fill(state.renderer)
+    // The address check (syntax, then bytecode) is debounced and async;
+    // Continue only enables once it settles.
+    const rendererContinue = page.getByRole("button", { name: "Continue" })
+    await expect(rendererContinue).toBeEnabled({ timeout: 15_000 })
+    await rendererContinue.click()
 
-    // ── Configure step ──
+    // ── Step 2: Details ──
     await expect(page.getByLabel("Name")).toBeVisible()
     await page.getByLabel("Name").fill("Studies in Grey")
     await page.getByLabel("Symbol").fill("GREY")
-    await page.getByLabel("Renderer contract address").fill(state.renderer)
+    await page.getByRole("button", { name: "Continue" }).click()
+
+    // ── Step 3: Sale ──
+    await expect(page.getByLabel("Price (ETH)")).toBeVisible()
     await page.getByLabel("Price (ETH)").fill("0.01")
     // Cap the supply at 10: uncheck "Open supply (no cap)" then fill the cap.
     await page.getByLabel("Open supply (no cap)").uncheck()
     await page.getByPlaceholder("Max supply").fill("10")
-
     await page.getByRole("button", { name: "Continue" }).click()
 
-    // ── Deploy step ──
-    await expect(page.getByRole("heading", { name: "Deploy" })).toBeVisible()
+    // ── Step 4: Review and deploy ──
+    await expect(page.getByRole("heading", { name: "Review and deploy" })).toBeVisible()
     await page.getByRole("button", { name: "Deploy collection" }).click()
 
     // Deploy is a single tx (create + fund + first block on a cold fork can
@@ -105,5 +107,29 @@ test.describe("Collections: create-and-mint (Renderer native)", () => {
 
     const seedSection = page.locator("text=Seed").locator("..").locator("..")
     await expect(seedSection.getByText(/^0x[0-9a-fA-F]+$/)).toBeVisible()
+  })
+
+  test("renderer step rejects a non-contract address and an EOA", async ({ page, state }) => {
+    const studioUrl = `/studio/${state.impersonate.toLowerCase()}/create`
+    await page.goto(studioUrl)
+    await expect(page.getByRole("heading", { name: "Launch a collection" })).toBeVisible({
+      timeout: 30_000,
+    })
+
+    const rendererInput = page.getByLabel("Renderer contract address")
+    const rendererContinue = page.getByRole("button", { name: "Continue" })
+
+    // A syntactically invalid address: rejected before any chain read.
+    await rendererInput.fill("not-an-address")
+    await expect(page.getByText("Invalid address.")).toBeVisible()
+    await expect(rendererContinue).toBeDisabled()
+
+    // A well-formed address with no deployed code (an EOA, or simply
+    // unused): rejected after the bytecode check settles.
+    await rendererInput.fill(state.impersonate)
+    await expect(page.getByText("No contract found at this address.")).toBeVisible({
+      timeout: 15_000,
+    })
+    await expect(rendererContinue).toBeDisabled()
   })
 })

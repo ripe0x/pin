@@ -1,17 +1,16 @@
 "use client"
 
 /**
- * Config fields common to the Edition and Generative presets: identity,
- * price, supply, mint window, royalty, payout, and the collaborator
- * creators list (the owner's side of attribution, NOT a payout split);
- * each listed creator confirms by claiming the collection in the Catalog.
- * Renderer-native uses
- * none of this beyond name/symbol (composed separately in ConfigStep).
+ * The create wizard's shared field groups: identity, the optional cover
+ * image URI, price/supply/mint window, royalty/payout, and the collaborator
+ * roster (the owner's side of attribution, NOT a payout split — each listed
+ * creator confirms by claiming the collection in the Catalog).
  */
 
 import { isAddress } from "viem"
 import type { UseEthAmountInputResult } from "@/lib/useEthAmountInput"
 import { formatBps, REFERRAL_SHARE_BPS } from "@/lib/collection"
+import { isValidArtworkURI } from "@/lib/create-collection"
 import type { CollabRow, WizardState } from "./types"
 import { LABEL, INPUT, HELP, ERROR } from "./wizard-ui"
 
@@ -54,6 +53,41 @@ export function IdentityFields({
           disabled={disabled}
         />
       </div>
+    </div>
+  )
+}
+
+/** Optional cover image URI, used on the collection page and marketplace
+ *  cards until a per-token capture or template is set. */
+export function ArtworkField({
+  state,
+  set,
+  disabled,
+}: {
+  state: WizardState
+  set: Setter
+  disabled: boolean
+}) {
+  const trimmed = state.artworkURI.trim()
+  const invalid = trimmed !== "" && !isValidArtworkURI(trimmed)
+  return (
+    <div>
+      <label className={LABEL} htmlFor="cc-cover">
+        Cover image URI (optional)
+      </label>
+      <input
+        id="cc-cover"
+        className={INPUT}
+        value={state.artworkURI}
+        onChange={(e) => set("artworkURI", e.target.value.trim())}
+        placeholder="ipfs://…"
+        disabled={disabled}
+      />
+      <p className={HELP}>
+        Used on the collection page and marketplace cards. You host and
+        control the file on IPFS or Arweave.
+      </p>
+      {invalid && <p className={ERROR}>Must start with ipfs://, ar://, or https://</p>}
     </div>
   )
 }

@@ -2,19 +2,24 @@
  * State shape for the create-collection wizard. Kept dependency-free (no
  * form library, per AGENTS.md/repo convention) — a plain object updated via
  * a single setState in CreateCollectionWizard, passed down as props.
+ *
+ * The wizard has one fixed step graph: an artist who already deployed a
+ * renderer contract points a new collection at it, sets its identity and
+ * sale terms, then deploys. No presets.
  */
-
-import type { Preset } from "@/lib/create-collection"
 
 export type CollabRow = { address: string }
 
 export type WizardState = {
-  preset: Preset | null
+  // Step 1: renderer
+  rendererAddress: string
 
-  // Shared fields (Edition + Generative)
+  // Step 2: details
   name: string
   symbol: string
-  artworkURI: string // required for Edition, optional cover for Generative
+  collaborators: CollabRow[]
+
+  // Step 3: sale
   priceRaw: string // raw ETH input string; parsed via useEthAmountInput at the form layer
   openSupply: boolean
   supplyCap: string
@@ -23,31 +28,17 @@ export type WizardState = {
   endAt: string
   royaltyPct: string
   payout: string
-  collaborators: CollabRow[]
-
-  // Generative-only
-  script: string
-  scriptFileName: string | null
-  selectedDeps: string[] // KNOWN_DEPENDENCIES ids
-  renderParams: string
-
-  // Renderer-native-only
-  customRenderer: string
-
-  // Upload progress (Generative only) — chunk index is the resume point.
-  contentNameChosen: string | null
-  chunksUploaded: number
-  totalChunks: number
+  artworkURI: string // optional cover image URI
 
   // Deploy result
   deployedAddress: string | null
 }
 
 export const initialWizardState: WizardState = {
-  preset: null,
+  rendererAddress: "",
   name: "",
   symbol: "",
-  artworkURI: "",
+  collaborators: [],
   priceRaw: "",
   openSupply: true,
   supplyCap: "100",
@@ -56,30 +47,10 @@ export const initialWizardState: WizardState = {
   endAt: "",
   royaltyPct: "10",
   payout: "",
-  collaborators: [],
-  script: "",
-  scriptFileName: null,
-  selectedDeps: [],
-  renderParams: "",
-  customRenderer: "",
-  contentNameChosen: null,
-  chunksUploaded: 0,
-  totalChunks: 0,
+  artworkURI: "",
   deployedAddress: null,
 }
 
-/** Step graph. Renderer-native and Edition skip script/preview/upload. */
-export type StepId =
-  | "preset"
-  | "config"
-  | "preview"
-  | "upload"
-  | "deploy"
+export type StepId = "renderer" | "details" | "sale" | "deploy"
 
-export function stepsForPreset(preset: Preset | null): StepId[] {
-  if (preset === "generative") {
-    return ["preset", "config", "preview", "upload", "deploy"]
-  }
-  // edition + renderer-native: no code, so no preview/upload steps.
-  return ["preset", "config", "deploy"]
-}
+export const WIZARD_STEPS: StepId[] = ["renderer", "details", "sale", "deploy"]
