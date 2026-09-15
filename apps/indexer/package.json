@@ -9,7 +9,8 @@
     "codegen": "ponder codegen",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\""
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
+    "check:config-parity": "tsx scripts/check-config-parity.ts"
   },
   "dependencies": {
     "hono": "^4.12.34",

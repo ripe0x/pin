@@ -50,6 +50,14 @@ import { readSurfaceV2Deployment } from "./src/surfaceV2Deployment"
  * eth_getLogs work that drove most of v1's Ponder RPC cost.
  */
 
+// Sepolia-only verification mode: PONDER_CHAIN_ID=11155111 restricts
+// the indexer to the sepolia chain and the Surface v2 contracts, for
+// verifying a live sepolia deploy without any mainnet chain, contract,
+// or RPC request. Unset (or "1", the default) is production mode:
+// every chain and contract below, unchanged. See
+// docs/ponder-schema-cutover.md, "Sepolia verification mode".
+export const SEPOLIA_ONLY_MODE = process.env.PONDER_CHAIN_ID === "11155111"
+
 const FACTORY_ADDRESS = "0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f" as const
 const FACTORY_DEPLOY_BLOCK = 24_973_294
 
@@ -111,21 +119,25 @@ const SURFACE_FACTORY_DEPLOY_BLOCK = 25_590_436
 // contract absent from `contracts` is a Ponder build error, so a partial
 // env would either crash the build or silently index one contract
 // without the other.
-export const HOMAGE_WIRED = Boolean(
-  process.env.HOMAGE_MINTER_ADDRESS &&
-    process.env.HOMAGE_MINTER_START_BLOCK &&
-    process.env.HOMAGE_COLLECTION_ADDRESS &&
-    process.env.HOMAGE_COLLECTION_START_BLOCK,
-)
+export const HOMAGE_WIRED =
+  !SEPOLIA_ONLY_MODE &&
+  Boolean(
+    process.env.HOMAGE_MINTER_ADDRESS &&
+      process.env.HOMAGE_MINTER_START_BLOCK &&
+      process.env.HOMAGE_COLLECTION_ADDRESS &&
+      process.env.HOMAGE_COLLECTION_START_BLOCK,
+  )
 
 // Sovereign Auction House V2 factory: ENV-GATED like Homage above (see
 // src/SovereignV2.ts): the V2 factory is not deployed yet, so both the
 // config entries and the src/SovereignV2.ts handler registrations gate on
 // the same two env vars. Set both after the mainnet factory deploy.
-export const SOVEREIGN_V2_WIRED = Boolean(
-  process.env.SOVEREIGN_V2_FACTORY_ADDRESS &&
-    process.env.SOVEREIGN_V2_FACTORY_START_BLOCK,
-)
+export const SOVEREIGN_V2_WIRED =
+  !SEPOLIA_ONLY_MODE &&
+  Boolean(
+    process.env.SOVEREIGN_V2_FACTORY_ADDRESS &&
+      process.env.SOVEREIGN_V2_FACTORY_START_BLOCK,
+  )
 
 // Surface v2 (contracts/src/surface/v2/, docs/pnd-surface-v2-plan.md):
 // same factory + factory() clone pattern as v1's
@@ -171,12 +183,12 @@ const surfaceCreatedEvent = parseAbiItem(
   "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)",
 )
 
-// PONDER_RPC_URL_1 is required (same as v1, unchanged). SEPOLIA_RPC_URL
-// is optional: falls back to a free public RPC, since the sepolia side
-// only ever serves the rehearsal deploy above (low volume, no archive
-// reads).
+// PONDER_RPC_URL_1 is required for production/mainnet mode. Skipped in
+// sepolia-only mode (see SEPOLIA_ONLY_MODE below), which never touches
+// mainnet. SEPOLIA_RPC_URL is optional in both modes: falls back to a
+// free public RPC.
 const RPC_URL = process.env.PONDER_RPC_URL_1
-if (!RPC_URL) {
+if (!RPC_URL && !SEPOLIA_ONLY_MODE) {
   throw new Error(
     "PONDER_RPC_URL_1 is required. drpc.org free tier works: " +
       "https://eth.drpc.org",
@@ -186,26 +198,36 @@ const SEPOLIA_RPC_URL =
   process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 
 export default createConfig({
+  // In sepolia-only mode `mainnet` is omitted entirely, not just
+  // unsubscribed: a declared chain gets a `eth_getBlockByNumber latest`
+  // call at startup regardless of whether any contract uses it (see
+  // buildIndexingFunctions's per-chain finalizedBlocks fetch), so leaving
+  // `mainnet` declared here would still make one mainnet RPC request.
   chains: {
-    mainnet: {
-      id: 1,
-      rpc: http(RPC_URL),
-      // 15s poll. Per-poll work scales linearly with the indexed-
-      // contract surface, and a head-follow poll is one small getLogs
-      // batch per filter over a few blocks: free-RPC cheap. The old
-      // 300s setting predates the Surface launch; a live mint feed
-      // (homage mint history reads collection_mints) needs rows within
-      // seconds, not minutes.
-      pollingInterval: 15_000,
-      // drpc free tier caps eth_getLogs at 10K blocks per request and
-      // throttles at ~100 RPS. Hard limit, not soft throttle: requests
-      // over 10K return error code 35. Ponder auto-chunks on errors so
-      // backfill still completes; setting maxRequestsPerSecond keeps
-      // us comfortably under the rate limit so the auto-chunk loop
-      // doesn't burn cycles on retries. Steady-state head-following
-      // polls are tiny (<100 blocks per call) and unaffected.
-      maxRequestsPerSecond: 25,
-    },
+    ...(SEPOLIA_ONLY_MODE
+      ? {}
+      : {
+          mainnet: {
+            id: 1,
+            rpc: http(RPC_URL as string),
+            // 15s poll. Per-poll work scales linearly with the indexed-
+            // contract surface, and a head-follow poll is one small
+            // getLogs batch per filter over a few blocks: free-RPC
+            // cheap. The old 300s setting predates the Surface launch;
+            // a live mint feed (homage mint history reads
+            // collection_mints) needs rows within seconds, not minutes.
+            pollingInterval: 15_000,
+            // drpc free tier caps eth_getLogs at 10K blocks per request
+            // and throttles at ~100 RPS. Hard limit, not soft throttle:
+            // requests over 10K return error code 35. Ponder
+            // auto-chunks on errors so backfill still completes;
+            // setting maxRequestsPerSecond keeps us comfortably under
+            // the rate limit so the auto-chunk loop doesn't burn cycles
+            // on retries. Steady-state head-following polls are tiny
+            // (<100 blocks per call) and unaffected.
+            maxRequestsPerSecond: 25,
+          },
+        }),
     sepolia: {
       id: 11_155_111,
       rpc: http(SEPOLIA_RPC_URL),
@@ -215,13 +237,13 @@ export default createConfig({
   contracts: {
     // ── PND (Sovereign Auction House): state-machine ─────────────────
     SovereignAuctionHouseFactory: {
-      chain: "mainnet",
+      chain: SEPOLIA_ONLY_MODE ? {} : "mainnet",
       abi: sovereignAuctionHouseFactoryAbi,
       address: FACTORY_ADDRESS,
       startBlock: FACTORY_DEPLOY_BLOCK,
     },
     SovereignAuctionHouse: {
-      chain: "mainnet",
+      chain: SEPOLIA_ONLY_MODE ? {} : "mainnet",
       abi: sovereignAuctionHouseAbi,
       address: factory({
         address: FACTORY_ADDRESS,
@@ -235,13 +257,13 @@ export default createConfig({
 
     // ── Foundation NFTMarket + shared 1/1 ─────────────────────────────
     FoundationNFT: {
-      chain: "mainnet",
+      chain: SEPOLIA_ONLY_MODE ? {} : "mainnet",
       abi: foundationNftAbi,
       address: FOUNDATION_NFT_ADDRESS,
       startBlock: FND_START_BLOCK,
     },
     NFTMarket: {
-      chain: "mainnet",
+      chain: SEPOLIA_ONLY_MODE ? {} : "mainnet",
       abi: nftMarketAbi,
       address: NFT_MARKET_ADDRESS,
       startBlock: FND_START_BLOCK,
@@ -252,13 +274,13 @@ export default createConfig({
     // tells the worker which clones to scan. We do NOT subscribe to per-
     // clone Transfer events here in v2: that work moves to the worker.
     NFTCollectionFactoryV1: {
-      chain: "mainnet",
+      chain: SEPOLIA_ONLY_MODE ? {} : "mainnet",
       abi: nftCollectionFactoryAbi,
       address: NFT_COLLECTION_FACTORY_V1_ADDRESS,
       startBlock: FND_START_BLOCK,
     },
     NFTCollectionFactoryV2: {
-      chain: "mainnet",
+      chain: SEPOLIA_ONLY_MODE ? {} : "mainnet",
       abi: nftCollectionFactoryAbi,
       address: NFT_COLLECTION_FACTORY_V2_ADDRESS,
       startBlock: FND_START_BLOCK,
@@ -266,7 +288,7 @@ export default createConfig({
 
     // ── Catalog ───────────────────────────────────────────────────────
     Catalog: {
-      chain: "mainnet",
+      chain: SEPOLIA_ONLY_MODE ? {} : "mainnet",
       abi: catalogAbi,
       address: CATALOG_ADDRESS,
       startBlock: CATALOG_DEPLOY_BLOCK,
@@ -276,7 +298,7 @@ export default createConfig({
     // Sparse contract. Artist = recipient of mint, so this is identity-
     // shaped, not marketplace-shaped. Kept in Ponder.
     SuperRareNFT: {
-      chain: "mainnet",
+      chain: SEPOLIA_ONLY_MODE ? {} : "mainnet",
       abi: superrareNftAbi,
       address: SR_V2_NFT_ADDRESS,
       startBlock: SR_V2_NFT_DEPLOY_BLOCK,
@@ -284,7 +306,7 @@ export default createConfig({
 
     // ── MintFactory (DISCOVERY-ONLY) ──────────────────────────────────
     MintFactory: {
-      chain: "mainnet",
+      chain: SEPOLIA_ONLY_MODE ? {} : "mainnet",
       abi: mintFactoryAbi,
       address: MINT_FACTORY_ADDRESS,
       startBlock: MINT_FACTORY_DEPLOY_BLOCK,
@@ -292,7 +314,7 @@ export default createConfig({
 
     // ── TLUniversalDeployer (DISCOVERY-ONLY) ──────────────────────────
     TLUniversalDeployer: {
-      chain: "mainnet",
+      chain: SEPOLIA_ONLY_MODE ? {} : "mainnet",
       abi: tlUniversalDeployerAbi,
       address: TL_DEPLOYER_ADDRESS,
       startBlock: TL_DEPLOYER_DEPLOY_BLOCK,
@@ -302,7 +324,7 @@ export default createConfig({
     // Fixed shared contract → belongs in Ponder (per AGENTS.md), NOT the
     // worker long tail. Drives muri_contracts + muri_tokens.
     MURIProtocol: {
-      chain: "mainnet",
+      chain: SEPOLIA_ONLY_MODE ? {} : "mainnet",
       abi: muriProtocolAbi,
       address: MURI_PROTOCOL_ADDRESS,
       startBlock: MURI_PROTOCOL_DEPLOY_BLOCK,
@@ -312,7 +334,7 @@ export default createConfig({
     // Fixed factory: discovery (one SurfaceCreated per artist
     // deploy) exactly like SovereignAuctionHouseFactory above.
     SurfaceFactory: {
-      chain: "mainnet",
+      chain: SEPOLIA_ONLY_MODE ? {} : "mainnet",
       abi: surfaceFactoryAbi,
       address: SURFACE_FACTORY_ADDRESS,
       startBlock: SURFACE_FACTORY_DEPLOY_BLOCK,
@@ -336,7 +358,7 @@ export default createConfig({
     // Collections.ts) is what keeps `collections.primaryMinter`
     // current after deploy; this factory() binding only seeds it.
     Surface: {
-      chain: "mainnet",
+      chain: SEPOLIA_ONLY_MODE ? {} : "mainnet",
       abi: surfaceAbi,
       address: factory({
         address: SURFACE_FACTORY_ADDRESS,
@@ -358,7 +380,7 @@ export default createConfig({
     // change which minter clone's Sold/ReferralPaid events are
     // indexed here, only `collections.primaryMinter`'s value.
     FixedPriceMinter: {
-      chain: "mainnet",
+      chain: SEPOLIA_ONLY_MODE ? {} : "mainnet",
       abi: fixedPriceMinterAbi,
       address: factory({
         address: SURFACE_FACTORY_ADDRESS,
@@ -372,10 +394,15 @@ export default createConfig({
     // See the comment above `mainnetSurfaceV2`/`sepoliaSurfaceV2`: each
     // network's key is present only once that network has a real
     // deployment; an undeployed network is omitted, not zero-addressed.
+    // The mainnet entry is also gated on `!SEPOLIA_ONLY_MODE`, matching
+    // every other mainnet contract below: without that gate, sepolia
+    // mode would emit a `mainnet` chain key here once
+    // contracts/deployments.mainnet.json records a real deployment,
+    // even though `chains.mainnet` itself is omitted in that mode.
     SurfaceFactoryV2: {
       abi: surfaceFactoryV2Abi,
       chain: {
-        ...(mainnetSurfaceV2
+        ...(!SEPOLIA_ONLY_MODE && mainnetSurfaceV2
           ? {
               mainnet: {
                 address: mainnetSurfaceV2.surfaceFactoryV2,
@@ -396,7 +423,7 @@ export default createConfig({
     SurfaceV2: {
       abi: surfaceV2Abi,
       chain: {
-        ...(mainnetSurfaceV2
+        ...(!SEPOLIA_ONLY_MODE && mainnetSurfaceV2
           ? {
               mainnet: {
                 address: factory({
@@ -425,7 +452,7 @@ export default createConfig({
     FixedPriceMinterV2: {
       abi: fixedPriceMinterV2Abi,
       chain: {
-        ...(mainnetSurfaceV2
+        ...(!SEPOLIA_ONLY_MODE && mainnetSurfaceV2
           ? {
               mainnet: {
                 address: factory({
