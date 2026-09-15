@@ -4,11 +4,11 @@ import { CreateCollectionWizard } from "@/components/studio/create/CreateCollect
 import { getFactoryStatus } from "@/lib/collection-onchain"
 
 /**
- * The flagship create flow: ship a generative, edition, or renderer-native
- * collection with no Solidity. See CreateCollectionWizard for the step
- * graph; OwnerGate (studio layout) already keeps non-owners out, this page
- * only guards against an unresolved/invalid address like the other studio
- * tool pages.
+ * The flagship create flow: an artist who already deployed a renderer
+ * contract launches a token contract against it, with no Solidity. See
+ * CreateCollectionWizard for the step graph; OwnerGate (studio layout)
+ * already keeps non-owners out, this page only guards against an
+ * unresolved/invalid address like the other studio tool pages.
  */
 
 type Params = Promise<{ address: string }>
@@ -16,7 +16,7 @@ type Params = Promise<{ address: string }>
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 
 export const metadata: Metadata = {
-  title: "Create a collection",
+  title: "Launch a collection",
   robots: { index: false, follow: false },
 }
 

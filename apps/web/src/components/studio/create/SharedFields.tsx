@@ -1,12 +1,10 @@
 "use client"
 
 /**
- * Config fields common to every preset: identity and the cover/artwork
- * URI. Price, supply, mint window, royalty, payout, and the collaborator
- * creators list (the owner's side of attribution, NOT a payout split) are
- * shared by Edition and Generative; each listed creator confirms by
- * claiming the collection in the Catalog. Renderer-native uses identity and
- * the artwork field but composes the rest separately in ConfigStep.
+ * The create wizard's shared field groups: identity, the optional cover
+ * image URI, price/supply/mint window, royalty/payout, and the collaborator
+ * roster (the owner's side of attribution, NOT a payout split — each listed
+ * creator confirms by claiming the collection in the Catalog).
  */
 
 import { isAddress } from "viem"
@@ -59,25 +57,23 @@ export function IdentityFields({
   )
 }
 
-/** Cover/artwork URI, shown for every preset. `required` reflects whether
- *  the active preset's renderer reads its image from RenderAssets. */
+/** Optional cover image URI, used on the collection page and marketplace
+ *  cards until a per-token capture or template is set. */
 export function ArtworkField({
   state,
   set,
   disabled,
-  required,
 }: {
   state: WizardState
   set: Setter
   disabled: boolean
-  required: boolean
 }) {
   const trimmed = state.artworkURI.trim()
   const invalid = trimmed !== "" && !isValidArtworkURI(trimmed)
   return (
     <div>
       <label className={LABEL} htmlFor="cc-cover">
-        Cover image URI{required ? "" : " (optional)"}
+        Cover image URI (optional)
       </label>
       <input
         id="cc-cover"
@@ -88,10 +84,9 @@ export function ArtworkField({
         disabled={disabled}
       />
       <p className={HELP}>
-        Cover image URI. Shown for every token until a capture or template is
-        set. You host and control the file on IPFS or Arweave.
+        Used on the collection page and marketplace cards. You host and
+        control the file on IPFS or Arweave.
       </p>
-      {required && trimmed === "" && <p className={ERROR}>Cover image URI is required.</p>}
       {invalid && <p className={ERROR}>Must start with ipfs://, ar://, or https://</p>}
     </div>
   )

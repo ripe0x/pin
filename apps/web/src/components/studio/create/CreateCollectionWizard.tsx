@@ -1,17 +1,13 @@
 "use client"
 
 /**
- * The studio create-collection wizard: an artist ships a generative
- * collection (or an edition, or a renderer-native work) with no Solidity.
- * Plain client-component state machine, no form library (repo convention).
- *
- * Step graph:
- *   EDITION / RENDERER-NATIVE: preset -> config -> deploy
- *   GENERATIVE:                preset -> config -> preview -> upload -> deploy
- *
- * Each chain write (script chunk uploads, the final createCollection) owns
- * its own wagmi useWriteContract + useWaitForTransactionReceipt pair inside
- * its step component, mirroring CreateEditionForm's per-step write pattern.
+ * The studio create-collection wizard: an artist who already deployed a
+ * renderer contract launches a token contract against it, with no
+ * Solidity. Plain client-component state machine, no form library (repo
+ * convention). Fixed step graph: renderer -> details -> sale -> deploy.
+ * Each chain write (setCover, createSurface) owns its own wagmi
+ * useWriteContract + useWaitForTransactionReceipt pair inside its step
+ * component.
  */
 
 import { useState } from "react"
@@ -20,12 +16,11 @@ import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { PREFERRED_CHAIN, PREFERRED_CHAIN_LABEL } from "@/components/tx/tx-ui"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import type { FactoryStatus } from "@/lib/collection-onchain"
-import { initialWizardState, stepsForPreset, type StepId, type WizardState } from "./types"
+import { initialWizardState, WIZARD_STEPS, type StepId, type WizardState } from "./types"
 import { Stepper } from "./Stepper"
-import { PresetStep } from "./PresetStep"
-import { ConfigStep } from "./ConfigStep"
-import { PreviewStep } from "./PreviewStep"
-import { UploadStep } from "./UploadStep"
+import { RendererStep } from "./RendererStep"
+import { DetailsStep } from "./DetailsStep"
+import { SaleStep } from "./SaleStep"
 import { DeployStep } from "./DeployStep"
 import { BTN } from "./wizard-ui"
 
@@ -56,11 +51,7 @@ export function CreateCollectionWizard({
   const wrongNetwork = !!address && chainId !== PREFERRED_CHAIN.id
 
   const [state, setState] = useState<WizardState>(initialWizardState)
-  const [step, setStep] = useState<StepId>("preset")
-  const [uploadResult, setUploadResult] = useState<{
-    name: string
-    codeHash: `0x${string}`
-  } | null>(null)
+  const [step, setStep] = useState<StepId>("renderer")
 
   const price = useEthAmountInput()
 
@@ -68,20 +59,14 @@ export function CreateCollectionWizard({
     setState((s) => ({ ...s, [key]: value }))
   }
 
-  const steps = stepsForPreset(state.preset)
-
-  function goTo(next: StepId) {
-    setStep(next)
-  }
-
   function stepAfter(current: StepId): StepId {
-    const idx = steps.indexOf(current)
-    return steps[Math.min(idx + 1, steps.length - 1)]
+    const idx = WIZARD_STEPS.indexOf(current)
+    return WIZARD_STEPS[Math.min(idx + 1, WIZARD_STEPS.length - 1)]
   }
 
   function stepBefore(current: StepId): StepId {
-    const idx = steps.indexOf(current)
-    return steps[Math.max(idx - 1, 0)]
+    const idx = WIZARD_STEPS.indexOf(current)
+    return WIZARD_STEPS[Math.max(idx - 1, 0)]
   }
 
   const blocked = blockedReason(factoryStatus)
@@ -135,46 +120,38 @@ export function CreateCollectionWizard({
 
   return (
     <div className="space-y-6">
-      {step !== "preset" && <Stepper steps={steps} current={step} />}
+      <header className="space-y-1.5">
+        <h1 className="text-xl font-semibold tracking-tight">Launch a collection</h1>
+        <p className="text-sm text-gray-500 leading-relaxed">
+          Deploys your own immutable contract that renders through the renderer
+          you already deployed. No protocol fee. Only your wallet has admin
+          access.
+        </p>
+      </header>
+
+      <Stepper steps={WIZARD_STEPS} current={step} />
 
       <div className="rounded-lg border border-gray-200 bg-surface p-5">
-        {step === "preset" && (
-          <PresetStep
-            editionAvailable={factoryStatus.defaultRendererSet}
-            onSelect={(preset) => {
-              set("preset", preset)
-              goTo("config")
-            }}
+        {step === "renderer" && (
+          <RendererStep state={state} set={set} onNext={() => setStep(stepAfter("renderer"))} />
+        )}
+
+        {step === "details" && (
+          <DetailsStep
+            state={state}
+            set={set}
+            onBack={() => setStep(stepBefore("details"))}
+            onNext={() => setStep(stepAfter("details"))}
           />
         )}
 
-        {step === "config" && (
-          <ConfigStep
+        {step === "sale" && (
+          <SaleStep
             state={state}
             set={set}
             price={price}
-            disabled={false}
-            onNext={() => goTo(stepAfter("config"))}
-          />
-        )}
-
-        {step === "preview" && (
-          <PreviewStep
-            state={state}
-            onBack={() => goTo(stepBefore("preview"))}
-            onNext={() => goTo(stepAfter("preview"))}
-          />
-        )}
-
-        {step === "upload" && (
-          <UploadStep
-            state={state}
-            set={set}
-            onBack={() => goTo(stepBefore("upload"))}
-            onNext={(result) => {
-              setUploadResult(result)
-              goTo(stepAfter("upload"))
-            }}
+            onBack={() => setStep(stepBefore("sale"))}
+            onNext={() => setStep(stepAfter("sale"))}
           />
         )}
 
@@ -182,8 +159,8 @@ export function CreateCollectionWizard({
           <DeployStep
             state={state}
             artistAddress={artistAddress}
-            priceWei={price.wei ?? 0n}
-            onBack={() => goTo(stepBefore("deploy"))}
+            price={price}
+            onBack={() => setStep(stepBefore("deploy"))}
           />
         )}
       </div>

@@ -473,7 +473,7 @@ export default async function CollectionPage({
       {hero ?? (
         <div className="flex min-h-[50vh] items-center justify-center border-y border-gray-200 bg-gray-100 dark:bg-bg">
           <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-            No artwork yet
+            Artwork renders per token
           </p>
         </div>
       )}

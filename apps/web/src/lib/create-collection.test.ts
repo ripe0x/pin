@@ -1,19 +1,18 @@
 /**
- * isValidArtworkURI / artworkRequired: the create wizard's cover-image
- * gate. Edition and a renderer preset resolving to DefaultRenderer (the
- * zero address included, since the factory substitutes it) must collect a
- * URI before Continue/Deploy enable; Generative and a genuine custom
- * renderer leave it optional.
+ * Pure helpers behind the create wizard: the cover-URI validator, the
+ * renderer address's sync/bytecode validation states, previewURI decoding,
+ * and the Review step's summary builder.
  */
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { SEPOLIA_CHAIN_ID, MAINNET_CHAIN_ID } from "@pin/addresses"
-import { artworkRequired, isDefaultRenderer, isValidArtworkURI } from "./create-collection.ts"
-
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
-// The real sepolia DefaultRenderer (packages/addresses/src/index.ts).
-const SEPOLIA_DEFAULT_RENDERER = "0x29Ed24f394a794415A5545481842f0bb37a3bB93"
-const CUSTOM_RENDERER = "0x1111111111111111111111111111111111111111"
+import {
+  isValidArtworkURI,
+  rendererAddressSyntax,
+  hasBytecode,
+  decodePreviewURI,
+  buildReviewSummary,
+} from "./create-collection.ts"
+import { initialWizardState, type WizardState } from "@/components/studio/create/types.ts"
 
 test("isValidArtworkURI accepts ipfs/ar/https with content after the scheme", () => {
   assert.equal(isValidArtworkURI("ipfs://bafytest"), true)
@@ -32,37 +31,90 @@ test("isValidArtworkURI trims surrounding whitespace", () => {
   assert.equal(isValidArtworkURI("  ipfs://bafytest  "), true)
 })
 
-test("isDefaultRenderer treats the zero address as DefaultRenderer", () => {
-  assert.equal(isDefaultRenderer(ZERO_ADDRESS, SEPOLIA_CHAIN_ID), true)
+test("rendererAddressSyntax: empty, invalid, valid", () => {
+  assert.equal(rendererAddressSyntax(""), "empty")
+  assert.equal(rendererAddressSyntax("   "), "empty")
+  assert.equal(rendererAddressSyntax("not-an-address"), "invalid")
+  assert.equal(rendererAddressSyntax("0x1111111111111111111111111111111111111111"), "valid")
 })
 
-test("isDefaultRenderer matches the configured DefaultRenderer address, case-insensitively", () => {
-  assert.equal(isDefaultRenderer(SEPOLIA_DEFAULT_RENDERER, SEPOLIA_CHAIN_ID), true)
-  assert.equal(isDefaultRenderer(SEPOLIA_DEFAULT_RENDERER.toLowerCase(), SEPOLIA_CHAIN_ID), true)
+test("hasBytecode: undefined/null/0x are no contract; any other code is a contract", () => {
+  assert.equal(hasBytecode(undefined), false)
+  assert.equal(hasBytecode(null), false)
+  assert.equal(hasBytecode("0x"), false)
+  assert.equal(hasBytecode("0x6080604052"), true)
 })
 
-test("isDefaultRenderer is false for a genuine custom renderer", () => {
-  assert.equal(isDefaultRenderer(CUSTOM_RENDERER, SEPOLIA_CHAIN_ID), false)
+test("decodePreviewURI: unsupported for a non-data-URI string", () => {
+  assert.deepEqual(decodePreviewURI("not a uri"), { kind: "unsupported" })
 })
 
-test("artworkRequired: Edition always requires artwork", () => {
-  assert.equal(artworkRequired("edition", "", SEPOLIA_CHAIN_ID), true)
+test("decodePreviewURI: unsupported for JSON metadata with no image/animation_url", () => {
+  const json = JSON.stringify({ name: "preview" })
+  const uri = `data:application/json;base64,${btoa(json)}`
+  assert.deepEqual(decodePreviewURI(uri), { kind: "unsupported" })
 })
 
-test("artworkRequired: Generative never requires artwork", () => {
-  assert.equal(artworkRequired("generative", "", SEPOLIA_CHAIN_ID), false)
+test("decodePreviewURI: image field decodes as an image preview", () => {
+  const json = JSON.stringify({ name: "preview", image: "data:image/png;base64,AAAA" })
+  const uri = `data:application/json;base64,${btoa(json)}`
+  assert.deepEqual(decodePreviewURI(uri), { kind: "image", src: "data:image/png;base64,AAAA" })
 })
 
-test("artworkRequired: Renderer preset with the zero address (DefaultRenderer) requires artwork", () => {
-  assert.equal(artworkRequired("renderer", ZERO_ADDRESS, SEPOLIA_CHAIN_ID), true)
+test("decodePreviewURI: an inline data:text/html animation_url decodes as html", () => {
+  const html = "<html><body>hi</body></html>"
+  const animation = `data:text/html;base64,${btoa(html)}`
+  const json = JSON.stringify({ name: "preview", animation_url: animation, image: "ignored" })
+  const uri = `data:application/json;base64,${btoa(json)}`
+  assert.deepEqual(decodePreviewURI(uri), { kind: "html", html })
 })
 
-test("artworkRequired: Renderer preset with a genuine custom renderer does not require artwork", () => {
-  assert.equal(artworkRequired("renderer", CUSTOM_RENDERER, SEPOLIA_CHAIN_ID), false)
+test("decodePreviewURI: a non-base64 data:application/json URI also decodes", () => {
+  const json = encodeURIComponent(JSON.stringify({ image: "ipfs://bafytest" }))
+  const uri = `data:application/json,${json}`
+  assert.deepEqual(decodePreviewURI(uri), { kind: "image", src: "ipfs://bafytest" })
 })
 
-test("artworkRequired: Renderer preset with no DefaultRenderer configured for the chain falls back to not required", () => {
-  // MAINNET_CHAIN_ID has no DefaultRenderer deployed yet (zero address in
-  // packages/addresses), so only the zero-address customRenderer counts.
-  assert.equal(artworkRequired("renderer", CUSTOM_RENDERER, MAINNET_CHAIN_ID), false)
+function stateWith(overrides: Partial<WizardState>): WizardState {
+  return { ...initialWizardState, ...overrides }
+}
+
+test("buildReviewSummary: renders every field with sensible fallbacks", () => {
+  const state = stateWith({
+    rendererAddress: "0x1111111111111111111111111111111111111111",
+    name: "Studies in Grey",
+    symbol: "GREY",
+  })
+  const rows = buildReviewSummary(state, "")
+  const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]))
+  assert.equal(byLabel["Renderer"], "0x1111111111111111111111111111111111111111")
+  assert.equal(byLabel["Name"], "Studies in Grey")
+  assert.equal(byLabel["Symbol"], "GREY")
+  assert.equal(byLabel["Price"], "0 ETH (gas only)")
+  assert.equal(byLabel["Supply"], "Open (no cap)")
+  assert.equal(byLabel["Mint window"], "Open now, no end")
+  assert.equal(byLabel["Royalty"], "10%")
+  assert.equal(byLabel["Payout"], "You (connected wallet)")
+  assert.equal(byLabel["Collaborators"], "None")
+  assert.equal(byLabel["Cover image"], "None")
+})
+
+test("buildReviewSummary: a priced, capped collection with collaborators and a cover", () => {
+  const state = stateWith({
+    rendererAddress: "0x1111111111111111111111111111111111111111",
+    name: "Studies in Grey",
+    symbol: "GREY",
+    openSupply: false,
+    supplyCap: "10",
+    payout: "0x2222222222222222222222222222222222222222",
+    collaborators: [{ address: "0x3333333333333333333333333333333333333333" }],
+    artworkURI: "ipfs://cover",
+  })
+  const rows = buildReviewSummary(state, "0.01")
+  const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]))
+  assert.equal(byLabel["Price"], "0.01 ETH")
+  assert.equal(byLabel["Supply"], "10")
+  assert.equal(byLabel["Payout"], "0x2222222222222222222222222222222222222222")
+  assert.equal(byLabel["Collaborators"], "0x3333333333333333333333333333333333333333")
+  assert.equal(byLabel["Cover image"], "ipfs://cover")
 })

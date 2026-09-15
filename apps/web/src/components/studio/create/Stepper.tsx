@@ -3,11 +3,10 @@
 import type { StepId } from "./types"
 
 const STEP_LABEL: Record<StepId, string> = {
-  preset: "Type",
-  config: "Configure",
-  preview: "Preview",
-  upload: "Upload",
-  deploy: "Deploy",
+  renderer: "Renderer",
+  details: "Details",
+  sale: "Sale",
+  deploy: "Review",
 }
 
 export function Stepper({ steps, current }: { steps: StepId[]; current: StepId }) {
