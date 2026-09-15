@@ -107,9 +107,9 @@ function RendererPermanenceNote({ permanent }: { permanent: boolean }) {
   )
 }
 
-/** How to mint this collection from another interface, routing the
- *  referral share to the caller instead of PND. Shown only when the
- *  collection sells through a primary minter. */
+/** How to mint this collection from another interface. When the minter
+ *  carries a referral share, names the address that share is paid to.
+ *  Shown only when the collection sells through a primary minter. */
 function SelfHostNote({ minter, referralShareBps }: { minter: Address; referralShareBps: number }) {
   return (
     <div className="pt-2">
@@ -117,11 +117,17 @@ function SelfHostNote({ minter, referralShareBps }: { minter: Address; referralS
         Self host this mint
       </h3>
       <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-        This collection sells through its own primary minter and can be
-        minted from any interface. From your own page, call{" "}
-        <code className="text-fg">mint(to, qty, yourAddress, 0x)</code> on{" "}
-        <code className="break-all text-fg">{minter}</code> so the{" "}
-        {formatBps(referralShareBps)} referral share routes to you, not PND.
+        This collection sells through its own primary minter,{" "}
+        <code className="break-all text-fg">{minter}</code>, and can be minted
+        from any interface.
+        {referralShareBps > 0 && (
+          <>
+            {" "}
+            Call <code className="text-fg">mint(to, qty, referrer, 0x)</code> and
+            the {formatBps(referralShareBps)} referral share routes to the
+            referrer address passed to mint.
+          </>
+        )}
       </p>
     </div>
   )
