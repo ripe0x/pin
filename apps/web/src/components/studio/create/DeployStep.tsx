@@ -12,26 +12,44 @@
  * is not a second step an artist can skip: SuccessScreen only renders once
  * `coverSettled`, and the button below is a manual retry for when the
  * automatic write errors or the wallet prompt is dismissed.
+ *
+ * SuccessScreen also calls the renderer's previewURI once, against the real
+ * deployed collection address: previewURI reads the collection's own onchain
+ * state (see ScriptyRenderer.previewURI), so it cannot resolve before the
+ * collection exists — this is the first point the wizard can call it.
  */
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { type Address } from "viem"
-import { useAccount, useChainId, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
-import { surfaceFactoryAbi, surfaceFactoryV2Abi, renderAssetsAbi } from "@pin/abi"
+import {
+  useAccount,
+  useChainId,
+  usePublicClient,
+  useWriteContract,
+  useWaitForTransactionReceipt,
+} from "wagmi"
+import { surfaceFactoryAbi, surfaceFactoryV2Abi, renderAssetsAbi, iPreviewRendererAbi } from "@pin/abi"
 import { formatWriteError } from "@/components/tx/tx-ui"
 import {
   ZERO_ADDRESS,
   surfaceFactory,
   surfaceFactoryV2,
   renderAssetsAddress,
+  ipfsToHttp,
 } from "@/lib/collection"
-import { buildReviewSummary, isValidArtworkURI } from "@/lib/create-collection"
+import { buildReviewSummary, decodePreviewURI, isValidArtworkURI, type PreviewDecodeResult } from "@/lib/create-collection"
 import { studioToolHref } from "@/lib/studio-tools"
 import { parseDeployedCollectionAddress } from "./parse-deployed-address"
 import { validateCollaborators } from "./SharedFields"
 import type { UseEthAmountInputResult } from "@/lib/useEthAmountInput"
 import type { WizardState } from "./types"
-import { BTN, BTN_SECONDARY, ERROR } from "./wizard-ui"
+import { BTN, BTN_SECONDARY, ERROR, HELP } from "./wizard-ui"
+
+function randomSeed(): `0x${string}` {
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  return `0x${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`
+}
 
 const ZERO_ROOT = ("0x" + "0".repeat(64)) as `0x${string}`
 
@@ -186,7 +204,13 @@ export function DeployStep({
   }
 
   if (deployedAddress && coverSettled) {
-    return <SuccessScreen collection={deployedAddress} artistAddress={artistAddress} />
+    return (
+      <SuccessScreen
+        collection={deployedAddress}
+        artistAddress={artistAddress}
+        renderer={state.rendererAddress as Address}
+      />
+    )
   }
 
   if (deployedAddress) {
@@ -276,19 +300,59 @@ export function DeployStep({
   )
 }
 
+const PREVIEW_TOKEN_ID = 1n
+
+type PreviewState = "checking" | "unsupported" | { kind: "found"; preview: PreviewDecodeResult }
+
 function SuccessScreen({
   collection,
   artistAddress,
+  renderer,
 }: {
   collection: Address
   artistAddress: string
+  renderer: Address
 }) {
+  const publicClient = usePublicClient()
+  const [preview, setPreview] = useState<PreviewState>("checking")
+
+  // A plain read (no side effects, no gas), so — unlike the cover write's
+  // firedFor ref above — this only needs the standard cleanup-flag guard:
+  // React 18 StrictMode's dev double-invoke discards the first run's result
+  // via `cancelled` and lets the second run's setPreview land normally. A
+  // ref-based fire-once guard here would instead block the SURVIVING second
+  // run while the discarded first run's result never lands — no update at
+  // all.
+  useEffect(() => {
+    if (!publicClient) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const uri = await publicClient.readContract({
+          address: renderer,
+          abi: iPreviewRendererAbi,
+          functionName: "previewURI",
+          args: [collection, PREVIEW_TOKEN_ID, randomSeed()],
+        })
+        if (!cancelled) setPreview({ kind: "found", preview: decodePreviewURI(uri) })
+      } catch {
+        // No previewURI on this renderer, or it reverted for this collection.
+        if (!cancelled) setPreview("unsupported")
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [publicClient, collection, renderer])
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-green-200 bg-green-50 p-5 space-y-2">
         <p className="text-sm font-medium text-green-800">Collection deployed</p>
         <p className="text-xs font-mono text-green-700 break-all">{collection}</p>
       </div>
+
+      <PreviewCard state={preview} />
 
       <a
         href={`/collections/${collection}`}
@@ -308,6 +372,42 @@ function SuccessScreen({
       >
         Collection settings
       </a>
+    </div>
+  )
+}
+
+function PreviewCard({ state }: { state: PreviewState }) {
+  if (state === "checking") return null
+  if (state === "unsupported") {
+    return <p className={HELP}>This renderer has no preview call. Mint one token to see the work.</p>
+  }
+  const { preview } = state
+  if (preview.kind === "unsupported") {
+    return <p className={HELP}>This renderer has no preview call. Mint one token to see the work.</p>
+  }
+  return (
+    <div className="space-y-1.5">
+      <p className="text-sm font-medium">One seed from your renderer</p>
+      <p className="text-xs text-gray-500 leading-relaxed">
+        Token images render from this contract when minted.
+      </p>
+      <div className="aspect-square w-full max-w-xs overflow-hidden rounded border border-gray-200 bg-surface-muted">
+        {preview.kind === "html" ? (
+          <iframe
+            sandbox="allow-scripts"
+            srcDoc={preview.html}
+            title="One seed from your renderer"
+            className="h-full w-full border-0"
+          />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={ipfsToHttp(preview.src)}
+            alt="One seed from your renderer"
+            className="h-full w-full object-contain"
+          />
+        )}
+      </div>
     </div>
   )
 }

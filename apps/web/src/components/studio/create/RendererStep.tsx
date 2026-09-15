@@ -2,47 +2,29 @@
 
 /**
  * Step 1: the artist's already-deployed renderer contract. Validates the
- * address (syntax, then bytecode, then an optional previewURI probe) and
- * shows a live preview when the renderer supports it. A renderer with no
- * preview support still deploys fine — IRenderer declares no ERC-165
- * interface id (see contracts/src/surface/interfaces/IRenderer.sol), so
- * detection here is bytecode-exists plus a try/catch previewURI call,
- * matching the repo's feature-probing convention, not supportsInterface.
+ * address (syntax, then bytecode) — that's all that can be checked before a
+ * collection exists. previewURI takes the collection as a parameter and
+ * reads its onchain state (see ScriptyRenderer.previewURI,
+ * contracts/src/surface/templates/ScriptyRenderer.sol), so it always
+ * reverts against a not-yet-deployed collection; the preview call happens
+ * on the done screen in DeployStep, against the real collection address,
+ * once it exists.
  *
  * The check is debounced off the typed address and cached per (chainId,
  * address) for the component's lifetime, so pasting the same address twice,
- * or backspacing and retyping, doesn't refire the RPC calls.
+ * or backspacing and retyping, doesn't refire the RPC call.
  */
 
 import { useEffect, useRef, useState } from "react"
-import { isAddress, type Address } from "viem"
+import { type Address } from "viem"
 import { usePublicClient, useChainId } from "wagmi"
-import { iPreviewRendererAbi } from "@pin/abi"
-import { ZERO_ADDRESS, ipfsToHttp } from "@/lib/collection"
-import {
-  decodePreviewURI,
-  hasBytecode,
-  rendererAddressSyntax,
-  type PreviewDecodeResult,
-} from "@/lib/create-collection"
+import { hasBytecode, rendererAddressSyntax } from "@/lib/create-collection"
 import type { WizardState } from "./types"
 import { LABEL, INPUT, HELP, ERROR, BTN } from "./wizard-ui"
 
 const DEBOUNCE_MS = 400
-const PREVIEW_TOKEN_ID = 1n
 
-type CheckState =
-  | { kind: "idle" }
-  | { kind: "checking" }
-  | { kind: "no-contract" }
-  | { kind: "unreachable" }
-  | { kind: "ready"; preview: PreviewDecodeResult }
-
-function randomSeed(): `0x${string}` {
-  const bytes = new Uint8Array(32)
-  crypto.getRandomValues(bytes)
-  return `0x${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`
-}
+type CheckState = "idle" | "checking" | "no-contract" | "unreachable" | "ready"
 
 export function RendererStep({
   state,
@@ -55,7 +37,7 @@ export function RendererStep({
 }) {
   const publicClient = usePublicClient()
   const chainId = useChainId()
-  const [check, setCheck] = useState<CheckState>({ kind: "idle" })
+  const [check, setCheck] = useState<CheckState>("idle")
   const cache = useRef(new Map<string, CheckState>())
 
   const trimmed = state.rendererAddress.trim()
@@ -63,7 +45,7 @@ export function RendererStep({
 
   useEffect(() => {
     if (syntax !== "valid" || !publicClient) {
-      setCheck({ kind: "idle" })
+      setCheck("idle")
       return
     }
     const key = `${chainId}:${trimmed.toLowerCase()}`
@@ -74,31 +56,15 @@ export function RendererStep({
     }
 
     let cancelled = false
-    setCheck({ kind: "checking" })
+    setCheck("checking")
     const timer = setTimeout(() => {
       void (async () => {
         let result: CheckState
         try {
           const code = await publicClient.getBytecode({ address: trimmed as Address })
-          if (!hasBytecode(code)) {
-            result = { kind: "no-contract" }
-          } else {
-            let preview: PreviewDecodeResult = { kind: "unsupported" }
-            try {
-              const uri = await publicClient.readContract({
-                address: trimmed as Address,
-                abi: iPreviewRendererAbi,
-                functionName: "previewURI",
-                args: [ZERO_ADDRESS as Address, PREVIEW_TOKEN_ID, randomSeed()],
-              })
-              preview = decodePreviewURI(uri)
-            } catch {
-              // No previewURI, or it reverted — deploy stays allowed either way.
-            }
-            result = { kind: "ready", preview }
-          }
+          result = hasBytecode(code) ? "ready" : "no-contract"
         } catch {
-          result = { kind: "unreachable" }
+          result = "unreachable"
         }
         if (!cancelled) {
           cache.current.set(key, result)
@@ -112,7 +78,7 @@ export function RendererStep({
     }
   }, [trimmed, syntax, chainId, publicClient])
 
-  const canProceed = syntax === "valid" && check.kind === "ready"
+  const canProceed = syntax === "valid" && check === "ready"
 
   return (
     <div className="space-y-5">
@@ -137,48 +103,22 @@ export function RendererStep({
           placeholder="0x…"
         />
         {syntax === "invalid" && <p className={ERROR}>Invalid address.</p>}
-        {check.kind === "checking" && <p className={HELP}>Checking renderer contract…</p>}
-        {check.kind === "no-contract" && (
-          <p className={ERROR}>No contract found at this address.</p>
-        )}
-        {check.kind === "unreachable" && (
+        {check === "checking" && <p className={HELP}>Checking renderer contract…</p>}
+        {check === "no-contract" && <p className={ERROR}>No contract found at this address.</p>}
+        {check === "unreachable" && (
           <p className={ERROR}>Could not read this address. Check your network and try again.</p>
         )}
+        {check === "ready" && (
+          <p className={HELP}>
+            Contract found. You will see a preview of one seed after deploy,
+            before the first mint.
+          </p>
+        )}
       </div>
-
-      {check.kind === "ready" && <PreviewPane preview={check.preview} />}
 
       <button onClick={onNext} disabled={!canProceed} className={BTN}>
         Continue
       </button>
-    </div>
-  )
-}
-
-function PreviewPane({ preview }: { preview: PreviewDecodeResult }) {
-  if (preview.kind === "unsupported") {
-    return <p className={HELP}>This renderer has no preview. You can still deploy.</p>
-  }
-  return (
-    <div className="space-y-1.5">
-      <div className="aspect-square w-full max-w-xs overflow-hidden rounded border border-gray-200 bg-surface-muted">
-        {preview.kind === "html" ? (
-          <iframe
-            sandbox=""
-            srcDoc={preview.html}
-            title="Preview of one seed"
-            className="h-full w-full border-0"
-          />
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={ipfsToHttp(preview.src)}
-            alt="Preview of one seed"
-            className="h-full w-full object-contain"
-          />
-        )}
-      </div>
-      <p className={HELP}>Preview of one seed</p>
     </div>
   )
 }

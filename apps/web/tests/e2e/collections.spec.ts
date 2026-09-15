@@ -37,9 +37,8 @@ test.describe("Collections: create-and-mint", () => {
 
     // ── Step 1: Renderer ──
     await page.getByLabel("Renderer contract address").fill(state.renderer)
-    // The address check (bytecode + previewURI probe) is debounced and
-    // async; Continue only enables once it settles, whether or not the
-    // renderer supports a preview.
+    // The address check (syntax, then bytecode) is debounced and async;
+    // Continue only enables once it settles.
     const rendererContinue = page.getByRole("button", { name: "Continue" })
     await expect(rendererContinue).toBeEnabled({ timeout: 15_000 })
     await rendererContinue.click()

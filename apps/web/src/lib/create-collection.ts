@@ -125,11 +125,11 @@ function formatWindow(state: WizardState): string {
  *  (e.g. from useEthAmountInput's rawValue) so this stays chain/hook-free. */
 export function buildReviewSummary(state: WizardState, priceEthLabel: string): SummaryRow[] {
   return [
-    { label: "Renderer", value: state.rendererAddress || "—" },
-    { label: "Name", value: state.name || "—" },
-    { label: "Symbol", value: state.symbol || "—" },
+    { label: "Renderer", value: state.rendererAddress || "None" },
+    { label: "Name", value: state.name || "None" },
+    { label: "Symbol", value: state.symbol || "None" },
     { label: "Price", value: priceEthLabel.trim() === "" ? "0 ETH (gas only)" : `${priceEthLabel} ETH` },
-    { label: "Supply", value: state.openSupply ? "Open (no cap)" : state.supplyCap || "—" },
+    { label: "Supply", value: state.openSupply ? "Open (no cap)" : state.supplyCap || "None" },
     { label: "Mint window", value: formatWindow(state) },
     { label: "Royalty", value: `${state.royaltyPct || "0"}%` },
     { label: "Payout", value: state.payout || "You (connected wallet)" },

@@ -219,7 +219,7 @@ export default async function CollectionPage({
         />
       ) : (
         <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-          No artwork yet
+          Artwork renders per token
         </p>
       )
     const addressLink = (a: Address) => (
