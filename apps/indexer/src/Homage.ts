@@ -67,20 +67,24 @@ type Ctx = Parameters<Parameters<typeof ponder.on>[1]>[0]["context"]
 type Hex = `0x${string}`
 
 // Registration gate, matching ponder.config.ts's HOMAGE_WIRED (same four
-// env vars — not imported to keep this file free of config imports).
-// Registering a handler for an event name absent from `contracts` is a
-// Ponder BUILD ERROR (validated at startup, it does not silently no-op),
-// so with the env unset these registrations must not run at all. When the
-// gate is open, `on` is ponder.on bound and widened to a generic
-// signature at this one boundary: the deploy-gated names aren't in the
-// generated registry types until the env is set at codegen time. `.bind`
-// (not a bare alias) because ponder.on reads `this`.
-const HOMAGE_WIRED = Boolean(
-  process.env.HOMAGE_MINTER_ADDRESS &&
-    process.env.HOMAGE_MINTER_START_BLOCK &&
-    process.env.HOMAGE_COLLECTION_ADDRESS &&
-    process.env.HOMAGE_COLLECTION_START_BLOCK,
-)
+// env vars plus the sepolia-only-mode check, not imported to keep this
+// file free of config imports). Registering a handler for an event name
+// absent from `contracts` is a Ponder BUILD ERROR (validated at startup,
+// it does not silently no-op), so with the env unset these registrations
+// must not run at all. Sepolia-only mode (PONDER_CHAIN_ID=11155111) never
+// wires Homage, matching ponder.config.ts: Homage is a mainnet-only
+// singleton pair. When the gate is open, `on` is ponder.on bound and
+// widened to a generic signature at this one boundary: the deploy-gated
+// names aren't in the generated registry types until the env is set at
+// codegen time. `.bind` (not a bare alias) because ponder.on reads `this`.
+const HOMAGE_WIRED =
+  process.env.PONDER_CHAIN_ID !== "11155111" &&
+  Boolean(
+    process.env.HOMAGE_MINTER_ADDRESS &&
+      process.env.HOMAGE_MINTER_START_BLOCK &&
+      process.env.HOMAGE_COLLECTION_ADDRESS &&
+      process.env.HOMAGE_COLLECTION_START_BLOCK,
+  )
 type GatedIndexingFunction = (args: {
   event: any
   context: any
