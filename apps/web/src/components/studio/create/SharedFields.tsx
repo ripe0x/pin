@@ -1,17 +1,18 @@
 "use client"
 
 /**
- * Config fields common to the Edition and Generative presets: identity,
- * price, supply, mint window, royalty, payout, and the collaborator
- * creators list (the owner's side of attribution, NOT a payout split);
- * each listed creator confirms by claiming the collection in the Catalog.
- * Renderer-native uses
- * none of this beyond name/symbol (composed separately in ConfigStep).
+ * Config fields common to every preset: identity and the cover/artwork
+ * URI. Price, supply, mint window, royalty, payout, and the collaborator
+ * creators list (the owner's side of attribution, NOT a payout split) are
+ * shared by Edition and Generative; each listed creator confirms by
+ * claiming the collection in the Catalog. Renderer-native uses identity and
+ * the artwork field but composes the rest separately in ConfigStep.
  */
 
 import { isAddress } from "viem"
 import type { UseEthAmountInputResult } from "@/lib/useEthAmountInput"
 import { formatBps, REFERRAL_SHARE_BPS } from "@/lib/collection"
+import { isValidArtworkURI } from "@/lib/create-collection"
 import type { CollabRow, WizardState } from "./types"
 import { LABEL, INPUT, HELP, ERROR } from "./wizard-ui"
 
@@ -54,6 +55,45 @@ export function IdentityFields({
           disabled={disabled}
         />
       </div>
+    </div>
+  )
+}
+
+/** Cover/artwork URI, shown for every preset. `required` reflects whether
+ *  the active preset's renderer reads its image from RenderAssets. */
+export function ArtworkField({
+  state,
+  set,
+  disabled,
+  required,
+}: {
+  state: WizardState
+  set: Setter
+  disabled: boolean
+  required: boolean
+}) {
+  const trimmed = state.artworkURI.trim()
+  const invalid = trimmed !== "" && !isValidArtworkURI(trimmed)
+  return (
+    <div>
+      <label className={LABEL} htmlFor="cc-cover">
+        Cover image URI{required ? "" : " (optional)"}
+      </label>
+      <input
+        id="cc-cover"
+        className={INPUT}
+        value={state.artworkURI}
+        onChange={(e) => set("artworkURI", e.target.value.trim())}
+        placeholder="ipfs://…"
+        disabled={disabled}
+      />
+      <p className={HELP}>
+        Cover image URI. Shown for every token until a capture or template is
+        set. You host the file on IPFS or Arweave; PND never custodies media
+        here.
+      </p>
+      {required && trimmed === "" && <p className={ERROR}>Cover image URI is required.</p>}
+      {invalid && <p className={ERROR}>Must start with ipfs://, ar://, or https://</p>}
     </div>
   )
 }

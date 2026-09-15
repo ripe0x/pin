@@ -10,11 +10,17 @@
  * wires in the same transaction:
  *
  *   EDITION:   Sequential id mode, renderer = zero (DefaultRenderer, the
- *              factory's baked-in default); optional cover to RenderAssets.
- *   RENDERER:  renderer = the artist-supplied address (bring-your-own).
+ *              factory's baked-in default); cover goes to RenderAssets.
+ *   RENDERER:  renderer = the artist-supplied address (bring-your-own); a
+ *              renderer resolving to DefaultRenderer also gets a cover.
  *
  * Economics (price/window/payout) are preset-independent and now live
  * entirely in `sale`, not the collection config.
+ *
+ * The cover write fires as soon as the collection address is known, so it
+ * is not a second step an artist can skip: SuccessScreen only renders once
+ * `coverSettled`, and the button below is a manual retry for when the
+ * automatic write errors or the wallet prompt is dismissed.
  *
  * GENERATIVE via a shared onchain assembler was removed: generative works now
  * ship as bring-your-own renderers (a work-specific IRenderer the artist
@@ -23,6 +29,7 @@
  * a generative deploy here for now.
  */
 
+import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { type Address } from "viem"
 import { useAccount, useChainId, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
@@ -34,6 +41,7 @@ import {
   surfaceFactoryV2,
   renderAssetsAddress,
 } from "@/lib/collection"
+import { artworkRequired, isValidArtworkURI } from "@/lib/create-collection"
 import { studioToolHref } from "@/lib/studio-tools"
 import { parseDeployedCollectionAddress } from "./parse-deployed-address"
 import { validateCollaborators } from "./SharedFields"
@@ -96,6 +104,23 @@ export function DeployStep({
   const needsCover = state.artworkURI.trim().length > 0
   const coverSettled = !needsCover || coverDone
 
+  // Fires the cover write as soon as the collection exists, rather than
+  // waiting for a manual click, so an artist can't leave the deploy step
+  // before the cover lands. Guarded on the write's own pending/data/done
+  // state so it fires once per deploy even though the effect re-runs on
+  // every render.
+  useEffect(() => {
+    if (!deployedAddress || !needsCover || !renderAssets) return
+    if (coverWrite.data || coverWrite.isPending || coverDone) return
+    coverWrite.writeContract({
+      address: renderAssets,
+      abi: renderAssetsAbi,
+      functionName: "setCover",
+      args: [deployedAddress, state.artworkURI.trim()],
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deployedAddress, needsCover, renderAssets])
+
   function toUnix(local: string): bigint {
     if (!local) return 0n
     const ms = new Date(local).getTime()
@@ -145,11 +170,17 @@ export function DeployStep({
     }
   }
 
+  const artworkOk =
+    !state.preset ||
+    !artworkRequired(state.preset, state.customRenderer, chainId) ||
+    isValidArtworkURI(state.artworkURI)
+
   const canDeploy =
     !!factory &&
     !!address &&
     state.preset !== "generative" &&
-    (state.preset !== "renderer" || !!state.customRenderer)
+    (state.preset !== "renderer" || !!state.customRenderer) &&
+    artworkOk
 
   function submit() {
     if (!canDeploy || !factory || !address) return
@@ -194,13 +225,13 @@ export function DeployStep({
     return (
       <div className="space-y-4">
         <p className="text-[11px] font-mono text-gray-500">
-          Collection deployed at {deployedAddress}. Finish publishing its
-          presentation data (stored in renderer-land, owned by you):
+          Collection deployed at {deployedAddress}. Publishing its cover image
+          to RenderAssets (stored in renderer-land, owned by you):
         </p>
         {needsCover && !coverDone && renderAssets && (
           <button
             className={BTN}
-            disabled={coverMining}
+            disabled={coverMining || coverWrite.isPending}
             onClick={() =>
               coverWrite.writeContract({
                 address: renderAssets,
@@ -210,7 +241,11 @@ export function DeployStep({
               })
             }
           >
-            {coverMining ? "Setting cover…" : "Set cover image"}
+            {coverWrite.isPending
+              ? "Confirm in wallet…"
+              : coverMining
+                ? "Setting cover…"
+                : "Retry setting cover image"}
           </button>
         )}
         {needsCover && !coverDone && !renderAssets && (
@@ -246,6 +281,12 @@ export function DeployStep({
           Generative collections now use a bring-your-own renderer. Deploy from
           the Renderer preset with your renderer contract; the guided generative
           flow is being rebuilt.
+        </p>
+      )}
+      {!artworkOk && (
+        <p className={ERROR}>
+          Add a cover image URI on the Config step: this preset&rsquo;s renderer
+          reads its image from RenderAssets.
         </p>
       )}
 

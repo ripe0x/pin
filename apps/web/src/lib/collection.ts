@@ -13,6 +13,7 @@
 import { type Address, formatEther, isAddress } from "viem"
 import { foundry, mainnet, sepolia } from "wagmi/chains"
 import {
+  DEFAULT_RENDERER,
   RENDER_ASSETS,
   SURFACE_FACTORY,
   SURFACE_FACTORY_V2,
@@ -58,6 +59,13 @@ export function renderAssetsAddress(chainId: number = PND_CHAIN_ID): Address | n
   const env = process.env.NEXT_PUBLIC_RENDER_ASSETS
   if (env && isAddress(env)) return env as Address
   return getAddressOrNull(RENDER_ASSETS, chainId)
+}
+
+/** The DefaultRenderer address (env override for local dev wins). */
+export function defaultRendererAddress(chainId: number = PND_CHAIN_ID): Address | null {
+  const env = process.env.NEXT_PUBLIC_DEFAULT_RENDERER
+  if (env && isAddress(env)) return env as Address
+  return getAddressOrNull(DEFAULT_RENDERER, chainId)
 }
 
 /**

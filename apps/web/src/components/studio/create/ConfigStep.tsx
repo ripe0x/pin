@@ -2,10 +2,13 @@
 
 import type { ReactNode } from "react"
 import { isAddress } from "viem"
+import { useChainId } from "wagmi"
 import type { UseEthAmountInputResult } from "@/lib/useEthAmountInput"
+import { artworkRequired, isValidArtworkURI } from "@/lib/create-collection"
 import type { WizardState } from "./types"
 import {
   IdentityFields,
+  ArtworkField,
   PriceSupplyWindowFields,
   RoyaltyPayoutFields,
   CollaboratorFields,
@@ -13,7 +16,7 @@ import {
 } from "./SharedFields"
 import { GenerativeFields } from "./GenerativeFields"
 import { RendererFields } from "./RendererFields"
-import { LABEL, INPUT, HELP, ERROR, BTN } from "./wizard-ui"
+import { ERROR, BTN } from "./wizard-ui"
 
 type Setter = <K extends keyof WizardState>(key: K, value: WizardState[K]) => void
 
@@ -40,7 +43,9 @@ export function ConfigStep({
    *  this form's checks. */
   supplySlotOk?: boolean
 }) {
+  const chainId = useChainId()
   if (!state.preset) return null
+  const preset = state.preset
 
   const collabCheck = validateCollaborators(state.collaborators)
   const royaltyBps = Math.round(Number(state.royaltyPct || "0") * 100)
@@ -52,43 +57,34 @@ export function ConfigStep({
   const identityOk = state.name.trim().length > 0 && state.symbol.trim().length > 0
   const priceOk = price.isEmpty || price.isValid
 
+  const artworkNeeded = artworkRequired(preset, state.customRenderer, chainId)
+  const artworkOk = !artworkNeeded || isValidArtworkURI(state.artworkURI)
+
   let presetOk = true
-  if (state.preset === "edition") {
-    presetOk = state.artworkURI.trim().length > 0
-  } else if (state.preset === "generative") {
+  if (preset === "generative") {
     presetOk = state.script.trim().length > 0
-  } else if (state.preset === "renderer") {
+  } else if (preset === "renderer") {
     presetOk = state.customRenderer.trim() !== "" && isAddress(state.customRenderer)
   }
 
   // Every preset sells through the same built-in paid path; renderer-native
   // works differ only in where the artwork comes from, not in economics.
   const canProceed =
-    identityOk && presetOk && priceOk && royaltyOk && capOk && payoutOk && collabCheck.ok && supplySlotOk
+    identityOk &&
+    presetOk &&
+    artworkOk &&
+    priceOk &&
+    royaltyOk &&
+    capOk &&
+    payoutOk &&
+    collabCheck.ok &&
+    supplySlotOk
 
   return (
     <div className="space-y-5">
       <IdentityFields state={state} set={set} disabled={disabled} />
 
-      {state.preset === "edition" && (
-        <div>
-          <label className={LABEL} htmlFor="cc-art">
-            Artwork URI
-          </label>
-          <input
-            id="cc-art"
-            className={INPUT}
-            value={state.artworkURI}
-            onChange={(e) => set("artworkURI", e.target.value.trim())}
-            placeholder="ipfs://…"
-            disabled={disabled}
-          />
-          <p className={HELP}>
-            The shared art for this edition. ipfs:// recommended. PND can pin it via
-            Preserve.
-          </p>
-        </div>
-      )}
+      <ArtworkField state={state} set={set} disabled={disabled} required={artworkNeeded} />
 
       {state.preset === "generative" && (
         <GenerativeFields state={state} set={set} disabled={disabled} />
