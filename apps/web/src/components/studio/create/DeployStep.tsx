@@ -29,7 +29,7 @@
  * a generative deploy here for now.
  */
 
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { type Address } from "viem"
 import { useAccount, useChainId, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
@@ -106,12 +106,16 @@ export function DeployStep({
 
   // Fires the cover write as soon as the collection exists, rather than
   // waiting for a manual click, so an artist can't leave the deploy step
-  // before the cover lands. Guarded on the write's own pending/data/done
-  // state so it fires once per deploy even though the effect re-runs on
-  // every render.
+  // before the cover lands. `firedFor` (not the write's own pending/data
+  // state) is the guard: React 18 StrictMode's dev double-invoke re-runs
+  // this effect immediately on mount, and the write's own state hasn't
+  // committed yet on that second call, so it would fire twice without a
+  // ref tracking which collection address already got a write.
+  const firedFor = useRef<Address | null>(null)
   useEffect(() => {
     if (!deployedAddress || !needsCover || !renderAssets) return
-    if (coverWrite.data || coverWrite.isPending || coverDone) return
+    if (firedFor.current === deployedAddress) return
+    firedFor.current = deployedAddress
     coverWrite.writeContract({
       address: renderAssets,
       abi: renderAssetsAbi,
@@ -228,7 +232,7 @@ export function DeployStep({
           Collection deployed at {deployedAddress}. Publishing its cover image
           to RenderAssets (stored in renderer-land, owned by you):
         </p>
-        {needsCover && !coverDone && renderAssets && (
+        {needsCover && !coverDone && renderAssets && coverWrite.error && (
           <button
             className={BTN}
             disabled={coverMining || coverWrite.isPending}
@@ -241,12 +245,15 @@ export function DeployStep({
               })
             }
           >
-            {coverWrite.isPending
-              ? "Confirm in wallet…"
-              : coverMining
-                ? "Setting cover…"
-                : "Retry setting cover image"}
+            Set cover image
           </button>
+        )}
+        {needsCover && !coverDone && renderAssets && !coverWrite.error && (
+          <p className="text-[11px] font-mono text-gray-500">
+            {coverWrite.isPending
+              ? "Confirm the cover image transaction in your wallet…"
+              : "Setting cover image…"}
+          </p>
         )}
         {needsCover && !coverDone && !renderAssets && (
           <p className="text-[11px] font-mono text-gray-500">

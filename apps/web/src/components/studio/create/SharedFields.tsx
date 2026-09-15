@@ -89,8 +89,7 @@ export function ArtworkField({
       />
       <p className={HELP}>
         Cover image URI. Shown for every token until a capture or template is
-        set. You host the file on IPFS or Arweave; PND never custodies media
-        here.
+        set. You host and control the file on IPFS or Arweave.
       </p>
       {required && trimmed === "" && <p className={ERROR}>Cover image URI is required.</p>}
       {invalid && <p className={ERROR}>Must start with ipfs://, ar://, or https://</p>}
