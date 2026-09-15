@@ -1,7 +1,7 @@
 /**
  * Pure helpers behind the create wizard: the cover-URI validator, the
- * renderer address's sync/bytecode validation states, previewURI decoding,
- * and the Review step's summary builder.
+ * renderer address's sync/bytecode validation states, and the Review
+ * step's summary builder.
  */
 import { test } from "node:test"
 import assert from "node:assert/strict"
@@ -9,7 +9,6 @@ import {
   isValidArtworkURI,
   rendererAddressSyntax,
   hasBytecode,
-  decodePreviewURI,
   buildReviewSummary,
 } from "./create-collection.ts"
 import { initialWizardState, type WizardState } from "@/components/studio/create/types.ts"
@@ -43,36 +42,6 @@ test("hasBytecode: undefined/null/0x are no contract; any other code is a contra
   assert.equal(hasBytecode(null), false)
   assert.equal(hasBytecode("0x"), false)
   assert.equal(hasBytecode("0x6080604052"), true)
-})
-
-test("decodePreviewURI: unsupported for a non-data-URI string", () => {
-  assert.deepEqual(decodePreviewURI("not a uri"), { kind: "unsupported" })
-})
-
-test("decodePreviewURI: unsupported for JSON metadata with no image/animation_url", () => {
-  const json = JSON.stringify({ name: "preview" })
-  const uri = `data:application/json;base64,${btoa(json)}`
-  assert.deepEqual(decodePreviewURI(uri), { kind: "unsupported" })
-})
-
-test("decodePreviewURI: image field decodes as an image preview", () => {
-  const json = JSON.stringify({ name: "preview", image: "data:image/png;base64,AAAA" })
-  const uri = `data:application/json;base64,${btoa(json)}`
-  assert.deepEqual(decodePreviewURI(uri), { kind: "image", src: "data:image/png;base64,AAAA" })
-})
-
-test("decodePreviewURI: an inline data:text/html animation_url decodes as html", () => {
-  const html = "<html><body>hi</body></html>"
-  const animation = `data:text/html;base64,${btoa(html)}`
-  const json = JSON.stringify({ name: "preview", animation_url: animation, image: "ignored" })
-  const uri = `data:application/json;base64,${btoa(json)}`
-  assert.deepEqual(decodePreviewURI(uri), { kind: "html", html })
-})
-
-test("decodePreviewURI: a non-base64 data:application/json URI also decodes", () => {
-  const json = encodeURIComponent(JSON.stringify({ image: "ipfs://bafytest" }))
-  const uri = `data:application/json,${json}`
-  assert.deepEqual(decodePreviewURI(uri), { kind: "image", src: "ipfs://bafytest" })
 })
 
 function stateWith(overrides: Partial<WizardState>): WizardState {

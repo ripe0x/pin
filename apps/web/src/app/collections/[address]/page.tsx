@@ -27,11 +27,14 @@ import {
   getCollectionMintHistory,
   getRecentTokenMarks,
   getRendererPreviews,
+  getRendererSamplePreview,
   getContractDescription,
   getRendererTokenPreview,
   getRouterBatches,
   isBatchRenderRouter,
+  type RenderableSample,
 } from "@/lib/collection-onchain"
+import { selectPreMintHero } from "@/lib/collection-hero"
 import { detectHomageMinter } from "@/lib/homage/detect.server"
 import { isEscapeRenderer, ESCAPE_DESCRIPTION, ESCAPE_PIECE_TITLE } from "@/lib/escape-render"
 import { getLayoutKindForCollection } from "@/lib/launch-descriptors"
@@ -124,11 +127,14 @@ export default async function CollectionPage({
 
   const hasCover = c.cover.length > 0
   const hasWork = c.work.code.length > 0
+  const preMint = c.minted === 0n
   // Renderer-native works (custom or Solidity-SVG renderers with no parity
   // work config): if the renderer implements the OPTIONAL previewURI
   // extension, the wall explores it straight from the chain. One cached
-  // probe when unsupported.
-  const onchainPreviews = !hasWork
+  // probe when unsupported. Read only once a token exists to explore
+  // against — before the first mint the hero uses preMintSample below
+  // instead of this multi-sample field.
+  const onchainPreviews = !hasWork && !preMint
     ? await getRendererPreviews(addr, c.renderer, c.minted + 1n, 15)
     : null
   // With no cover, no work config and no preview extension, the collection
@@ -138,10 +144,21 @@ export default async function CollectionPage({
   // reading as empty. Cached, and only reached once the cheaper sources are
   // exhausted.
   const rendererArt =
-    !hasCover && !hasWork && !onchainPreviews
+    !hasCover && !hasWork && !preMint && !onchainPreviews
       ? await getRendererTokenPreview(addr, c.renderer, 1n)
       : null
   const firstTokenImage = rendererArt?.image ?? ""
+  // Pre-mint hero sample: one deterministic previewURI render for a plain
+  // custom-renderer collection (no cover, no work config) before its first
+  // mint, replacing the sample-field components below — those fill their
+  // grid with previewURI samples whose thumbnails are blank whenever a
+  // renderer answers with animation_url only and no image field, which
+  // reads as a wall of empty tiles for a renderer-first launch. Fires once
+  // here on the collection page's server render, never on the client and
+  // never per component render. Cached 20s at
+  // sc-premint-sample:<collection>:<renderer> (see getRendererSamplePreview).
+  const preMintSample: RenderableSample | null =
+    preMint && !hasCover && !hasWork ? await getRendererSamplePreview(addr, c.renderer) : null
 
   // The number a collector reads as "the edition": the collection's cap when
   // it has one, otherwise the minter's ceiling, which is what bounds an
@@ -339,6 +356,8 @@ export default async function CollectionPage({
       entries={recent}
       minted={c.minted.toString()}
     />
+  ) : preMint ? (
+    <PreMintHero cover={hasCover ? c.cover : null} sample={preMintSample} name={c.name} />
   ) : onchainPreviews ? (
     <OnchainMosaic collection={addr} previews={onchainPreviews} />
   ) : !hasCover && rendererArt?.animationUrl ? (
@@ -799,6 +818,58 @@ export default async function CollectionPage({
         <HomageStickyMintBar minter={homageMinter} anchorId="mint-instrument" chipId="mint-chip" />
       ) : (
         <StickyMintBar snapshot={placard} anchorId="mint-instrument" />
+      )}
+    </div>
+  )
+}
+
+/** Pre-mint hero: cover first, else one sample render from the renderer
+ *  (getRendererSamplePreview's fixed-seed previewURI call), else the plain
+ *  fallback line. See selectPreMintHero for the selection order. */
+function PreMintHero({
+  cover,
+  sample,
+  name,
+}: {
+  cover: string | null
+  sample: RenderableSample | null
+  name: string
+}) {
+  const source = selectPreMintHero(!!cover, !!sample)
+  if (source === "fallback") {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center border-y border-gray-200 bg-gray-100 dark:bg-bg">
+        <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+          Artwork renders per token
+        </p>
+      </div>
+    )
+  }
+  return (
+    <div className="flex justify-center border-y border-gray-200 bg-gray-100 px-6 py-10 dark:bg-bg lg:py-16">
+      {source === "cover" ? (
+        <OptimizedImage
+          src={cover as string}
+          alt={name}
+          width={1600}
+          loading="eager"
+          className="max-h-[70vh] w-auto max-w-full object-contain"
+        />
+      ) : sample?.kind === "html" ? (
+        <iframe
+          sandbox="allow-scripts"
+          srcDoc={sample.html}
+          title={name}
+          className="aspect-square h-[70vh] max-h-[70vh] w-auto max-w-full border-0"
+        />
+      ) : (
+        <OptimizedImage
+          src={(sample as { kind: "image"; src: string }).src}
+          alt={name}
+          width={1600}
+          loading="eager"
+          className="max-h-[70vh] w-auto max-w-full object-contain"
+        />
       )}
     </div>
   )

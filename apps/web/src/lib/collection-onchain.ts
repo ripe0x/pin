@@ -17,6 +17,7 @@ import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
 import { buildEscapeArtwork, isEscapeRenderer } from "./escape-render"
+import { decodePreviewURI, type PreviewDecodeResult } from "./collection-preview"
 import {
   getCollectionAddressesFromIndexer,
   getCollectionPrimaryMinterFromIndexer,
@@ -953,6 +954,52 @@ export async function getRendererPreviews(
     ),
   )
   return [first, ...rest.filter((p): p is OnchainPreview => p !== null)]
+}
+
+/** A decoded sample renderable by the pre-mint hero: an inline HTML
+ *  document or an image source. Never "unsupported" — see
+ *  getRendererSamplePreview, which maps that case to null. */
+export type RenderableSample = Exclude<PreviewDecodeResult, { kind: "unsupported" }>
+
+/**
+ * One deterministic sample from a renderer implementing the OPTIONAL
+ * IPreviewRenderer extension, for the pre-mint collection page hero:
+ * previewURI(collection, 1, seed) with a seed fixed by the collection
+ * address (stable across page loads and cacheable, not a rolled sample).
+ * Decoded with decodePreviewURI, the same decoder the create wizard's
+ * renderer check uses — this is a display sample, not resolved token
+ * metadata, so it skips fetchMetadataForUri's remote-URL fetch. Null when
+ * the renderer doesn't implement previewURI, the call reverts, or the
+ * decoded result is unsupported.
+ */
+export async function getRendererSamplePreview(
+  collection: Address,
+  renderer: Address,
+): Promise<RenderableSample | null> {
+  if (renderer.toLowerCase() === ZERO_ADDRESS) return null
+  return pgCache(`sc-premint-sample:${lc(collection)}:${lc(renderer)}`, 20, async () => {
+    const client = getClient()
+    const seed = keccak256(stringToBytes(collection.toLowerCase()))
+    const uri = await client
+      .call({
+        to: renderer,
+        data: encodeFunctionData({
+          abi: previewRendererAbi,
+          functionName: "previewURI",
+          args: [collection, 1n, seed],
+        }),
+        gas: 300_000_000n,
+      })
+      .then(({ data }) =>
+        data
+          ? (decodeFunctionResult({ abi: previewRendererAbi, functionName: "previewURI", data }) as string)
+          : null,
+      )
+      .catch(() => null)
+    if (!uri) return null
+    const decoded = decodePreviewURI(uri)
+    return decoded.kind === "unsupported" ? null : decoded
+  })
 }
 
 const rendererTokenUriAbi = [
