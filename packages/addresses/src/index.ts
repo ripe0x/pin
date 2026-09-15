@@ -209,6 +209,7 @@ export const SURFACE_FACTORY_V2: Record<number, Address> = {
 // deploy.
 export const RENDER_ASSETS: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+  [SEPOLIA_CHAIN_ID]: "0xB9B5B2A6763901430B85ca00480E15Ed50065e60",
 }
 
 // DefaultRenderer — the stock data-URI renderer (reads RenderAssets). The
@@ -218,6 +219,7 @@ export const RENDER_ASSETS: Record<number, Address> = {
 // DeployRenderModules.s.sol.
 export const DEFAULT_RENDERER: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+  [SEPOLIA_CHAIN_ID]: "0x29Ed24f394a794415A5545481842f0bb37a3bB93",
 }
 
 // SUPERSEDED — GateHook was deleted in the thin-token rearchitecture
