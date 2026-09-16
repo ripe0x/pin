@@ -346,6 +346,50 @@ export function decodeLocks(
   }
 }
 
+/**
+ * Decode a canonical FixedPriceMinter clone's nine sale getters (the order
+ * lib/collection-onchain.ts:buildMinterContracts issues them) into a
+ * MinterSaleConfig. Every field but priceStrategy must succeed: a real
+ * failure (a bring-your-own minter, a bad address, a contract that doesn't
+ * implement this shape) surfaces as null, not a partially-filled config.
+ * `isV2` reports priceStrategy as zero (FixedPriceMinterV2 is exact-payment
+ * only, see docs/pnd-surface-v2-plan.md) rather than trusting a read that
+ * reverts on a v2 clone. Pure: takes already-fetched multicall entries, so
+ * the same decode serves both a standalone minter multicall and the folded
+ * collection read.
+ */
+export function decodeMinterSaleConfig(
+  results: readonly MulticallEntry<unknown>[],
+  isV2: boolean,
+): MinterSaleConfig | null {
+  const [price, priceStrategy, mintStart, mintEnd, payout, maxMints, allowlistRoot, walletCap, referralShareBps] =
+    results
+  if (
+    price?.status !== "success" ||
+    mintStart?.status !== "success" ||
+    mintEnd?.status !== "success" ||
+    payout?.status !== "success" ||
+    maxMints?.status !== "success" ||
+    allowlistRoot?.status !== "success" ||
+    walletCap?.status !== "success" ||
+    referralShareBps?.status !== "success"
+  ) {
+    return null
+  }
+  return {
+    price: price.result as bigint,
+    priceStrategy:
+      isV2 || priceStrategy?.status !== "success" ? (ZERO_ADDRESS as Address) : (priceStrategy.result as Address),
+    mintStart: mintStart.result as bigint,
+    mintEnd: mintEnd.result as bigint,
+    payout: payout.result as Address,
+    maxMints: maxMints.result as bigint,
+    allowlistRoot: allowlistRoot.result as `0x${string}`,
+    walletCap: walletCap.result as bigint,
+    referralShareBps: Number(referralShareBps.result as number),
+  }
+}
+
 /** The studio Collection Settings tool's /settings API response shape. */
 export type CollectionSettings = {
   name: string
