@@ -4,6 +4,7 @@ import {mainnet, sepolia} from "viem/chains"
 import {homageMinterFor} from "./registry"
 import {homageMinterAbi} from "./contracts"
 import {getMainnetTransport} from "../alchemy-rpc"
+import {pgCache} from "../pg-cache"
 
 // Fork-aware server client (mirrors collection-onchain.ts getClient). Always the
 // mainnet chain object so viem resolves the canonical Multicall3; in fork mode the
@@ -34,15 +35,20 @@ function getClient() {
 export async function detectHomageMinter(collection: Address, chainId: number): Promise<Address | null> {
   const minter = homageMinterFor(collection, chainId)
   if (!minter) return null
-  try {
-    const backref = (await getClient().readContract({
-      address: minter,
-      abi: homageMinterAbi,
-      functionName: "collection",
-    })) as Address
-    return backref.toLowerCase() === collection.toLowerCase() ? minter : null
-  } catch {
-    // Not a HomageMinter (no collection() getter) or RPC failure → fail closed.
-    return null
-  }
+  // 1 hour TTL: the backref a HomageMinter reports for its collection is set at
+  // deploy time and never changes, so the cached result stays correct for the
+  // minter's lifetime. pgCache bypasses itself in fork mode (see pg-cache.ts).
+  return pgCache(`sc-homage-detect:${collection.toLowerCase()}:${minter.toLowerCase()}`, 3600, async () => {
+    try {
+      const backref = (await getClient().readContract({
+        address: minter,
+        abi: homageMinterAbi,
+        functionName: "collection",
+      })) as Address
+      return backref.toLowerCase() === collection.toLowerCase() ? minter : null
+    } catch {
+      // Not a HomageMinter (no collection() getter) or RPC failure → fail closed.
+      return null
+    }
+  })
 }
