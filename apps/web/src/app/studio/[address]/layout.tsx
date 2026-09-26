@@ -62,8 +62,12 @@ export default async function StudioLayout({
     redirect(`/studio/${address.toLowerCase()}`)
   }
 
-  const identity = await getArtistIdentity(address)
-  const freshness = await getIndexerFreshness()
+  const [identity, freshness] = await Promise.all([
+    getArtistIdentity(address).catch(() => null),
+    getIndexerFreshness().catch(() => null),
+  ])
+  const displayName = identity?.displayName ?? `${address.slice(0, 6)}…${address.slice(-4)}`
+  const avatarUrl = identity?.avatarUrl ?? null
   const isStale = freshness ? isFreshnessStale(freshness.ageSeconds) : false
 
   return (
@@ -76,11 +80,11 @@ export default async function StudioLayout({
       )}
       <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4 min-w-0">
-          {identity.avatarUrl ? (
+          {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={identity.avatarUrl}
-              alt={identity.displayName}
+              src={avatarUrl}
+              alt={displayName}
               className="h-12 w-12 shrink-0 rounded-full object-cover"
             />
           ) : (
@@ -95,7 +99,7 @@ export default async function StudioLayout({
             </p>
             <div className="flex items-center gap-2 min-w-0">
               <h1 className="text-base font-mono font-medium tracking-tight truncate">
-                {identity.displayName}
+                {displayName}
               </h1>
               <CopyAddressButton address={address} />
             </div>
@@ -112,7 +116,7 @@ export default async function StudioLayout({
       <div className="md:grid md:grid-cols-[10rem_1fr] md:gap-10 space-y-6 md:space-y-0">
         <StudioNav address={address} />
         <div className="min-w-0">
-          <OwnerGate address={address} displayName={identity.displayName}>
+          <OwnerGate address={address} displayName={displayName}>
             {children}
           </OwnerGate>
         </div>
