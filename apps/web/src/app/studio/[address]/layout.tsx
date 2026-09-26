@@ -62,9 +62,12 @@ export default async function StudioLayout({
     redirect(`/studio/${address.toLowerCase()}`)
   }
 
+  const raceTimeout = <T,>(p: Promise<T>, ms: number): Promise<T | null> =>
+    Promise.race([p, new Promise<null>((r) => setTimeout(r, ms))])
+
   const [identity, freshness] = await Promise.all([
-    getArtistIdentity(address).catch(() => null),
-    getIndexerFreshness().catch(() => null),
+    raceTimeout(getArtistIdentity(address), 4000).catch(() => null),
+    raceTimeout(getIndexerFreshness(), 2000).catch(() => null),
   ])
   const displayName = identity?.displayName ?? `${address.slice(0, 6)}…${address.slice(-4)}`
   const avatarUrl = identity?.avatarUrl ?? null

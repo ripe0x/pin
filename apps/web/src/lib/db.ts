@@ -51,12 +51,11 @@ function makeClient(): ReturnType<typeof postgres> | null {
     // pool on long-running.
     max: IS_SERVERLESS ? 3 : 10,
     idle_timeout: IS_SERVERLESS ? 20 : 30,
-    connect_timeout: 10,
-    // Prepared statements would be a net win for a long-running process,
-    // but postgres.js has subtle TS-ergonomics issues with `prepare: true`
-    // when using the template-tag interface heavily. Leave off until we
-    // have a profiler-driven reason to flip.
+    connect_timeout: IS_SERVERLESS ? 4 : 10,
     prepare: false,
+    connection: {
+      statement_timeout: IS_SERVERLESS ? 4000 : 10000,
+    },
   })
 
   // Best-effort graceful shutdown. On Netlify, sandboxes are usually killed
