@@ -70,6 +70,9 @@ export function Footer() {
             <a href="/log" className="hover:text-fg transition-colors">
               Log
             </a>
+            <a href="/objects" className="hover:text-fg transition-colors">
+              Objects
+            </a>
             <a
               href="https://github.com/ripe0x/pin"
               target="_blank"
