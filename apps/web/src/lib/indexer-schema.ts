@@ -12,7 +12,7 @@
  * per deploy context; verify the production context's value matches the
  * live schema before relying on the default.
  */
-export const DEFAULT_INDEXER_SCHEMA = "ponder_v2"
+export const DEFAULT_INDEXER_SCHEMA = "ponder_v3"
 
 /** Strip everything but identifier characters so this is safe to inline into raw SQL. */
 export function sanitizeSchemaName(raw: string): string {

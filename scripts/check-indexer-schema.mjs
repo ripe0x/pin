@@ -18,7 +18,7 @@
 // Usage: node scripts/check-indexer-schema.mjs
 import postgres from "postgres"
 
-const DEFAULT_INDEXER_SCHEMA = "ponder_v2"
+const DEFAULT_INDEXER_SCHEMA = "ponder_v3"
 const STALE_THRESHOLD_SEC = 6 * 60 * 60
 
 const databaseUrl = process.env.DATABASE_URL
