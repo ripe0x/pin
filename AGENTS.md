@@ -88,10 +88,11 @@ Full notes: `docs/muri-integration.md`.
 
 - **Prod = the `maglev` Railway DB** (`maglev.proxy.rlwy.net`). Schemas on
   maglev today: `public` + `ponder_sync` + `ponder_v1` + `ponder_v2` +
-  `ponder_v3`, with **`INDEXER_SCHEMA=ponder_v3`** (current as of
-  2026-09-04). The live indexer is the `indexer-v3` service in the
-  `pnd-v2` Railway project.
-- `apps/web/.env.local` should point at maglev with `INDEXER_SCHEMA=ponder_v3`.
+  `ponder_v3` + `ponder_v4`, with **`INDEXER_SCHEMA=ponder_v4`** (current
+  as of 2026-10-11, mainnet only). The live indexer is the `indexer-v4`
+  service in the `pnd-v2` Railway project. `ponder_v3` and `indexer-v3`
+  are kept as the rollback pair.
+- `apps/web/.env.local` should point at maglev with `INDEXER_SCHEMA=ponder_v4`.
 - **`ponder_v1` is dead.** It stopped receiving new blocks around
   2026-07-15 (`_ponder_checkpoint.latest_checkpoint` decodes to block
   25535538) when the indexer cut over to `ponder_v2`. It is kept only for
@@ -192,7 +193,7 @@ accidentally staged; delete the directory if you see it.
 
 - **web → Netlify** (build config in `netlify.toml`, built from repo root
   so pnpm resolves the `@pin/*` workspace packages). Production deploys
-  from `main`; the site is pnd.ripe.wtf.
+  from `main`; the site is pnd.fyi.
 - **worker + indexer + Postgres → Railway** (each app has a `railway.json`).
 - NOTE / uncertain: `README.md` claims "No Netlify... one Railway
   project," but `netlify.toml`, `apps/web/.netlify/`, and `DEPLOYMENT.md`

@@ -4,7 +4,8 @@
  * Proves that adding sepolia-only mode (PONDER_CHAIN_ID=11155111, see
  * ponder.config.ts) did not change the config apps/indexer/
  * ponder.config.ts itself produces in production mode (PONDER_CHAIN_ID
- * unset). Compares the current apps/indexer/ponder.config.ts against
+ * unset) with INDEX_SEPOLIA=1, which includes the sepolia chain and
+ * contracts that production leaves out. Compares the current apps/indexer/ponder.config.ts against
  * the pre-change version of that same file fetched from origin/main via
  * `git show`, both imported under the same (unset) env, so any
  * accidental production-mode behavior change in ponder.config.ts
@@ -40,6 +41,7 @@ const baselinePath = resolve(indexerDir, "ponder.config.baseline.gen.ts")
 async function main() {
   process.env.PONDER_RPC_URL_1 ??= "http://localhost:1"
   delete process.env.PONDER_CHAIN_ID
+  process.env.INDEX_SEPOLIA = "1"
 
   const baselineSource = execFileSync(
     "git",
