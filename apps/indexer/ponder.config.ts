@@ -177,7 +177,14 @@ export const SOVEREIGN_V2_WIRED =
 // also why v1's contracts (below) are one flat object with no wrapping
 // condition: they have no per-network variance at all.
 const mainnetSurfaceV2 = readSurfaceV2Deployment("mainnet")
-const sepoliaSurfaceV2 = readSurfaceV2Deployment("sepolia")
+// The sepolia chain and its Surface v2 sources are indexed only when
+// INDEX_SEPOLIA=1 or in sepolia-only mode. The `collections` and
+// `collection_*` tables have no chain column, so production indexes
+// mainnet only.
+const INDEX_SEPOLIA = process.env.INDEX_SEPOLIA === "1" || SEPOLIA_ONLY_MODE
+const sepoliaSurfaceV2 = INDEX_SEPOLIA
+  ? readSurfaceV2Deployment("sepolia")
+  : null
 
 const surfaceCreatedEvent = parseAbiItem(
   "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)",
@@ -228,11 +235,15 @@ export default createConfig({
             maxRequestsPerSecond: 25,
           },
         }),
-    sepolia: {
-      id: 11_155_111,
-      rpc: http(SEPOLIA_RPC_URL),
-      pollingInterval: 15_000,
-    },
+    ...(INDEX_SEPOLIA
+      ? {
+          sepolia: {
+            id: 11_155_111,
+            rpc: http(SEPOLIA_RPC_URL),
+            pollingInterval: 15_000,
+          },
+        }
+      : {}),
   },
   contracts: {
     // ── PND (Sovereign Auction House): state-machine ─────────────────
