@@ -23,6 +23,10 @@ import { INDEXER_SCHEMA } from "./indexer-schema"
 
 const INDEXER_DISABLED = process.env.INDEXER_DISABLED === "1"
 const QUERY_TIMEOUT_MS = 500
+// Budget for per-request reads whose failure is surfaced to the caller. A cold
+// serverless instance opens its DB connection inside the first query, which
+// takes about 1s against the Railway proxy.
+const COLD_START_TIMEOUT_MS = 3_000
 
 /** Sanitized indexer schema name for safe interpolation into unsafe() SQL. */
 function indexerSchema(): string {
@@ -164,14 +168,15 @@ export type HomageActivityEntry = {
 /**
  * Every activity row for a punkId, oldest-first (mint → transfers/redeems →
  * re-mints — the churn IS the story). Pure Postgres, hits the
- * `(punkId, blockNumber)` index. Returns `[]` on miss / unavailable so the
- * token page simply omits the timeline pre-deploy.
+ * `(punkId, blockNumber)` index. Returns `[]` when the punk has no rows and
+ * `null` when the read timed out or failed, so the token page can omit the
+ * timeline without treating the failure as a real empty history.
  */
 export async function getHomageProvenance(
   contract: string,
   punkId: string,
-): Promise<HomageActivityEntry[]> {
-  if (INDEXER_DISABLED || !sql) return []
+): Promise<HomageActivityEntry[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
   const db = sql
 
   const result = await withTimeout(async () => {
@@ -216,9 +221,9 @@ export async function getHomageProvenance(
       blockTime: Number(r.block_time),
       txHash: r.tx_hash,
     }))
-  })
+  }, COLD_START_TIMEOUT_MS)
 
-  return result ?? []
+  return result
 }
 
 // ── gallery (outstanding token ids) ──────────────────────────────────────────
@@ -266,13 +271,14 @@ export type OwnedHomage = {
 /**
  * Every outstanding homage currently held by `wallet`, ascending by punkId.
  * Hits the `holder` index. Powers the redeem-discovery list ("your homages")
- * without any wallet-side log scan. Returns `[]` on miss / unavailable.
+ * without any wallet-side log scan. Returns `[]` when the wallet holds none
+ * and `null` when the read timed out or failed.
  */
 export async function getOwnedHomages(
   contract: string,
   wallet: string,
-): Promise<OwnedHomage[]> {
-  if (INDEXER_DISABLED || !sql) return []
+): Promise<OwnedHomage[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
   const db = sql
 
   const result = await withTimeout(async () => {
@@ -296,7 +302,7 @@ export async function getOwnedHomages(
       mintPhase: r.mint_phase,
       lastMintedAtTime: Number(r.last_minted_at_time),
     }))
-  })
+  }, COLD_START_TIMEOUT_MS)
 
-  return result ?? []
+  return result
 }

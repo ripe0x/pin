@@ -3,6 +3,13 @@ import { isAddress } from "viem"
 import { resolveMintCollection } from "@/lib/mint-collections"
 import { getOwnedHomages, type OwnedHomage } from "@/lib/homage-queries"
 
+function unavailable(): NextResponse<{ error: string }> {
+  return NextResponse.json(
+    { error: "indexer unavailable" },
+    { status: 503, headers: { "Cache-Control": "no-store" } },
+  )
+}
+
 /**
  * The outstanding homages a wallet currently holds — the "your homages"
  * discovery list for the redeem experience (Phase 4.4). Reads from the indexer
@@ -10,8 +17,9 @@ import { getOwnedHomages, type OwnedHomage } from "@/lib/homage-queries"
  * log scan. Fetched on-demand by the client component so a page view that never
  * connects a wallet makes zero reads.
  *
- * Degrades gracefully: an absent/unsynced indexer returns `[]` (the component
- * shows an honest empty state), so this ships before the contract deploys.
+ * Responds 200 with the list (empty when the wallet holds none) and 503 when
+ * the indexer read times out or fails, so the component can show its error
+ * state instead of an empty list.
  */
 export async function GET(
   _req: NextRequest,
@@ -27,13 +35,12 @@ export async function GET(
   }
   try {
     const homages = await getOwnedHomages(desc.address, wallet)
+    if (homages === null) return unavailable()
     return NextResponse.json(
       { homages },
       { headers: { "Cache-Control": "private, max-age=15" } },
     )
   } catch {
-    // Never surface a 500 for the discovery list — an empty list is the honest
-    // degraded state (matches the query layer's own catch → []).
-    return NextResponse.json({ homages: [] })
+    return unavailable()
   }
 }
