@@ -21,10 +21,16 @@ specific to the v4 change: Surface v2 support.
   entirely, not pointed at a placeholder address: Ponder's
   `flattenSources` builds one source per key present in `chain`, so an
   omitted network gets no source, no `eth_getLogs` call, and no
-  `ponder_sync.factories` row. `chains.sepolia` is always configured
-  (`SEPOLIA_RPC_URL`, falling back to a free public RPC when unset), so
-  the sepolia rehearsal deploy is indexed by the same `ponder_v4`
-  schema as mainnet, not a separate run, once it is deployed there.
+  `ponder_sync.factories` row. The sepolia chain and the sepolia
+  entries of these three contracts are included only when
+  `INDEX_SEPOLIA=1` (or in sepolia-only mode). The flag is unset in
+  production, so the production `ponder_v4` schema indexes mainnet only:
+  `collections` and the `collection_*` tables have no chain column, and
+  sepolia rows would otherwise appear in production queries and in the
+  worker drift check. With `INDEX_SEPOLIA=1`, `SEPOLIA_RPC_URL` is
+  required in practice (an archive-capable endpoint, since the sepolia
+  deploy block predates the pruning window of the free public fallback)
+  and the sepolia rehearsal deploy is indexed into the same schema.
 - `apps/indexer/ponder.schema.ts` adds three columns to `collections`:
   `protocolVersion` (integer, 1 for a v1 factory collection, 2 for v2),
   `royaltyLocked` (boolean), `ownerRenounced` (boolean). Every existing
@@ -75,12 +81,13 @@ Expect every mainnet row at `protocol_version = 1` until the mainnet v2
 factory is deployed and `contracts/deployments.mainnet.json` is updated
 with its `surfaceFactoryV2`/`factoryDeployBlock`; after that deploy and
 the next `ponder_v4` replay, expect `protocol_version = 2` rows for
-every collection created through the mainnet v2 factory. A sepolia
-rehearsal deploy also produces `protocol_version = 2` rows; distinguish
-mainnet from sepolia collections by joining `collection_mints.block_number`
-against each chain's known block ranges, or by the collection address
-against the two deploy records, since `collections` does not carry a
-chain id column.
+every collection created through the mainnet v2 factory. With
+`INDEX_SEPOLIA=1`, a sepolia rehearsal deploy also produces
+`protocol_version = 2` rows; distinguish mainnet from sepolia
+collections by joining `collection_mints.block_number` against each
+chain's known block ranges, or by the collection address against the
+two deploy records, since `collections` does not carry a chain id
+column.
 
 `royaltyLocked`/`ownerRenounced` sanity (only meaningful once v2 has
 live collections; both columns are false on every v1 row by
@@ -132,8 +139,9 @@ against
 scoped the same way. They should match exactly. A mismatch means the
 same decayed-watch-set failure mode the v1 factories can hit: run
 `ponder-drift-check.ts`'s repair path (see `AGENTS.md`) before trusting
-the count. Repeat the same two queries with the sepolia deploy record
-and `chain_id = 11155111` to check the rehearsal deploy's watch set too.
+the count. With `INDEX_SEPOLIA=1`, repeat the same two queries with the sepolia
+deploy record and `chain_id = 11155111` to check the rehearsal deploy's
+watch set too.
 
 Until a network's deploy record has a `surfaceFactoryV2`, that
 network's key is omitted from the contract's `chain: {...}` map (see
@@ -181,6 +189,8 @@ collides with a real replay. `apps/indexer/scripts/
 check-config-parity.ts` (`pnpm check:config-parity`) proves this mode
 does not change the config production mode produces, by diffing the
 current file's mainnet-mode output against the `origin/main` version.
+The script sets `INDEX_SEPOLIA=1`, so it compares the full config
+including the sepolia entries.
 
 ## Readiness check
 
@@ -188,7 +198,7 @@ After the parity checks pass, flip `INDEXER_SCHEMA=ponder_v4` in
 Netlify's production context, redeploy, and confirm on the live site:
 
 ```
-GET https://pnd.ripe.wtf/api/health/indexer
+GET https://pnd.fyi/api/health/indexer
 ```
 
 The response's configured schema must read `ponder_v4` and its
