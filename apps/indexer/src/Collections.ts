@@ -123,16 +123,16 @@ ponder.on("SurfaceV2:RoyaltyLocked", async ({ event, context }) => {
   await context.db.update(collections, { collection }).set({ royaltyLocked: true })
 })
 
-// owner() reaching address(0). v2's seal() reaches it, and v1's OZ
-// Ownable2Step base still allows a direct renounceOwnership call, so
-// this registers for both versions.
+// Keeps the owner current and marks owner() reaching address(0). v2's
+// seal() reaches it, and v1's OZ Ownable2Step base still allows a direct
+// renounceOwnership call, so this registers for both versions.
 const ownershipTransferredHandler: HandlerFor<"SurfaceV2:OwnershipTransferred"> = async ({ event, context }) => {
   const { newOwner } = event.args
   const collection = event.log.address
   const existing = await context.db.find(collections, { collection })
   if (!existing) return
   const ownerRenounced = newOwner.toLowerCase() === ZERO_ADDRESS
-  await context.db.update(collections, { collection }).set({ ownerRenounced })
+  await context.db.update(collections, { collection }).set({ owner: newOwner, ownerRenounced })
 }
 
 ponder.on("Surface:OwnershipTransferred", ownershipTransferredHandler)

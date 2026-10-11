@@ -306,7 +306,7 @@ surrounding stack rather than a parallel reimplementation:
 - `test/surface/v2/DeploySurfaceV2.t.sol`: the deploy script itself,
   exercised as a fork/deploy test against every environment guard.
 
-**Internal audit.** `docs/pnd-surface-v2-audit-2026-09-14.md` covers a
+**Internal audit.** `docs/pnd-surface-v2-audit-2026-09-14.md` covers a A second, independent review by Codex at commit 34f2a43b is recorded in docs/pnd-surface-v2-audit-codex.md: zero Critical or High findings, one Low in the deploy wrapper (Etherscan key passed as an argument), fixed by passing --verify alone so forge reads ETHERSCAN_API_KEY from the environment.
 single-pass internal review of the five files above: one Medium and one
 Low finding, both resolved in commit `2ac736b9`; two informational leads
 accepted as design tradeoffs with operational guidance recorded there.

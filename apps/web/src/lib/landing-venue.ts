@@ -3,7 +3,7 @@ import { unstable_cache } from "next/cache"
 import type { Address } from "viem"
 import {
   getCollection,
-  getContractDescription,
+  getContractMetadata,
   getRecentCollections,
 } from "./collection-onchain"
 import {
@@ -140,12 +140,15 @@ async function buildVenueModel(): Promise<VenueModel | null> {
 
   const editorial =
     programmedPick?.editorial ?? getReleaseEditorial(featuredRelease.address)
+  const featuredKey = featuredRelease.address.toLowerCase()
   // Prefer the release's own description (its contractURI metadata) over
   // editorial copy. One pgCached read for the featured collection only.
-  const contractDescription = await getContractDescription(
-    featuredRelease.address as Address,
-  ).catch(() => null)
-  const featuredKey = featuredRelease.address.toLowerCase()
+  const featuredCollection = byAddress.get(featuredKey)
+  const contractDescription = featuredCollection
+    ? await getContractMetadata(featuredCollection.address, featuredCollection.renderer)
+        .then((m) => m.description)
+        .catch(() => null)
+    : null
   const others = recentReleases.filter((r) => r.address.toLowerCase() !== featuredKey)
 
   // Latest token's media for the featured release only, so its hero can play

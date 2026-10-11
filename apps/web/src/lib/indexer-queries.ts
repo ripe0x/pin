@@ -1634,6 +1634,57 @@ export async function getCollectionPrimaryMinterFromIndexer(
 
 const indexerSchema = () => INDEXER_SCHEMA
 
+/** The immutable identity a collection page reads from the indexed row
+ *  instead of the chain: name/symbol/idMode are fixed at initialize, and
+ *  primaryMinter is kept current by the PrimaryMinterSet handler. owner,
+ *  renderer, the locks, cap, royalty and sale config are NOT here: they are
+ *  settable post-deploy (or, for owner, not tracked past a handoff), so the
+ *  collection page reads them live. */
+export type IndexedCollectionIdentity = {
+  name: string | null
+  symbol: string | null
+  idMode: number | null
+  primaryMinter: string | null
+}
+
+/**
+ * One collection's indexed identity by address. Used by
+ * lib/collection-onchain.ts:getCollection to skip re-reading the immutable
+ * identity from chain and, because primaryMinter is known before the read,
+ * to fold the minter's sale getters into the one live multicall. Returns
+ * null when the indexer is unavailable / disabled / slow, when the tables do
+ * not exist yet, or when there is no row for this collection: every case the
+ * caller treats as "read the collection fully live". A row present but with
+ * null name/symbol/idMode (indexed before the SurfaceCreated event carried
+ * them) is returned as-is; the caller checks those fields and falls back.
+ */
+export async function getCollectionRowFromIndexer(
+  collection: string,
+): Promise<IndexedCollectionIdentity | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  return withTimeout(async () => {
+    const rows = (await db.unsafe(
+      `SELECT name, symbol, id_mode, primary_minter
+       FROM ${indexerSchema()}.collections WHERE collection = $1 LIMIT 1`,
+      [collection.toLowerCase()],
+    )) as Array<{
+      name: string | null
+      symbol: string | null
+      id_mode: number | null
+      primary_minter: string | null
+    }>
+    if (rows.length === 0) return null
+    const r = rows[0]
+    return {
+      name: r.name,
+      symbol: r.symbol,
+      idMode: r.id_mode,
+      primaryMinter: r.primary_minter,
+    }
+  })
+}
+
 /**
  * Newest-first collection addresses from the SurfaceCreated discovery
  * table — the browse/landing list path (B2 of the prelaunch runbook: the

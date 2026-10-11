@@ -237,7 +237,7 @@ contract DeploySurfaceV2 is Script {
             string memory json = "record";
             vm.serializeUint(json, "chainId", block.chainid);
             vm.serializeUint(json, "deployedAt", block.timestamp);
-            vm.serializeAddress(json, "deployer", tx.origin);
+            vm.serializeAddress(json, "deployer", SurfaceFactoryV2(d.surfaceFactoryV2).deployer());
             vm.serializeAddress(json, "surfaceFactoryV2", d.surfaceFactoryV2);
             vm.serializeAddress(json, "sequentialImplementationV2", d.sequentialImplementationV2);
             vm.serializeAddress(json, "minterImplementationV2", d.minterImplementationV2);
@@ -251,7 +251,7 @@ contract DeploySurfaceV2 is Script {
 
         vm.writeJson(vm.toString(block.chainid), path, ".chainId");
         vm.writeJson(vm.toString(block.timestamp), path, ".deployedAt");
-        _writeAddressKey(path, ".deployer", tx.origin);
+        _writeAddressKey(path, ".deployer", SurfaceFactoryV2(d.surfaceFactoryV2).deployer());
         _writeAddressKey(path, ".surfaceFactoryV2", d.surfaceFactoryV2);
         _writeAddressKey(path, ".sequentialImplementationV2", d.sequentialImplementationV2);
         _writeAddressKey(path, ".minterImplementationV2", d.minterImplementationV2);

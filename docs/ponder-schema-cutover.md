@@ -140,6 +140,48 @@ network's key is omitted from the contract's `chain: {...}` map (see
 "What changed" above), so it has no `ponder_sync.factories` row at all
 on that chain, and there is nothing to compare there yet.
 
+## Sepolia verification mode
+
+`PONDER_CHAIN_ID=11155111` restricts the indexer to the sepolia chain
+and the Surface v2 contracts (`SurfaceFactoryV2`, `SurfaceV2`,
+`FixedPriceMinterV2`), for verifying a live sepolia deploy without
+touching mainnet. Unset (or `1`), the default, is production mode:
+every chain and contract in `ponder.config.ts`, unchanged.
+
+Run it with:
+
+```
+PONDER_CHAIN_ID=11155111 \
+SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com \
+DATABASE_URL=postgres://<user>@localhost:5432/<db> \
+npx ponder dev --schema <a schema name, max 45 characters> --disable-ui
+```
+
+`PONDER_RPC_URL_1` is not required in this mode. `HOMAGE_WIRED` and
+`SOVEREIGN_V2_WIRED` are forced false in this mode even if their env
+vars are set: both are mainnet-only singletons.
+
+Every mainnet-only contract keeps its key in `contracts` (so
+`ponder.on(...)` registrations for those contracts elsewhere in the
+codebase keep typechecking against real per-event argument types, not
+`unknown`), but its `chain` map is empty in this mode
+(`SEPOLIA_ONLY_MODE ? {} : "mainnet"`), the same "omit the key, not a
+placeholder address" mechanism `SurfaceFactoryV2`/`SurfaceV2`/
+`FixedPriceMinterV2` already use per network above: an empty chain map
+contributes no source, no `eth_getLogs` call, and no
+`ponder_sync.factories` row. `chains.mainnet` itself is also omitted in
+this mode, not just left with no contracts on it: a declared chain gets
+an `eth_getBlockByNumber "latest"` call at startup regardless of
+whether any contract subscribes to it, so leaving `mainnet` declared
+would still send one mainnet RPC request.
+
+Schema naming: use a schema name distinct from any parity/production
+schema (`ponder_v3`, `ponder_v4`, …) so a sepolia-only run never
+collides with a real replay. `apps/indexer/scripts/
+check-config-parity.ts` (`pnpm check:config-parity`) proves this mode
+does not change the config production mode produces, by diffing the
+current file's mainnet-mode output against the `origin/main` version.
+
 ## Readiness check
 
 After the parity checks pass, flip `INDEXER_SCHEMA=ponder_v4` in

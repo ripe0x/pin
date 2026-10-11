@@ -49,16 +49,20 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 type Hex = `0x${string}`
 
 // Registration gate, matching ponder.config.ts's SOVEREIGN_V2_WIRED (same
-// two env vars — not imported to keep this file free of config imports).
-// Registering a handler for an event name absent from `contracts` is a
-// Ponder BUILD ERROR, so with the env unset these registrations must not
-// run at all. Same boundary-widening pattern as src/Homage.ts: the
-// deploy-gated names aren't in the generated registry types until the env
-// is set at codegen time.
-const SOVEREIGN_V2_WIRED = Boolean(
-  process.env.SOVEREIGN_V2_FACTORY_ADDRESS &&
-    process.env.SOVEREIGN_V2_FACTORY_START_BLOCK,
-)
+// two env vars plus the sepolia-only-mode check, not imported to keep
+// this file free of config imports). Registering a handler for an event
+// name absent from `contracts` is a Ponder BUILD ERROR, so with the env
+// unset these registrations must not run at all. Sepolia-only mode
+// (PONDER_CHAIN_ID=11155111) never wires the V2 auction house, matching
+// ponder.config.ts: it is a mainnet-only factory. Same boundary-widening
+// pattern as src/Homage.ts: the deploy-gated names aren't in the
+// generated registry types until the env is set at codegen time.
+const SOVEREIGN_V2_WIRED =
+  process.env.PONDER_CHAIN_ID !== "11155111" &&
+  Boolean(
+    process.env.SOVEREIGN_V2_FACTORY_ADDRESS &&
+      process.env.SOVEREIGN_V2_FACTORY_START_BLOCK,
+  )
 type GatedIndexingFunction = (args: {
   event: any
   context: any

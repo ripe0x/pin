@@ -19,6 +19,7 @@ fs_permissions = [
     { access = "read-write", path = "./deployments.mainnet.json" },
     { access = "read-write", path = "./deployments.sepolia.json" },
     { access = "read-write", path = "./deployments.anvil.json" },
+    { access = "read", path = "./script/deploy.sh" },
 ]
 
 # Default-profile invariant settings: kept small so `forge test` (which picks

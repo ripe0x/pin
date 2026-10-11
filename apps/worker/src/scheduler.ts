@@ -73,7 +73,7 @@ const tasks: Task[] = [
   { name: "seed-known-artists",    intervalMs: 60 * MIN, fn: seedKnownArtists },
   { name: "warm-contract-identity",intervalMs: 10 * MIN, fn: warmContractIdentity, dependsOnPonder: true },
   { name: "warm-ens",              intervalMs: 10 * MIN, fn: warmEns,              dependsOnPonder: true },
-  { name: "warm-metadata",         intervalMs: 1  * MIN, fn: warmMetadata },
+  { name: "warm-metadata",         intervalMs: 5  * MIN, fn: warmMetadata },
   { name: "scan-fnd-collections",  intervalMs: 10 * MIN, fn: scanFndCollections,   dependsOnPonder: true },
   { name: "scan-fnd-shared",       intervalMs: 10 * MIN, fn: scanFndShared,        dependsOnPonder: true },
   { name: "scan-mint-clones",      intervalMs: 10 * MIN, fn: scanMintClones,       dependsOnPonder: true },
@@ -136,17 +136,38 @@ export function enqueueRefreshToken(contract: string, tokenId: string): boolean 
   return true
 }
 
+let ponderReadyCached = false
+
 async function isPonderReady(): Promise<boolean> {
-  // Ponder writes is_ready=1 into _ponder_meta once backfill across all
-  // chains is complete and it has flipped to head-following mode.
-  // Querying this directly avoids a separate indexer-side sentinel.
+  if (ponderReadyCached) return true
   try {
     const rows = (await sql.unsafe(
       `SELECT value FROM ${INDEXER_SCHEMA}._ponder_meta WHERE key = 'app' LIMIT 1`,
     )) as Array<{ value: { is_ready?: number } }>
-    return rows[0]?.value?.is_ready === 1
+    const ready = rows[0]?.value?.is_ready === 1
+    if (ready) ponderReadyCached = true
+    return ready
   } catch {
     return false
+  }
+}
+
+let lastPruneAt = 0
+const PRUNE_INTERVAL_MS = 24 * 60 * 60_000
+const RETENTION_DAYS = 30
+
+async function pruneIterations(): Promise<void> {
+  if (Date.now() - lastPruneAt < PRUNE_INTERVAL_MS) return
+  lastPruneAt = Date.now()
+  try {
+    const result = await sql.unsafe(
+      `DELETE FROM worker_iterations WHERE finished_at < NOW() - INTERVAL '${RETENTION_DAYS} days'`,
+    )
+    if (result.count > 0) {
+      console.log(`[worker.audit] pruned ${result.count} iterations older than ${RETENTION_DAYS}d`)
+    }
+  } catch (err) {
+    console.error("[worker.audit] prune failed:", err)
   }
 }
 
@@ -185,9 +206,10 @@ async function runTask(task: Task): Promise<void> {
        ${result.scopeCount ?? 0}, ${result.rpcCalls ?? 0},
        ${result.rowsWritten ?? 0}, ${ok}, ${error})
   `.catch((err) => {
-    // Don't let an audit write failure mask the task result.
     console.error(`[worker.audit] failed to log ${task.name}:`, err)
   })
+
+  await pruneIterations()
 }
 
 async function drainRefreshQueue(): Promise<void> {

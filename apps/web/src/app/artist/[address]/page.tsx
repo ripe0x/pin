@@ -45,38 +45,33 @@ export async function generateMetadata({
     return { title: `Could not resolve "${decodeURIComponent(raw)}"` }
   }
 
-  // Cheap path: refs only (no enrichment) — gives us the work count without
-  // paying for thousands of IPFS fetches in the metadata route.
-  const [identity, refs] = await Promise.all([
-    getArtistIdentity(address),
-    getCachedTokenRefs(address),
-  ])
-  const totalWorks = refs.length
+  try {
+    const [identity, refs] = await Promise.all([
+      getArtistIdentity(address),
+      getCachedTokenRefs(address),
+    ])
+    const totalWorks = refs.length
 
-  const description = `${totalWorks} ${totalWorks === 1 ? "work" : "works"} by ${identity.displayName}`
-  return {
-    title: identity.displayName,
-    description,
-    openGraph: {
+    const description = `${totalWorks} ${totalWorks === 1 ? "work" : "works"} by ${identity.displayName}`
+    return {
       title: identity.displayName,
       description,
-      type: "profile",
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: identity.displayName,
-      description,
-    },
-    // Search engines and social-card crawlers expose `/artist/<addr>`
-    // links from the activity feed for any address that participates in
-    // an auction (sellers, bidders, winners). Most of those addresses
-    // aren't creators on any platform we index — visiting their page
-    // returns zero works. Mark those pages noindex,nofollow so bots
-    // stop walking deeper from them on subsequent crawls. Real artist
-    // pages (totalWorks > 0) stay indexable.
-    ...(totalWorks === 0 && {
-      robots: { index: false, follow: false },
-    }),
+      openGraph: {
+        title: identity.displayName,
+        description,
+        type: "profile",
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: identity.displayName,
+        description,
+      },
+      ...(totalWorks === 0 && {
+        robots: { index: false, follow: false },
+      }),
+    }
+  } catch {
+    return { title: `${address.slice(0, 6)}…${address.slice(-4)}` }
   }
 }
 

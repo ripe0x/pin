@@ -16,9 +16,17 @@ import { shortAddress } from "@/lib/collection"
 import { BTN, ERROR, HELP, INPUT, LABEL } from "@/components/studio/create/wizard-ui"
 import { CollectionSettingsPanel } from "./CollectionSettingsPanel"
 
-export function CollectionSettingsTool({ owned = [] }: { owned?: IndexedCollectionRow[] }) {
+export function CollectionSettingsTool({
+  owned = [],
+  initialCollection = null,
+}: {
+  owned?: IndexedCollectionRow[]
+  /** Preselects a collection (e.g. `?collection=0x...` from the create
+   *  wizard's done screen) instead of showing the picker. */
+  initialCollection?: `0x${string}` | null
+}) {
   const [input, setInput] = useState("")
-  const [collection, setCollection] = useState<`0x${string}` | null>(null)
+  const [collection, setCollection] = useState<`0x${string}` | null>(initialCollection)
 
   const trimmed = input.trim()
   const valid = isAddress(trimmed)

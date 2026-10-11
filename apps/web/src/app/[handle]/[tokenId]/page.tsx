@@ -108,7 +108,7 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
   // path), so we naturally end up with whichever standard the token uses.
   const [meta, onChainData, erc1155, mintInfo, auctionSales, muri] =
     await Promise.all([
-      resolveTokenMetadataDirect(contract, tokenId),
+      resolveTokenMetadataDirect(contract, tokenId).catch(() => null),
       getTokenOnChainData(contract, tokenId).catch(() => null),
       getErc1155TokenStats(contract, tokenId).catch(() => null),
       // Postgres lookup (no chain read) — non-null only for a worker-indexed Mint

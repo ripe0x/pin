@@ -1,5 +1,14 @@
 import "server-only"
-import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, keccak256, stringToBytes, type Address } from "viem"
+import {
+  createPublicClient,
+  decodeFunctionResult,
+  encodeFunctionData,
+  http,
+  keccak256,
+  stringToBytes,
+  type Address,
+  type ContractFunctionParameters,
+} from "viem"
 import { mainnet, sepolia } from "viem/chains"
 import {
   catalogAbi,
@@ -14,17 +23,21 @@ import {
 } from "@pin/abi"
 import { ARTIST_RECORD_REGISTRY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
-import { pgCache } from "./pg-cache"
+import { pgCache, pgCacheHas } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
 import { buildEscapeArtwork, isEscapeRenderer } from "./escape-render"
+import { decodeContractURI, decodePreviewURI, type ContractMetadata, type PreviewDecodeResult } from "./collection-preview"
 import {
   getCollectionAddressesFromIndexer,
   getCollectionPrimaryMinterFromIndexer,
+  getCollectionRowFromIndexer,
   isCollectionInIndexer,
+  type IndexedCollectionIdentity,
 } from "./indexer-queries"
 import {
   decodeCollectionConfig,
   decodeLocks,
+  decodeMinterSaleConfig,
   renderAssetsAddress,
   surfaceFactory,
   surfaceFactoryV2,
@@ -32,6 +45,7 @@ import {
   type MinterSaleConfig,
   type MulticallEntry,
   type PermanenceTuple,
+  type WorkConfig,
   IdMode,
   ZERO_ADDRESS,
 } from "./collection"
@@ -72,92 +86,46 @@ const REGISTRY = getAddressOrNull(ARTIST_RECORD_REGISTRY, MAINNET_CHAIN_ID)
 
 type RawConfigReturn = readonly [Parameters<typeof decodeCollectionConfig>[0], bigint]
 
-/**
- * Live sale config for a canonical FixedPriceMinter clone: the individual
- * getters (there is no single config() tuple on the minter the way there is
- * on the token), multicalled together. Returns null on any read failure
- * (e.g. `minterAddr` is a bring-your-own minter that doesn't implement this
- * shape) rather than a partially-filled object.
- *
- * `protocolVersion` selects the ABI: FixedPriceMinterV2 drops `priceStrategy`
- * entirely (exact-payment only, see docs/pnd-surface-v2-plan.md), so a v2
- * minter's config always reports `priceStrategy` zero, the true state,
- * not a stand-in for a missing read.
- */
+/** The nine minter sale getters, in the order decodeMinterSaleConfig expects.
+ *  Every getter but priceStrategy shares an identical selector between
+ *  FixedPriceMinter and FixedPriceMinterV2, so the v1 ABI's typed calls
+ *  encode correctly against either clone. priceStrategy is still called
+ *  (allowFailure lets a v2 clone's revert through harmlessly) rather than
+ *  branched out, so the shape and decode never change with protocolVersion.
+ *  Built as its own list so it drops into either a standalone minter
+ *  multicall (getMinterSaleConfig) or the collection's folded one
+ *  (readCollectionFromIndexerRow). */
+function buildMinterContracts(minterAddr: Address) {
+  const base = { address: minterAddr, abi: fixedPriceMinterAbi } as const
+  return [
+    { ...base, functionName: "price" },
+    { ...base, functionName: "priceStrategy" },
+    { ...base, functionName: "mintStart" },
+    { ...base, functionName: "mintEnd" },
+    { ...base, functionName: "payoutRecipient" },
+    { ...base, functionName: "maxMints" },
+    { ...base, functionName: "allowlistRoot" },
+    { ...base, functionName: "walletCap" },
+    { ...base, functionName: "referralShareBps" },
+  ] as const
+}
+
 async function getMinterSaleConfig(
   client: ReturnType<typeof getClient>,
   minterAddr: Address,
   protocolVersion = 1,
 ): Promise<MinterSaleConfig | null> {
-  const isV2 = protocolVersion === 2
-  // Every getter but priceStrategy shares an identical selector between
-  // FixedPriceMinter and FixedPriceMinterV2, so the v1 ABI's typed calls
-  // encode correctly against either clone. priceStrategy is still called
-  // (allowFailure lets a v2 clone's revert through harmlessly) rather than
-  // branched out, so the multicall shape and destructure never change with
-  // protocolVersion. The isV2 check only decides whether to trust the
-  // result.
-  const base = { address: minterAddr, abi: fixedPriceMinterAbi } as const
   try {
-    const results = await client.multicall({
+    const results = (await client.multicall({
       allowFailure: true,
-      contracts: [
-        { ...base, functionName: "price" },
-        { ...base, functionName: "priceStrategy" },
-        { ...base, functionName: "mintStart" },
-        { ...base, functionName: "mintEnd" },
-        { ...base, functionName: "payoutRecipient" },
-        { ...base, functionName: "maxMints" },
-        { ...base, functionName: "allowlistRoot" },
-        { ...base, functionName: "walletCap" },
-        { ...base, functionName: "referralShareBps" },
-      ],
-    })
-    const [price, priceStrategy, mintStart, mintEnd, payout, maxMints, allowlistRoot, walletCap, referralShareBps] =
-      results
-    // Every field but priceStrategy must succeed. A real failure here
-    // (bring-your-own minter, bad address) should still surface as null,
-    // not a partially-filled config.
-    if (
-      price.status !== "success" ||
-      mintStart.status !== "success" ||
-      mintEnd.status !== "success" ||
-      payout.status !== "success" ||
-      maxMints.status !== "success" ||
-      allowlistRoot.status !== "success" ||
-      walletCap.status !== "success" ||
-      referralShareBps.status !== "success"
-    ) {
-      return null
-    }
-    return {
-      price: price.result as bigint,
-      priceStrategy: isV2 || priceStrategy.status !== "success" ? (ZERO_ADDRESS as Address) : (priceStrategy.result as Address),
-      mintStart: mintStart.result as bigint,
-      mintEnd: mintEnd.result as bigint,
-      payout: payout.result as Address,
-      maxMints: maxMints.result as bigint,
-      allowlistRoot: allowlistRoot.result as `0x${string}`,
-      walletCap: walletCap.result as bigint,
-      referralShareBps: Number(referralShareBps.result as number),
-    }
+      contracts: buildMinterContracts(minterAddr),
+    })) as readonly MulticallEntry<unknown>[]
+    return decodeMinterSaleConfig(results, protocolVersion === 2)
   } catch {
     return null
   }
 }
 
-/**
- * Full collection: identity, config, minted count, the primary minter's
- * live sale config (when one is wired), plus the mutable slot values
- * (renderer can be swapped post-deploy, so it's read live rather than
- * trusted from `cfg`). Short TTL.
- *
- * The primary minter address itself is NOT a live chain read even though
- * the token exposes primaryMinter(): the indexed row (seeded from
- * SurfaceCreated, kept current by PrimaryMinterSet) is already the same
- * value at far lower cost — this is one of the few Postgres reads in an
- * otherwise RPC-cached file, not a new RPC call (see AGENTS.md).
- */
 export type FactoryStatus = {
   /** False when no factory address is configured for this chain at all. */
   configured: boolean
@@ -352,6 +320,246 @@ export async function isFactoryCollection(address: Address): Promise<boolean> {
   return live === true
 }
 
+/** Empty WorkConfig: bring-your-own renderers own their config, so there is
+ *  no shared work-config read. A fresh object per call (consumers only read
+ *  work.code.length; a shared mutable default could be pushed into). */
+function emptyWork(): WorkConfig {
+  return {
+    code: [],
+    deps: [],
+    codeURI: "",
+    codeHash: ("0x" + "0".repeat(64)) as `0x${string}`,
+    injectionVersion: 1,
+    renderParams: "",
+  }
+}
+
+/**
+ * Full live read (the fallback): identity, config, minted count, the mutable
+ * slot values (renderer, locks), and the primary minter's sale config, in
+ * three round trips: the collection multicall, the RenderAssets cover, and
+ * the minter's sale multicall (the minter address isn't known until the
+ * collection multicall returns it, so its getters can't fold in). Used when
+ * the indexed row is missing (not synced, disabled, unavailable, tables
+ * absent) and on a fork/sepolia instance, where the indexed set describes
+ * mainnet rather than the local factory.
+ */
+export async function readCollectionFullyLive(
+  client: ReturnType<typeof getClient>,
+  address: Address,
+): Promise<Collection | null> {
+  const base = { address, abi: surfaceAbi } as const
+  // allowFailure:true because permanence() is v2 only: it fails for a v1
+  // collection and that failure must not take down the rest of this read.
+  const results = await client.multicall({
+    allowFailure: true,
+    contracts: [
+      { ...base, functionName: "name" },
+      { ...base, functionName: "symbol" },
+      { ...base, functionName: "owner" },
+      { ...base, functionName: "isRendererLocked" },
+      { ...base, functionName: "isSupplyLocked" },
+      { ...base, functionName: "isMinterLocked" },
+      { ...base, functionName: "renderer" },
+      // idMode is a structural fact read separately since the Sequential/
+      // Pooled split moved it out of the config struct. v2 keeps idMode()
+      // as a compat shim, always returning Sequential.
+      { ...base, functionName: "idMode" },
+      { ...base, functionName: "primaryMinter" },
+      { ...base, functionName: "config" },
+      // version() is a bytecode constant (1 or 2) shared byte-for-byte
+      // between v1 and v2's ISurfaceView selectors, so reading it through
+      // the v1 ABI still decodes correctly against a v2 collection.
+      { ...base, functionName: "version" },
+      // permanence() exists only on SurfaceV2. A v1 collection's call fails
+      // here and the lock/seal fields fall back to the individual v1 reads.
+      { address, abi: surfaceV2Abi, functionName: "permanence" },
+    ],
+  })
+  const [
+    nameRes,
+    symbolRes,
+    ownerRes,
+    rendererLockedRes,
+    supplyLockedRes,
+    minterLockedRes,
+    rendererRes,
+    idModeRes,
+    primaryMinterRes,
+    cfgRes,
+    versionRes,
+    permanenceRes,
+  ] = results
+
+  // Every field but permanence() must succeed; a real failure (bring-your-own
+  // contract that doesn't fully implement the read surface, bad address)
+  // surfaces as null, not a partially-filled Collection.
+  if (
+    nameRes.status !== "success" ||
+    symbolRes.status !== "success" ||
+    ownerRes.status !== "success" ||
+    rendererLockedRes.status !== "success" ||
+    supplyLockedRes.status !== "success" ||
+    minterLockedRes.status !== "success" ||
+    rendererRes.status !== "success" ||
+    idModeRes.status !== "success" ||
+    primaryMinterRes.status !== "success" ||
+    cfgRes.status !== "success" ||
+    versionRes.status !== "success"
+  ) {
+    return null
+  }
+
+  const [cfgRaw, minted] = cfgRes.result as RawConfigReturn
+  const protocolVersion = Number(versionRes.result as bigint)
+
+  const assets = renderAssetsAddress()
+  const cover = assets
+    ? await client
+        .readContract({ address: assets, abi: renderAssetsAbi, functionName: "coverOf", args: [address] })
+        .catch(() => "")
+    : ""
+
+  const pmChain = primaryMinterRes.result as Address
+  const primaryMinter = pmChain && pmChain.toLowerCase() !== ZERO_ADDRESS ? pmChain : null
+  const sale = primaryMinter ? await getMinterSaleConfig(client, primaryMinter, protocolVersion) : null
+
+  const locks = decodeLocks(
+    protocolVersion,
+    {
+      isRendererLocked: rendererLockedRes.result as boolean,
+      isSupplyLocked: supplyLockedRes.result as boolean,
+      isMinterLocked: minterLockedRes.result as boolean,
+    },
+    permanenceRes as MulticallEntry<PermanenceTuple>,
+  )
+
+  return {
+    address,
+    protocolVersion,
+    isMinterLocked: locks.isMinterLocked,
+    isRoyaltyLocked: locks.isRoyaltyLocked,
+    sealed: locks.sealed,
+    name: nameRes.result as string,
+    symbol: symbolRes.result as string,
+    owner: ownerRes.result as Address,
+    isRendererLocked: locks.isRendererLocked,
+    isSupplyLocked: locks.isSupplyLocked,
+    renderer: rendererRes.result as Address,
+    cfg: decodeCollectionConfig(cfgRaw, Number(idModeRes.result) as IdMode),
+    primaryMinter,
+    sale,
+    work: emptyWork(),
+    cover: (cover as string) ?? "",
+    minted: minted as bigint,
+  }
+}
+
+/**
+ * Indexer-primary read: name/symbol/idMode/primaryMinter come from the
+ * indexed row, so the immutable identity needs no chain read, and the primary
+ * minter address is known before the read. That is the point of this path:
+ * its sale getters and the RenderAssets cover fold into the collection's own
+ * live multicall. One eth_call in place of the fallback's three.
+ *
+ * The live values are still read from chain, because the indexer either does
+ * not hold them or holds a creation-time value: owner is not updated on a
+ * post-deploy ownership handoff (the indexer only flips ownerRenounced), and
+ * renderer, the three locks, cap, royalty, minted and seal state are all
+ * settable after deploy. protocolVersion is read live too (version() is a
+ * free bytecode constant, always correct regardless of the indexer schema).
+ */
+export async function readCollectionFromIndexerRow(
+  client: ReturnType<typeof getClient>,
+  address: Address,
+  id: IndexedCollectionIdentity,
+): Promise<Collection | null> {
+  const base = { address, abi: surfaceAbi } as const
+  const minter =
+    id.primaryMinter && id.primaryMinter.toLowerCase() !== ZERO_ADDRESS ? (id.primaryMinter as Address) : null
+  const assets = renderAssetsAddress()
+
+  // Order is fixed so the slices below line up: 8 collection reads, then the
+  // optional cover, then the optional 9 minter getters. Typed as the loose
+  // ContractFunctionParameters[] (not a const literal): the array mixes
+  // no-arg getters with the cover's one-arg coverOf, a heterogeneous shape
+  // viem's multicall generic cannot narrow (it tries, hits a deep-instantiation
+  // ceiling). The result is decoded positionally against MulticallEntry below.
+  const COLLECTION_READS = 8
+  const collectionContracts: ContractFunctionParameters[] = [
+    { ...base, functionName: "renderer" },
+    { ...base, functionName: "isRendererLocked" },
+    { ...base, functionName: "isSupplyLocked" },
+    { ...base, functionName: "isMinterLocked" },
+    { ...base, functionName: "owner" },
+    { ...base, functionName: "config" },
+    { ...base, functionName: "version" },
+    { address, abi: surfaceV2Abi, functionName: "permanence" },
+  ]
+  const coverContracts: ContractFunctionParameters[] = assets
+    ? [{ address: assets, abi: renderAssetsAbi, functionName: "coverOf", args: [address] }]
+    : []
+  const minterContracts: ContractFunctionParameters[] = minter ? [...buildMinterContracts(minter)] : []
+
+  const results = (await client.multicall({
+    allowFailure: true,
+    contracts: [...collectionContracts, ...coverContracts, ...minterContracts],
+  })) as readonly MulticallEntry<unknown>[]
+
+  const [rendererRes, rendererLockedRes, supplyLockedRes, minterLockedRes, ownerRes, cfgRes, versionRes, permanenceRes] =
+    results
+  let idx = COLLECTION_READS
+  const coverRes = assets ? results[idx++] : undefined
+  const minterResults = minter ? results.slice(idx, idx + 9) : null
+
+  if (
+    rendererRes?.status !== "success" ||
+    rendererLockedRes?.status !== "success" ||
+    supplyLockedRes?.status !== "success" ||
+    minterLockedRes?.status !== "success" ||
+    ownerRes?.status !== "success" ||
+    cfgRes?.status !== "success" ||
+    versionRes?.status !== "success"
+  ) {
+    return null
+  }
+
+  const [cfgRaw, minted] = cfgRes.result as RawConfigReturn
+  const protocolVersion = Number(versionRes.result as bigint)
+  const cover = coverRes?.status === "success" ? ((coverRes.result as string) ?? "") : ""
+  const sale = minterResults ? decodeMinterSaleConfig(minterResults, protocolVersion === 2) : null
+
+  const locks = decodeLocks(
+    protocolVersion,
+    {
+      isRendererLocked: rendererLockedRes.result as boolean,
+      isSupplyLocked: supplyLockedRes.result as boolean,
+      isMinterLocked: minterLockedRes.result as boolean,
+    },
+    permanenceRes as MulticallEntry<PermanenceTuple>,
+  )
+
+  return {
+    address,
+    protocolVersion,
+    isMinterLocked: locks.isMinterLocked,
+    isRoyaltyLocked: locks.isRoyaltyLocked,
+    sealed: locks.sealed,
+    name: id.name as string,
+    symbol: id.symbol as string,
+    owner: ownerRes.result as Address,
+    isRendererLocked: locks.isRendererLocked,
+    isSupplyLocked: locks.isSupplyLocked,
+    renderer: rendererRes.result as Address,
+    cfg: decodeCollectionConfig(cfgRaw, id.idMode as IdMode),
+    primaryMinter: minter,
+    sale,
+    work: emptyWork(),
+    cover,
+    minted: minted as bigint,
+  }
+}
+
 export async function getCollection(address: Address): Promise<Collection | null> {
   // Membership gate first (indexed set, RPC fallback, see
   // isFactoryCollection): an arbitrary pasted address that merely
@@ -361,136 +569,18 @@ export async function getCollection(address: Address): Promise<Collection | null
   if (!(await isFactoryCollection(address))) return null
   return pgCache(`sc-collection:${lc(address)}`, 20, async () => {
     const client = getClient()
-    const base = { address, abi: surfaceAbi } as const
     try {
-      // allowFailure:true (not the plain per-field abort of the identity
-      // reads below) because permanence() is v2 only: it fails for a v1
-      // collection and that failure must not take down the rest of this
-      // read. One round trip either way.
-      const results = await client.multicall({
-        allowFailure: true,
-        contracts: [
-          { ...base, functionName: "name" },
-          { ...base, functionName: "symbol" },
-          { ...base, functionName: "owner" },
-          { ...base, functionName: "isRendererLocked" },
-          { ...base, functionName: "isSupplyLocked" },
-          { ...base, functionName: "isMinterLocked" },
-          { ...base, functionName: "renderer" },
-          // idMode is a structural fact read separately since the Sequential/
-          // Pooled split moved it out of the config struct. v2 keeps idMode()
-          // as a compat shim, always returning Sequential.
-          { ...base, functionName: "idMode" },
-          // primaryMinter read live (authoritative, kept current by
-          // PrimaryMinterSet). Folded into this multicall so it costs no
-          // extra round trip.
-          { ...base, functionName: "primaryMinter" },
-          { ...base, functionName: "config" },
-          // version() is a bytecode constant (1 or 2) shared byte-for-byte
-          // between v1 and v2's ISurfaceView selectors, so reading it
-          // through the v1 ABI still decodes correctly against a v2
-          // collection.
-          { ...base, functionName: "version" },
-          // permanence() exists only on SurfaceV2 (see SurfaceV2.sol). A v1
-          // collection's call fails here and the lock/seal fields below
-          // fall back to the individual v1 reads above.
-          { address, abi: surfaceV2Abi, functionName: "permanence" },
-        ],
-      })
-      const [
-        nameRes,
-        symbolRes,
-        ownerRes,
-        rendererLockedRes,
-        supplyLockedRes,
-        minterLockedRes,
-        rendererRes,
-        idModeRes,
-        primaryMinterRes,
-        cfgRes,
-        versionRes,
-        permanenceRes,
-      ] = results
-
-      // Every field but permanence() must succeed, a real failure here
-      // (bring-your-own contract that doesn't fully implement the read
-      // surface, bad address) surfaces as null, not a partially-filled
-      // Collection.
-      if (
-        nameRes.status !== "success" ||
-        symbolRes.status !== "success" ||
-        ownerRes.status !== "success" ||
-        rendererLockedRes.status !== "success" ||
-        supplyLockedRes.status !== "success" ||
-        minterLockedRes.status !== "success" ||
-        rendererRes.status !== "success" ||
-        idModeRes.status !== "success" ||
-        primaryMinterRes.status !== "success" ||
-        cfgRes.status !== "success" ||
-        versionRes.status !== "success"
-      ) {
-        return null
+      // Indexer-primary path on the canonical mainnet instance. Fork/sepolia
+      // instances skip it: the indexed set describes mainnet there, not the
+      // local factory, so they read fully live. A row missing its immutable
+      // fields (indexed before SurfaceCreated carried them) also falls back.
+      if (!FORK_MODE && !USE_SEPOLIA) {
+        const id = await getCollectionRowFromIndexer(address)
+        if (id && id.name !== null && id.symbol !== null && id.idMode !== null) {
+          return await readCollectionFromIndexerRow(client, address, id)
+        }
       }
-
-      const [cfgRaw, minted] = cfgRes.result as RawConfigReturn
-      const protocolVersion = Number(versionRes.result as bigint)
-
-      // Presentation data lives in renderer-land: the cover in RenderAssets.
-      // Generative work now ships as bring-your-own renderers (each renderer
-      // owns its config and tokenURI), so there is no shared work-config read
-      // here; the cover read tolerates absence (custom renderer, nothing set).
-      const assets = renderAssetsAddress()
-      const cover = assets
-        ? await client
-            .readContract({
-              address: assets,
-              abi: renderAssetsAbi,
-              functionName: "coverOf",
-              args: [address],
-            })
-            .catch(() => "")
-        : ""
-
-      // primaryMinter is read live above (was an indexer-only read, which left
-      // the mint UI blind on chains with no indexer, fork/sepolia, and during
-      // the indexer lag right after a mainnet deploy; both fell through to the
-      // pooled "mints through its minter" notice).
-      const pmChain = primaryMinterRes.result as Address
-      const primaryMinter = pmChain && pmChain.toLowerCase() !== ZERO_ADDRESS ? pmChain : null
-      const sale = primaryMinter ? await getMinterSaleConfig(client, primaryMinter, protocolVersion) : null
-
-      const locks = decodeLocks(
-        protocolVersion,
-        {
-          isRendererLocked: rendererLockedRes.result as boolean,
-          isSupplyLocked: supplyLockedRes.result as boolean,
-          isMinterLocked: minterLockedRes.result as boolean,
-        },
-        permanenceRes as MulticallEntry<PermanenceTuple>,
-      )
-
-      return {
-        address,
-        protocolVersion,
-        isMinterLocked: locks.isMinterLocked,
-        isRoyaltyLocked: locks.isRoyaltyLocked,
-        sealed: locks.sealed,
-        name: nameRes.result as string,
-        symbol: symbolRes.result as string,
-        owner: ownerRes.result as Address,
-        isRendererLocked: locks.isRendererLocked,
-        isSupplyLocked: locks.isSupplyLocked,
-        renderer: rendererRes.result as Address,
-        cfg: decodeCollectionConfig(cfgRaw, Number(idModeRes.result) as IdMode),
-        primaryMinter,
-        sale,
-        // Shared work-config read removed with the shared GenerativeRenderer;
-        // bring-your-own renderers own their config. Kept as an empty default
-        // so consumers that gate on work.code.length fall back to the cover.
-        work: { code: [], deps: [], codeURI: "", codeHash: ("0x" + "0".repeat(64)) as `0x${string}`, injectionVersion: 1, renderParams: "" },
-        cover: (cover as string) ?? "",
-        minted: minted as bigint,
-      }
+      return await readCollectionFullyLive(client, address)
     } catch {
       return null
     }
@@ -936,23 +1026,54 @@ export async function getRendererPreview(
   })
 }
 
-/** The first `count` onchain previews, or null when the renderer doesn't
- *  support them (probed with index 0; unsupported renderers cost exactly
- *  one cached failed call). */
-export async function getRendererPreviews(
+/** A decoded sample renderable by the pre-mint hero: an inline HTML
+ *  document or an image source. Never "unsupported", see
+ *  getRendererSamplePreview, which maps that case to null. */
+export type RenderableSample = Exclude<PreviewDecodeResult, { kind: "unsupported" }>
+
+/**
+ * One deterministic sample from a renderer implementing the OPTIONAL
+ * IPreviewRenderer extension, for the pre-mint collection page hero:
+ * previewURI(collection, 1, seed) with a seed fixed by the collection
+ * address (stable across page loads and cacheable, not a rolled sample).
+ * Decoded with decodePreviewURI, the same decoder the create wizard's
+ * renderer check uses. This is a display sample, not resolved token
+ * metadata, so it skips fetchMetadataForUri's remote-URL fetch. Null when
+ * the renderer doesn't implement previewURI, the call reverts, or the
+ * decoded result is unsupported.
+ *
+ * 1 hour TTL: the key includes the renderer, and previewURI is deterministic
+ * for a fixed collection/renderer/seed, so a setRenderer changes the key
+ * instead of requiring invalidation.
+ */
+export async function getRendererSamplePreview(
   collection: Address,
   renderer: Address,
-  nextTokenId: bigint,
-  count: number,
-): Promise<OnchainPreview[] | null> {
-  const first = await getRendererPreview(collection, renderer, nextTokenId, 0)
-  if (!first) return null
-  const rest = await Promise.all(
-    Array.from({ length: count - 1 }, (_, i) =>
-      getRendererPreview(collection, renderer, nextTokenId, i + 1),
-    ),
-  )
-  return [first, ...rest.filter((p): p is OnchainPreview => p !== null)]
+): Promise<RenderableSample | null> {
+  if (renderer.toLowerCase() === ZERO_ADDRESS) return null
+  return pgCache(`sc-premint-sample:${lc(collection)}:${lc(renderer)}`, 3600, async () => {
+    const client = getClient()
+    const seed = keccak256(stringToBytes(collection.toLowerCase()))
+    const uri = await client
+      .call({
+        to: renderer,
+        data: encodeFunctionData({
+          abi: previewRendererAbi,
+          functionName: "previewURI",
+          args: [collection, 1n, seed],
+        }),
+        gas: 300_000_000n,
+      })
+      .then(({ data }) =>
+        data
+          ? (decodeFunctionResult({ abi: previewRendererAbi, functionName: "previewURI", data }) as string)
+          : null,
+      )
+      .catch(() => null)
+    if (!uri) return null
+    const decoded = decodePreviewURI(uri)
+    return decoded.kind === "unsupported" ? null : decoded
+  })
 }
 
 const rendererTokenUriAbi = [
@@ -1016,6 +1137,67 @@ export async function getRendererTokenPreview(
   })
 }
 
+// A token's render is deterministic for a fixed (collection, renderer,
+// tokenId): the same three inputs always decode the same visual, so the
+// cache key includes the renderer (a setRenderer call invalidates by
+// pointing at a fresh key) and the TTL is long, not the 20s/300s the rest
+// of this file uses for live chain state.
+const TOKEN_RENDER_TTL_SEC = 30 * 24 * 60 * 60
+
+/**
+ * Real per-token renders for the post-mint collection grid: `tokenIds`'
+ * tokenURI, read from the renderer directly and decoded with
+ * decodePreviewURI (image, else inline HTML animation_url). One multicall
+ * covers every id whose render isn't already cached; ids already cached
+ * cost nothing beyond the Postgres lookup, so a warm page pays zero eth_calls
+ * here. Grid ids come from selectGridTokenIds, never from a speculative
+ * "next N ids" guess, so no call is spent on an id nothing minted.
+ */
+export async function getCollectionTokenRenders(
+  collection: Address,
+  renderer: Address,
+  tokenIds: number[],
+): Promise<Map<number, RenderableSample | null>> {
+  const result = new Map<number, RenderableSample | null>()
+  if (tokenIds.length === 0 || renderer.toLowerCase() === ZERO_ADDRESS) return result
+
+  const keyFor = (id: number) => `sc-token-render:${lc(collection)}:${lc(renderer)}:${id}`
+  const cachedFlags = await Promise.all(tokenIds.map((id) => pgCacheHas(keyFor(id))))
+  const missingIds = tokenIds.filter((_, i) => !cachedFlags[i])
+
+  // The one multicall a cold page load pays: every uncached id's tokenURI,
+  // in a single round trip regardless of how many ids are missing.
+  const fetched = new Map<number, string | null>()
+  if (missingIds.length > 0) {
+    const client = getClient()
+    const calls = await client.multicall({
+      allowFailure: true,
+      contracts: missingIds.map((id) => ({
+        address: renderer,
+        abi: rendererTokenUriAbi,
+        functionName: "tokenURI" as const,
+        args: [collection, BigInt(id)] as const,
+      })),
+    })
+    calls.forEach((r, i) => {
+      fetched.set(missingIds[i], r.status === "success" ? (r.result as string) : null)
+    })
+  }
+
+  await Promise.all(
+    tokenIds.map(async (id) => {
+      const decoded = await pgCache(keyFor(id), TOKEN_RENDER_TTL_SEC, async () => {
+        const uri = fetched.get(id) ?? null
+        if (!uri) return null
+        const d = decodePreviewURI(uri)
+        return d.kind === "unsupported" ? null : d
+      })
+      result.set(id, decoded)
+    }),
+  )
+  return result
+}
+
 export type RecentTokenEntry = {
   tokenId: string
   seed: `0x${string}`
@@ -1077,28 +1259,27 @@ export async function getAttribution(_collection: Address): Promise<CreatorEntry
   return []
 }
 
-/** The collection's own description from its contractURI() metadata (a data-URI
- *  JSON), or null. Used to feed the "About this work" copy from the contract
- *  instead of hardcoded text. Cached — collection metadata is near-static. */
-export async function getContractDescription(address: Address): Promise<string | null> {
-  return pgCache(`contract-desc:${lc(address)}`, 3600, async () => {
+/**
+ * The collection's own contractURI() metadata: description (shown verbatim
+ * in place of any PND placeholder copy) and image (a fallback cover when
+ * RenderAssets has none). Keyed on collection + renderer since a renderer
+ * swap changes what contractURI returns for the same address. One eth_call,
+ * try/catch.
+ *
+ * 1 hour TTL: the key already includes the renderer, so a setRenderer
+ * changes the key instead of requiring invalidation.
+ */
+export async function getContractMetadata(address: Address, renderer: Address): Promise<ContractMetadata> {
+  return pgCache(`sc-contract-uri:${lc(address)}:${lc(renderer)}`, 3600, async () => {
     try {
       const uri = (await getClient().readContract({
         address,
         abi: surfaceAbi,
         functionName: "contractURI",
       })) as string
-      const comma = uri.indexOf(",")
-      if (comma === -1) return null
-      const payload = uri.slice(comma + 1)
-      const json = uri.slice(0, comma).includes("base64")
-        ? Buffer.from(payload, "base64").toString("utf8")
-        : decodeURIComponent(payload)
-      const meta = JSON.parse(json) as { description?: string }
-      const d = typeof meta.description === "string" ? meta.description.trim() : ""
-      return d || null
+      return decodeContractURI(uri)
     } catch {
-      return null
+      return { description: null, image: null }
     }
   })
 }

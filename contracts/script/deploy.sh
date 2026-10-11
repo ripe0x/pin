@@ -205,7 +205,8 @@ fi
 FORGE_ARGS=(script script/DeploySurfaceV2.s.sol --tc DeploySurfaceV2 --rpc-url "$RPC_URL" "${WALLET_ARGS[@]}" "${SLOW_ARGS[@]}" --broadcast)
 [ "$RESUME_FLAG" = "1" ] && FORGE_ARGS+=(--resume)
 if [ "$VERIFY" = "1" ]; then
-  FORGE_ARGS+=(--verify --etherscan-api-key "$ETHERSCAN_API_KEY")
+  # forge reads ETHERSCAN_API_KEY from the environment; the key stays out of argv.
+  FORGE_ARGS+=(--verify)
 fi
 forge "${FORGE_ARGS[@]}"
 

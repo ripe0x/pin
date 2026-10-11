@@ -27,6 +27,9 @@ apps/indexer/.ponder/
 # Ponder codegen output (regenerate with `pnpm --filter @pin/indexer codegen`)
 apps/indexer/ponder-env.d.ts
 
+# Baseline config fetched from origin/main by the sepolia-mode parity test
+apps/indexer/ponder.config.baseline.gen.ts
+
 # Netlify CLI / build state (web deploys on Netlify; this is local state)
 .netlify/
 
