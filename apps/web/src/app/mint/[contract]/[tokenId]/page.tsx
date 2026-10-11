@@ -38,8 +38,8 @@ export default async function MintPiecePage({ params }: { params: Params }) {
   if (id === null) notFound()
 
   // Provenance is descriptor-driven (`provenanceSource`), never hardcoded to a
-  // slug; it reads from the indexer and degrades to `[]` (section omitted) when
-  // the tables don't exist yet — so this branch ships before the contract does.
+  // slug; it reads from the indexer and the section is omitted when the read
+  // returns no rows or fails (null).
   const [piece, snapshot, provenance] = await Promise.all([
     getPieceToken(desc, id),
     getMintSnapshot(desc),
@@ -100,7 +100,7 @@ export default async function MintPiecePage({ params }: { params: Params }) {
 
           {/* Indexer-backed provenance timeline (mint phase, transfers,
               redeems, re-mints). Renders nothing until indexing is live. */}
-          <HomageProvenance entries={provenance} />
+          <HomageProvenance entries={provenance ?? []} />
 
           <section className="py-5 border-b border-gray-100 space-y-2 text-[11px] font-mono">
             <Fact label={`${desc.tokenNoun} #`} value={String(piece.tokenId)} />
