@@ -42,7 +42,7 @@ export default async function RedeemPage({ params }: { params: Params }) {
 
       <div className="border-y border-gray-200">
         <div className="mx-auto max-w-[640px] px-6 py-10 lg:px-12 lg:py-14">
-          <HomageRedeem minter={minter} collection={addr} />
+          <HomageRedeem minter={minter} />
           <p className="mt-8 text-[10px] font-mono uppercase tracking-wider text-gray-400">
             <a
               href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
