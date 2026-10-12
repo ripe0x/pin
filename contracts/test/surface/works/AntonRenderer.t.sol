@@ -73,23 +73,29 @@ contract AntonRendererTest is Test {
     }
 
     function test_traits_derivedFromSeed() public {
-        // seed 0x405 = 1029 -> palette 1029 % 10 = 9 (J); tone (1029>>8)%2 = 4%2 = 0 (sun)
+        // seed 0x405 = 1029 -> palette 1029 % 10 = 9 (Golden Rift);
+        // mode (1029>>8)&1 = 0 (Sun); flow (1029>>16)&1 = 0 (down).
         uint256 id = col.mint(collector, bytes32(uint256(0x405)));
         string memory json = _json(id);
-        assertTrue(_has(json, '"trait_type":"Palette","value":"J"'), "palette");
-        assertTrue(_has(json, '"trait_type":"Tone","value":"sun"'), "tone");
+        assertTrue(_has(json, '"trait_type":"Palette","value":"Golden Rift"'), "palette");
+        assertTrue(_has(json, '"trait_type":"Mode","value":"Sun"'), "mode");
+        assertTrue(_has(json, '"trait_type":"Flow","value":"down"'), "flow");
         assertFalse(_has(json, "Mint Order"), "no mint order trait");
         assertFalse(_has(json, '"trait_type":"Seed"'), "no seed trait");
+        assertFalse(_has(json, '"trait_type":"Form"'), "no form trait");
     }
 
-    function test_attributes_exactlyPaletteAndTone() public {
+    function test_attributes_exactlyPaletteModeFlow() public {
         uint256 id = col.mint(collector, bytes32(uint256(0x405)));
         string memory json = _json(id);
-        // The attributes array is exactly [Palette, Tone] in that order, no
-        // Mint Order or Seed entries.
+        // The attributes array is exactly [Palette, Mode, Flow] in that order,
+        // no Mint Order, Seed or Form entries.
         assertTrue(
-            _has(json, ',"attributes":[{"trait_type":"Palette","value":"J"},{"trait_type":"Tone","value":"sun"}]}'),
-            "attributes array is exactly Palette+Tone"
+            _has(
+                json,
+                ',"attributes":[{"trait_type":"Palette","value":"Golden Rift"},{"trait_type":"Mode","value":"Sun"},{"trait_type":"Flow","value":"down"}]}'
+            ),
+            "attributes array is exactly Palette+Mode+Flow"
         );
     }
 

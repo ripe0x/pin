@@ -28,7 +28,7 @@ import {AntonDeploy} from "./AntonDeploy.sol";
 ///         RENDER_ASSETS  deployed RenderAssets singleton; required, non-zero
 ///         ANTON_OWNER    collection owner; defaults to the signer
 ///         ANTON_FACTORY  canonical SurfaceFactory; unset deploys a fresh one
-///         ANTON_SUPPLY   supply cap; defaults to 999
+///         ANTON_SUPPLY   supply cap; defaults to 256
 ///         ANTON_ROYALTY_BPS  royalty bps; defaults to 500
 ///         ANTON_PRICE    mint price in wei; defaults to 0.001 ether
 ///         ANTON_NAME     collection name; defaults to "Form of Solitude"
@@ -45,7 +45,7 @@ contract DeployAntonWork is AntonDeploy {
         address factory = _factory();
 
         SurfaceConfig memory cfg = SurfaceConfig({
-            supplyCap: vm.envOr("ANTON_SUPPLY", uint256(999)),
+            supplyCap: vm.envOr("ANTON_SUPPLY", uint256(256)),
             royaltyBps: uint16(vm.envOr("ANTON_ROYALTY_BPS", uint256(500))),
             royaltyReceiver: owner,
             renderer: renderer,

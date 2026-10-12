@@ -44,7 +44,7 @@
   // Palette-A base pivot: the sun/moon mood toggle.
   var TONE_BASE = { sun: [0.6176, 0.478, 0.3157], moon: [0.376, 0.478, 0.6157] };
 
-  var RXY_WARP_MODE_COUNT = 15;
+  var RXY_WARP_MODE_COUNT = 25;
   var RXY_WARP_ADD_MODE_COUNT = 5;
   // Shape-morph cadence (source values): hold, then a short blend to the next
   // warp mode. Synced across a wallet.
@@ -111,7 +111,11 @@
   // ── configuration (per token, from the seed) ────────────────────────────────
   var activePalette = PALETTES[paletteMode];
   var paletteABase = TONE_BASE[toneMode].slice();
-  var flowMode = rng() < 0.5 ? "downflow" : "upflow";
+  // Flow direction, published as the Flow trait. Derived from a seed bit, not
+  // the rng chain, so AntonRenderer reproduces it: (seed >> 16) & 1, 0 = down,
+  // 1 = up. Keep in lockstep with AntonRenderer. The "off" state is a live
+  // control only, never a minted outcome.
+  var flowMode = (seedBig >> 16n) & 1n ? "upflow" : "downflow";
   var persistentColAALayerEnabled = rng() < 0.65;
   var MAX_LAYERS = persistentColAALayerEnabled ? 5 : 4;
   var flowOffset = pickStepped(300, 650, 25);
@@ -121,7 +125,12 @@
   var modeCY = 1.0;
   var colAAPhase = Math.floor(rng() * 4) + 1;
   var rxyWarpAddMode = Math.floor(rng() * RXY_WARP_ADD_MODE_COUNT);
-  var seedWarpMode = Math.floor(rng() * RXY_WARP_MODE_COUNT); // first entry of the warp ring
+  // Opening form: the home warp mode at load and in the capture still, and the
+  // first entry of the warp ring. Drawn from OPENING_FORM_POOL, the warp indices
+  // minus 15, 17, 18 and 24, so a token never opens on those four; the morph
+  // ring still reaches them.
+  var OPENING_FORM_POOL = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 19, 20, 21, 22, 23];
+  var seedWarpMode = OPENING_FORM_POOL[Math.floor(rng() * OPENING_FORM_POOL.length)];
 
   var staticShapeParams = new Float32Array([0.52, 0.18, 1.0, 0.4, 0.52, 0.32, 0.5, 0.31]);
   var STATIC_COLS_COUNT = 3;
@@ -227,7 +236,17 @@
     "else if(mode==11){offset.x+=.025*cos(p.y*18.5);}" +
     "else if(mode==12){offset.y+=.025*cos(p.y*18.5);}" +
     "else if(mode==13){offset.y+=.015*cos(p.x*22.5);}" +
-    "else{offset.x+=.025*cos(p.x*15.5);}" +
+    "else if(mode==14){offset.x+=.025*cos(p.x*15.5);}" +
+    "else if(mode==15){offset.x+=.082*cos(p.x*18.2);}" +
+    "else if(mode==16){offset.y+=.082*cos(p.x*8.2);}" +
+    "else if(mode==17){offset.y+=.082*cos(p.y*18.2)+.082*cos(p.x*8.2);}" +
+    "else if(mode==18){offset.y+=.062*cos(p.y*14.2)-.082*cos(p.x*12.2);}" +
+    "else if(mode==19){offset.x+=.052*cos(p.y*8.2)-.082*cos(p.x*15.0);}" +
+    "else if(mode==20){offset.y+=.062*cos(p.y*17.2)-.03*cos(p.x*10.2);}" +
+    "else if(mode==21){offset.x-=.062*cos(p.y*12.2)-.03*cos(p.x*20.2);}" +
+    "else if(mode==22){offset.y-=.062*cos(p.y*15.5)-.03*cos(p.x*9.3);}" +
+    "else if(mode==23){offset.x-=.062*cos(p.y*15.5)-.03*cos(p.x*19.3);}" +
+    "else{offset.y+=.092*cos(p.y*17.5)-.03*cos(p.x*13.9);}" +
     "return offset;}" +
     "vec2 additiveWarpOffset(int mode,vec2 p,float time){vec2 offset=vec2(0.0);" +
     "if(mode==0){offset+=vec2(0.0);}" +
@@ -322,8 +341,6 @@
     "vec2 baseColAACenter=vec2(0.52,0.26+delta*0.08);" +
     "vec2 colAACenter=mix(baseColAACenter,dynamicLayerCenter,0.16*dynamicLinkN);" +
     "float colAAMask=blob(uv,colAACenter,vec2(colAAW,colAAH),2.6);" +
-    "vec2 bridgeCenter=vec2(mix(0.52,colAACenter.x,0.5),mix(0.38,colAACenter.y,0.55));" +
-    "float colAAStem=blob(uv,bridgeCenter,vec2(0.20,0.28),1.8);" +
     "float dynamicPenetration=smoothstep(0.08,0.90,colAAMask*0.65);" +
     "float midBlueLag=0.10+0.04*sin(u_time*0.11-1.1);" +
     "vec2 midBlueTarget=mix(midBlueShape.xy,colAACenter,0.40);" +

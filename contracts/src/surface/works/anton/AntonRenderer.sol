@@ -12,10 +12,11 @@ import {CodeRef, MetadataText} from "../../templates/CodeTypes.sol";
 /// @notice The anton work's renderer. A chain-live ScriptyRenderer: everything
 ///         about a token derives from its seed (fully generative), and the
 ///         current owner drives the wallet-synced shape/background TIMING. The
-///         owner is injected into the render context; palette + tone are
-///         published as onchain traits, derived from the seed the SAME way the
-///         JS derives them: `palette = seed % 10`, `tone = (seed >> 8) % 2`.
-///         Keep those two formulas in lockstep with anton.js.
+///         owner is injected into the render context; palette, mode and flow
+///         are published as onchain traits (the palette as its name), derived
+///         from the seed the SAME way the JS derives them: `palette = seed % 10`,
+///         `mode = (seed >> 8) & 1`, `flow = (seed >> 16) & 1`. Keep those
+///         formulas in lockstep with anton.js.
 ///
 ///         Because the render depends on the current owner (state a pre-mint
 ///         preview cannot fake), the inherited `previewURI` is not faithful for
@@ -26,7 +27,8 @@ contract AntonRenderer is ScriptyRenderer {
     using LibString for address;
 
     string[] private _paletteNames;
-    string[] private _toneNames;
+    string[] private _modeNames;
+    string[] private _flowNames;
 
     constructor(
         address scriptyBuilder_,
@@ -42,8 +44,20 @@ contract AntonRenderer is ScriptyRenderer {
             scriptyBuilder_, gunzipStore_, gunzipFile_, code_, deps_, injectionVersion_, renderAssets_, metadataText_
         )
     {
-        _paletteNames = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
-        _toneNames = ["sun", "moon"];
+        _paletteNames = [
+            "Celestial Azure",
+            "Purple Thunder",
+            "Jade Mist",
+            "Fiery Origin",
+            "Twilight Amber",
+            "Lunar Depth",
+            "Turquoise Current",
+            "Rose Ash",
+            "Sapphire Silence",
+            "Golden Rift"
+        ];
+        _modeNames = ["Sun", "Moon"];
+        _flowNames = ["down", "up"];
     }
 
     /// @dev Standard render context plus `owner` (drives the wallet-synced
@@ -74,9 +88,10 @@ contract AntonRenderer is ScriptyRenderer {
         );
     }
 
-    /// @dev Attributes: Palette and Tone, derived from the seed. Overrides the
-    ///      base's Mint Order and Seed provenance traits, which this work does
-    ///      not publish.
+    /// @dev Attributes: Palette, Mode and Flow, derived from the seed. Overrides
+    ///      the base's Mint Order and Seed provenance traits, which this work
+    ///      does not publish. Derivation matches anton.js: palette = seed % 10,
+    ///      mode = (seed >> 8) & 1, flow = (seed >> 16) & 1. Keep in lockstep.
     function _attributes(
         ISurfaceView, /* c */
         uint256, /* tokenId */
@@ -84,9 +99,16 @@ contract AntonRenderer is ScriptyRenderer {
     ) internal view override returns (bytes memory) {
         uint256 s = uint256(seed);
         string memory palette = _paletteNames[s % _paletteNames.length];
-        string memory tone = _toneNames[(s >> 8) % _toneNames.length];
+        string memory mode = _modeNames[(s >> 8) & 1];
+        string memory flow = _flowNames[(s >> 16) & 1];
         return abi.encodePacked(
-            '[{"trait_type":"Palette","value":"', palette, '"},{"trait_type":"Tone","value":"', tone, '"}]'
+            '[{"trait_type":"Palette","value":"',
+            palette,
+            '"},{"trait_type":"Mode","value":"',
+            mode,
+            '"},{"trait_type":"Flow","value":"',
+            flow,
+            '"}]'
         );
     }
 

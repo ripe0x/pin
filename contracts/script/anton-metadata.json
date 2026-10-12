@@ -1,5 +1,5 @@
 {
-  "tokenDescription": "PLACEHOLDER token description, replace before mainnet",
-  "collectionDescription": "PLACEHOLDER collection description, replace before mainnet",
-  "externalUrl": "https://PLACEHOLDER.example, replace before mainnet"
+  "tokenDescription": "Form of Solitude is a fully onchain generative artwork rendered in real time using WebGL. Each token's unique form and colour are determined by parameters stored or derived onchain. Tokens held in the same wallet share a synchronization clock, allowing their individual forms and colours to evolve in a shared rhythm while retaining their unique identities.",
+  "collectionDescription": "Every ending holds the possibility of a new beginning. Nothing is ever truly complete, as existence unfolds through perpetual transformation. A solitary form moves through this endless cycle, constantly transforming while remaining itself.",
+  "externalUrl": ""
 }
