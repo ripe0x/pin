@@ -151,29 +151,31 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
     function tokenURI(address collection, uint256 tokenId) external view override returns (string memory) {
         ISurfaceView c = ISurfaceView(collection);
         bytes32 seed = c.tokenSeed(tokenId);
-        string memory htmlUri = _buildHTML(collection, tokenId, seed, "token");
-        string memory image = _image(collection, tokenId);
 
-        bytes memory json = abi.encodePacked(
-            '{"name":"',
-            LibString.escapeJSON(c.name()),
-            " #",
-            tokenId.toString(),
-            '"',
-            bytes(_tokenDescription).length > 0
-                ? string(abi.encodePacked(',"description":"', LibString.escapeJSON(_tokenDescription), '"'))
-                : "",
-            ',"animation_url":"',
-            htmlUri,
-            '"',
-            bytes(image).length > 0 ? string(abi.encodePacked(',"image":"', LibString.escapeJSON(image), '"')) : "",
-            bytes(_externalUrl).length > 0
-                ? string(abi.encodePacked(',"external_url":"', LibString.escapeJSON(_externalUrl), '"'))
-                : "",
-            ',"attributes":',
-            _attributes(c, tokenId, seed),
-            "}"
-        );
+        // Built incrementally with scoped string locals so the metadata resolvers
+        // are each called once and the function stays within the stack limit.
+        bytes memory json =
+            abi.encodePacked('{"name":"', LibString.escapeJSON(c.name()), " #", tokenId.toString(), '"');
+        {
+            string memory tokenDescription = _resolveTokenDescription(collection);
+            if (bytes(tokenDescription).length > 0) {
+                json = abi.encodePacked(json, ',"description":"', LibString.escapeJSON(tokenDescription), '"');
+            }
+        }
+        json = abi.encodePacked(json, ',"animation_url":"', _buildHTML(collection, tokenId, seed, "token"), '"');
+        {
+            string memory image = _image(collection, tokenId);
+            if (bytes(image).length > 0) {
+                json = abi.encodePacked(json, ',"image":"', LibString.escapeJSON(image), '"');
+            }
+        }
+        {
+            string memory externalUrl = _resolveExternalUrl(collection);
+            if (bytes(externalUrl).length > 0) {
+                json = abi.encodePacked(json, ',"external_url":"', LibString.escapeJSON(externalUrl), '"');
+            }
+        }
+        json = abi.encodePacked(json, ',"attributes":', _attributes(c, tokenId, seed), "}");
         return string(abi.encodePacked("data:application/json;base64,", Base64.encode(json)));
     }
 
@@ -210,23 +212,27 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
     ///      renderAssets is wired and a cover is set, and `external_link` when
     ///      set at construction.
     function contractURI(address collection) external view override returns (string memory) {
-        string memory cover =
-            address(renderAssets) == address(0) ? "" : renderAssets.coverOf(collection);
-        bytes memory json = abi.encodePacked(
-            '{"name":"',
-            LibString.escapeJSON(ISurfaceView(collection).name()),
-            '"',
-            bytes(_collectionDescription).length > 0
-                ? string(abi.encodePacked(',"description":"', LibString.escapeJSON(_collectionDescription), '"'))
-                : "",
-            bytes(cover).length > 0
-                ? string(abi.encodePacked(',"image":"', LibString.escapeJSON(cover), '"'))
-                : "",
-            bytes(_externalUrl).length > 0
-                ? string(abi.encodePacked(',"external_link":"', LibString.escapeJSON(_externalUrl), '"'))
-                : "",
-            "}"
-        );
+        // Built incrementally with scoped string locals (see tokenURI).
+        bytes memory json = abi.encodePacked('{"name":"', LibString.escapeJSON(ISurfaceView(collection).name()), '"');
+        {
+            string memory collectionDescription = _resolveCollectionDescription(collection);
+            if (bytes(collectionDescription).length > 0) {
+                json = abi.encodePacked(json, ',"description":"', LibString.escapeJSON(collectionDescription), '"');
+            }
+        }
+        {
+            string memory cover = address(renderAssets) == address(0) ? "" : renderAssets.coverOf(collection);
+            if (bytes(cover).length > 0) {
+                json = abi.encodePacked(json, ',"image":"', LibString.escapeJSON(cover), '"');
+            }
+        }
+        {
+            string memory externalUrl = _resolveExternalUrl(collection);
+            if (bytes(externalUrl).length > 0) {
+                json = abi.encodePacked(json, ',"external_link":"', LibString.escapeJSON(externalUrl), '"');
+            }
+        }
+        json = abi.encodePacked(json, "}");
         return string(abi.encodePacked("data:application/json;base64,", Base64.encode(json)));
     }
 
@@ -369,5 +375,21 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
         return abi.encodePacked(
             "[", order, '{"trait_type":"Seed","value":"', uint256(seed).toHexString(32), '"}', _workTraits(seed), "]"
         );
+    }
+
+    /// @dev Metadata copy, overridable by a subclass. Default: the immutable
+    ///      value set at construction, so a work that does not override keeps
+    ///      fixed copy. A subclass overrides these to source editable copy (e.g.
+    ///      from RenderAssets, keyed by collection) and fall back to the default.
+    function _resolveTokenDescription(address /* collection */) internal view virtual returns (string memory) {
+        return _tokenDescription;
+    }
+
+    function _resolveCollectionDescription(address /* collection */) internal view virtual returns (string memory) {
+        return _collectionDescription;
+    }
+
+    function _resolveExternalUrl(address /* collection */) internal view virtual returns (string memory) {
+        return _externalUrl;
     }
 }

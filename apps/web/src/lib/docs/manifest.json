@@ -109,7 +109,7 @@
               "title": "RenderAssets",
               "slug": "render-assets",
               "path": "/docs/surface/contracts/render-assets",
-              "description": "Registry of static display assets for renderers: each collection's cover image, per-token captures (thumbnails of rendered output), and a capture template resolved per token id."
+              "description": "Registry of static display assets for renderers: each collection's cover image, per-token captures (thumbnails of rendered output), a capture template resolved per token id, and editable metadata copy (token and collection descriptions, external_url) that overrides a renderer's baked defaults."
             },
             {
               "title": "ScriptyRenderer",

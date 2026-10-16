@@ -5,11 +5,12 @@
 > Not yet deployed to Ethereum mainnet. The address lands here at launch; until then, examples use an `<RENDER_ASSETS_ADDRESS>` placeholder.
 
 Registry of static display assets for renderers: each collection's cover image,
-per-token captures (thumbnails of rendered output), and a capture template
-resolved per token id. One immutable, ownerless singleton serves every
-collection. The cover and role grants are gated by each collection's owner/admin
-authority; the two capture writes may also be made by narrow, admin-granted
-capturer keys.
+per-token captures (thumbnails of rendered output), a capture template
+resolved per token id, and editable metadata copy (token and collection
+descriptions, external_url) that overrides a renderer's baked defaults. One
+immutable, ownerless singleton serves every collection. The cover, metadata copy
+and role grants are gated by each collection's owner/admin authority; the two
+capture writes may also be made by narrow, admin-granted capturer keys.
 
 The collection core stores no presentation data: its `tokenURI` defers to the
 renderer, and the bundled
@@ -35,6 +36,22 @@ function setCover(address collection, string uri) external
 Sets the collection's shared/cover image URI ("" clears it). The bundled
 renderers fall back to this for any token without a capture or template. Emits
 `CoverSet`.
+
+### setText
+
+```solidity
+function setText(address collection, string tokenDescription, string collectionDescription, string externalUrl) external
+```
+
+**Access:** collection owner or admin (`onlySurfaceAdmin`, else `NotSurfaceAdmin`)
+
+Sets the collection's metadata copy: token description, collection description,
+and external_url. Each field overrides the renderer's baked constructor default
+when non-empty; "" falls back to that default. This keeps the copy editable
+after deploy without redeploying the renderer. A renderer opts in by reading
+`tokenDescriptionOf` / `collectionDescriptionOf` / `externalUrlOf` for the
+collection. To prompt marketplaces to re-fetch, follow with the collection's
+ERC-4906 `notifyMetadataUpdate` (owner or admin). Emits `TextSet`.
 
 ### setCapturer
 
@@ -80,6 +97,15 @@ Emits `CaptureSet` per token.
 
 ## Read functions
 
+### collectionDescriptionOf
+
+```solidity
+function collectionDescriptionOf(address) external view returns (string)
+```
+
+The collection's collection-description override ("" falls back to the
+renderer's baked default).
+
 ### coverOf
 
 ```solidity
@@ -87,6 +113,15 @@ function coverOf(address) external view returns (string)
 ```
 
 The collection's shared/cover image URI ("" if none set).
+
+### externalUrlOf
+
+```solidity
+function externalUrlOf(address) external view returns (string)
+```
+
+The collection's external_url override ("" falls back to the renderer's baked
+default).
 
 ### imageFor
 
@@ -126,6 +161,15 @@ function templateOf(address) external view returns (string)
 The collection's capture URI template ("" if none set). Every `{id}` in it
 resolves to the token id when `imageFor` reads it.
 
+### tokenDescriptionOf
+
+```solidity
+function tokenDescriptionOf(address) external view returns (string)
+```
+
+The collection's token-description override ("" falls back to the renderer's
+baked default).
+
 ## Events
 
 ### CapturerSet
@@ -162,6 +206,14 @@ event CoverSet(address indexed collection, string uri)
 ```
 
 Emitted when a collection's cover image changes. Indexed by `collection`.
+
+### TextSet
+
+```solidity
+event TextSet(address indexed collection, string tokenDescription, string collectionDescription, string externalUrl)
+```
+
+Emitted when a collection's metadata copy changes. Indexed by `collection`.
 
 ## Errors
 

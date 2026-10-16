@@ -66,6 +66,7 @@ Every state-changing function in the Surface contracts and who may call it. Gene
 | Function | Access |
 | --- | --- |
 | [`setCover`](/docs/surface/contracts/render-assets#setcover) | collection owner or admin (`onlySurfaceAdmin`, else `NotSurfaceAdmin`) |
+| [`setText`](/docs/surface/contracts/render-assets#settext) | collection owner or admin (`onlySurfaceAdmin`, else `NotSurfaceAdmin`) |
 | [`setCapturer`](/docs/surface/contracts/render-assets#setcapturer) | collection owner or admin (`onlySurfaceAdmin`, else `NotSurfaceAdmin`) |
 | [`setCaptureTemplate`](/docs/surface/contracts/render-assets#setcapturetemplate) | collection owner, admin, or granted capturer (else `NotCaptureAuthorized`) |
 | [`setCaptures`](/docs/surface/contracts/render-assets#setcaptures) | collection owner, admin, or granted capturer (else `NotCaptureAuthorized`) |

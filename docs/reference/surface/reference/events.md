@@ -99,3 +99,5 @@ Every event the Surface contracts emit, grouped by contract. Signatures and fiel
 **[`CaptureTemplateSet`](/docs/surface/contracts/render-assets#capturetemplateset)** · Emitted when a collection's capture template or its coverage bound changes.
 
 **[`CoverSet`](/docs/surface/contracts/render-assets#coverset)** · Emitted when a collection's cover image changes.
+
+**[`TextSet`](/docs/surface/contracts/render-assets#textset)** · Emitted when a collection's metadata copy changes.

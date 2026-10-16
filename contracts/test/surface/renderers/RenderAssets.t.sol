@@ -234,4 +234,28 @@ contract RenderAssetsTest is Test {
         vm.prank(artist);
         assets.setCaptures(c, ids, uris);
     }
+
+    // ── metadata copy ────────────────────────────────────────────────────────
+
+    function test_setText_adminWrites_strangerRejected() public {
+        address c = address(collection);
+
+        vm.expectEmit(true, false, false, true, address(assets));
+        emit RenderAssets.TextSet(c, "tok", "coll", "https://x");
+        vm.prank(artist);
+        assets.setText(c, "tok", "coll", "https://x");
+        assertEq(assets.tokenDescriptionOf(c), "tok", "token description stored");
+        assertEq(assets.collectionDescriptionOf(c), "coll", "collection description stored");
+        assertEq(assets.externalUrlOf(c), "https://x", "external url stored");
+
+        // Admin can overwrite; "" clears a field back to unset.
+        vm.prank(admin);
+        assets.setText(c, "tok2", "coll2", "");
+        assertEq(assets.tokenDescriptionOf(c), "tok2", "admin overwrite");
+        assertEq(assets.externalUrlOf(c), "", "empty clears the field");
+
+        vm.expectRevert(RenderAssets.NotSurfaceAdmin.selector);
+        vm.prank(stranger);
+        assets.setText(c, "x", "y", "z");
+    }
 }

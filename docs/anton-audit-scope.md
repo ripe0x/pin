@@ -29,9 +29,21 @@ Plus shared changes, in scope for the diff:
   `description`/`external_url` and `contractURI` includes
   `description`/`external_link` only when the corresponding field is
   non-empty. `AntonRenderer` forwards the struct unchanged. Values are read
-  from `contracts/script/anton-metadata.json` at deploy time (`AntonDeploy`);
-  the checked-in file ships placeholder text that must be replaced before
-  mainnet deploy.
+  from `contracts/script/anton-metadata.json` at deploy time (`AntonDeploy`).
+  These constructor values are now the defaults; a per-collection override in
+  `RenderAssets` takes precedence when set (next bullet).
+- `contracts/src/surface/renderers/RenderAssets.sol` — added per-collection
+  metadata copy (`tokenDescriptionOf` / `collectionDescriptionOf` /
+  `externalUrlOf`) with an owner-or-admin `setText` setter (`onlySurfaceAdmin`,
+  else `NotSurfaceAdmin`) and a `TextSet` event, so the copy is editable after
+  deploy. `ScriptyRenderer` reads it through new `internal virtual` resolvers
+  (`_resolveTokenDescription` / `_resolveCollectionDescription` /
+  `_resolveExternalUrl`) that default to the constructor value; `AntonRenderer`
+  overrides them to prefer the `RenderAssets` value when non-empty, else the
+  default. `tokenURI` / `contractURI` were restructured to build the JSON
+  incrementally with scoped locals (stack limit); output bytes are unchanged
+  (full suite green). Confirm the auth is collection owner/admin only and that
+  an empty override falls back to the baked default.
 
 ## Out of scope
 

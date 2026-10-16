@@ -112,6 +112,34 @@ contract AntonRenderer is ScriptyRenderer {
         );
     }
 
+    /// @dev Metadata copy resolves to the RenderAssets override when set, else
+    ///      the baked default. Lets the collection owner/admin edit the copy
+    ///      post-deploy via RenderAssets.setText, keyed by collection, with no
+    ///      redeploy. "" in RenderAssets means unset, so the default stands.
+    function _resolveTokenDescription(address collection) internal view override returns (string memory) {
+        if (address(renderAssets) != address(0)) {
+            string memory t = renderAssets.tokenDescriptionOf(collection);
+            if (bytes(t).length > 0) return t;
+        }
+        return super._resolveTokenDescription(collection);
+    }
+
+    function _resolveCollectionDescription(address collection) internal view override returns (string memory) {
+        if (address(renderAssets) != address(0)) {
+            string memory t = renderAssets.collectionDescriptionOf(collection);
+            if (bytes(t).length > 0) return t;
+        }
+        return super._resolveCollectionDescription(collection);
+    }
+
+    function _resolveExternalUrl(address collection) internal view override returns (string memory) {
+        if (address(renderAssets) != address(0)) {
+            string memory t = renderAssets.externalUrlOf(collection);
+            if (bytes(t).length > 0) return t;
+        }
+        return super._resolveExternalUrl(collection);
+    }
+
     function _ownerOrZero(address collection, uint256 tokenId) private view returns (address) {
         try IERC721(collection).ownerOf(tokenId) returns (address o) {
             return o;

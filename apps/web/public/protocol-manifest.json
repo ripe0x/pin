@@ -42,7 +42,7 @@
           "kind": "singleton",
           "abi": "/abis/RenderAssets.json",
           "docs": "/docs/surface/contracts/render-assets",
-          "role": "Registry of static display assets for renderers: each collection's cover image, per-token captures (thumbnails of rendered output), and a capture template resolved per token id."
+          "role": "Registry of static display assets for renderers: each collection's cover image, per-token captures (thumbnails of rendered output), a capture template resolved per token id, and editable metadata copy (token and collection descriptions, external_url) that overrides a renderer's baked defaults."
         },
         "ScriptyRenderer": {
           "address": null,

@@ -8,8 +8,10 @@ import {ISurfaceAuth} from "../interfaces/ISurfaceAuth.sol";
 /// @title RenderAssets
 /// @notice Static display assets, stored outside the collection core: the
 ///         shared cover image, per-token captures (stills of rendered output
-///         for surfaces that cannot execute the renderer), and a per-collection
-///         capture template. Immutable, ownerless singleton shared by every
+///         for surfaces that cannot execute the renderer), a per-collection
+///         capture template, and overridable metadata copy (token and
+///         collection descriptions, external_url) a renderer may use in place of
+///         its baked defaults. Immutable, ownerless singleton shared by every
 ///         collection. Writes require the collection's own owner-or-admin
 ///         authority, except capture and template writes, which an admin may
 ///         delegate to a separate capturer role.
@@ -49,6 +51,13 @@ contract RenderAssets {
     ///         an admin grant that could reroute funds.
     mapping(address => mapping(address => bool)) public isCapturer;
 
+    /// @notice Per-collection metadata copy ("" = unset; a renderer falls back
+    ///         to its baked default). Overrides the renderer's constructor text
+    ///         when non-empty, so the copy stays editable after deploy.
+    mapping(address => string) public tokenDescriptionOf;
+    mapping(address => string) public collectionDescriptionOf;
+    mapping(address => string) public externalUrlOf;
+
     error NotSurfaceAdmin();
     error NotCaptureAuthorized();
     error LengthMismatch();
@@ -57,6 +66,7 @@ contract RenderAssets {
     event CaptureSet(address indexed collection, uint256 indexed tokenId, string uri);
     event CaptureTemplateSet(address indexed collection, string template, uint256 maxTokenId);
     event CapturerSet(address indexed collection, address indexed account, bool allowed);
+    event TextSet(address indexed collection, string tokenDescription, string collectionDescription, string externalUrl);
 
     /// @dev Same authority root as the collection's own setters: owner or admin.
     modifier onlySurfaceAdmin(address collection) {
@@ -82,6 +92,22 @@ contract RenderAssets {
     function setCover(address collection, string calldata uri) external onlySurfaceAdmin(collection) {
         coverOf[collection] = uri;
         emit CoverSet(collection, uri);
+    }
+
+    /// @notice Set the collection's metadata copy. Each field overrides the
+    ///         renderer's baked default when non-empty; "" falls back to the
+    ///         default. Owner-or-admin only. To prompt marketplaces to re-fetch,
+    ///         follow with the collection's ERC-4906 notifyMetadataUpdate.
+    function setText(
+        address collection,
+        string calldata tokenDescription,
+        string calldata collectionDescription,
+        string calldata externalUrl
+    ) external onlySurfaceAdmin(collection) {
+        tokenDescriptionOf[collection] = tokenDescription;
+        collectionDescriptionOf[collection] = collectionDescription;
+        externalUrlOf[collection] = externalUrl;
+        emit TextSet(collection, tokenDescription, collectionDescription, externalUrl);
     }
 
     /// @notice Grant or revoke a capturer for `collection`. Owner-or-admin

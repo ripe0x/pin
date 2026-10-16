@@ -7,6 +7,7 @@ import {LibString} from "solady/utils/LibString.sol";
 import {ERC721} from "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
 
 import {AntonRenderer} from "../../../src/surface/works/anton/AntonRenderer.sol";
+import {RenderAssets} from "../../../src/surface/renderers/RenderAssets.sol";
 import {CodeKind, CodeRef, MetadataText} from "../../../src/surface/templates/CodeTypes.sol";
 import {HTMLRequest, HTMLTag} from "../../../src/surface/templates/vendor/scripty/core/ScriptyStructs.sol";
 import {IdMode} from "../../../src/surface/SurfaceTypes.sol";
@@ -38,12 +39,18 @@ contract MockCollection is ERC721 {
         return seedOf[id];
     }
 
+    address public collectionOwner = address(0xA11CE);
+
     function idMode() external pure returns (IdMode) {
         return IdMode.Sequential;
     }
 
-    function owner() external pure returns (address) {
-        return address(0);
+    function owner() external view returns (address) {
+        return collectionOwner;
+    }
+
+    function isAdmin(address) external pure returns (bool) {
+        return false;
     }
 }
 
@@ -70,6 +77,10 @@ contract AntonRendererTest is Test {
 
     function _has(string memory hay, string memory needle) internal pure returns (bool) {
         return LibString.indexOf(hay, needle) != LibString.NOT_FOUND;
+    }
+
+    function _decode(string memory uri) internal pure returns (string memory) {
+        return string(Base64.decode(LibString.slice(uri, bytes("data:application/json;base64,").length)));
     }
 
     function test_traits_derivedFromSeed() public {
@@ -150,5 +161,42 @@ contract AntonRendererTest is Test {
             string(Base64.decode(LibString.slice(r.contractURI(address(col)), bytes("data:application/json;base64,").length)));
         assertTrue(_has(collectionJson, '"description":"The anton collection."'), "collection description");
         assertTrue(_has(collectionJson, '"external_link":"https://example.com/anton"'), "collection external_link");
+    }
+
+    /// @dev Metadata copy is editable post-deploy: a RenderAssets override wins
+    ///      over the baked constructor default, and clearing it falls back.
+    function test_metadataCopy_editableViaRenderAssets() public {
+        RenderAssets assets = new RenderAssets();
+        CodeRef[] memory code = new CodeRef[](1);
+        code[0] = CodeRef({store: address(this), name: "anton.js", kind: CodeKind.Script});
+        AntonRenderer r = new AntonRenderer(
+            address(new EchoBuilder()),
+            address(0),
+            "",
+            code,
+            new CodeRef[](0),
+            1,
+            address(assets),
+            MetadataText({tokenDescription: "baked token", collectionDescription: "baked coll", externalUrl: ""})
+        );
+        uint256 id = col.mint(collector, bytes32(uint256(1)));
+
+        // Default: the baked constructor text, external_url omitted.
+        assertTrue(_has(_decode(r.tokenURI(address(col), id)), '"description":"baked token"'), "baked default");
+
+        // Owner sets an override; both URIs reflect it.
+        vm.prank(col.collectionOwner());
+        assets.setText(address(col), "live token", "live coll", "https://solitude.art");
+        string memory tokenJson = _decode(r.tokenURI(address(col), id));
+        assertTrue(_has(tokenJson, '"description":"live token"'), "token override wins");
+        assertTrue(_has(tokenJson, '"external_url":"https://solitude.art"'), "external_url override");
+        string memory collectionJson = _decode(r.contractURI(address(col)));
+        assertTrue(_has(collectionJson, '"description":"live coll"'), "collection override wins");
+        assertTrue(_has(collectionJson, '"external_link":"https://solitude.art"'), "external_link override");
+
+        // Clearing the override falls back to the baked default.
+        vm.prank(col.collectionOwner());
+        assets.setText(address(col), "", "", "");
+        assertTrue(_has(_decode(r.tokenURI(address(col), id)), '"description":"baked token"'), "cleared falls back");
     }
 }

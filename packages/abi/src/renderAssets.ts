@@ -3,7 +3,45 @@
 export const renderAssetsAbi = [
   {
     "type": "function",
+    "name": "collectionDescriptionOf",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "coverOf",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "externalUrlOf",
     "inputs": [
       {
         "name": "",
@@ -157,6 +195,34 @@ export const renderAssetsAbi = [
   },
   {
     "type": "function",
+    "name": "setText",
+    "inputs": [
+      {
+        "name": "collection",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "tokenDescription",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "collectionDescription",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "externalUrl",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "templateMaxTokenIdOf",
     "inputs": [
       {
@@ -177,6 +243,25 @@ export const renderAssetsAbi = [
   {
     "type": "function",
     "name": "templateOf",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "tokenDescriptionOf",
     "inputs": [
       {
         "name": "",
@@ -280,6 +365,37 @@ export const renderAssetsAbi = [
       },
       {
         "name": "uri",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "TextSet",
+    "inputs": [
+      {
+        "name": "collection",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "tokenDescription",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "collectionDescription",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "externalUrl",
         "type": "string",
         "indexed": false,
         "internalType": "string"
