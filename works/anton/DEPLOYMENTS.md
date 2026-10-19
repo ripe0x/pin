@@ -14,6 +14,8 @@ those getters. Its capture template for this collection is
 token ID 5; migrate it to the new registry before switching renderers. The
 old registry has no cover for this collection. At the pinned review block
 11949921, token images 1–5 resolved through the template and 6–25 were empty.
+`MigrateAntonCaptures.s.sol` performs this copy as one authorized transaction
+and checks every minted token against the old registry before broadcast.
 
 ## Sepolia (stateless build, 2026-09-04)
 

@@ -32,7 +32,7 @@ abstract contract AntonDeploy is Script {
     }
 
     function deployAntonRendererFromStore(address store, address renderAssets) internal returns (address renderer) {
-        require(store.code.length > 0, "ANTON_STORE has no code");
+        assertAntonStore(store);
         require(renderAssets.code.length > 0, "RENDER_ASSETS has no code");
         // An older RenderAssets deployment lacks these getters. Binding to it
         // would make every Anton tokenURI and contractURI revert.
@@ -56,6 +56,29 @@ abstract contract AntonDeploy is Script {
                 renderAssets,
                 _readMetadataText()
             )
+        );
+    }
+
+    function assertAntonStore(address store) internal view {
+        require(store.code.length > 0, "ANTON_STORE has no code");
+        bytes memory expected = bytes(Base64.encode(vm.readFileBinary("script/anton.js.gz")));
+        bytes memory actual = AntonScriptStore(store).getContent("anton.js", "");
+        require(keccak256(actual) == keccak256(expected), "ANTON_STORE content mismatch");
+    }
+
+    function assertAntonRenderer(address renderer, address store, address renderAssets) internal view {
+        require(renderer.code.length > 0, "ANTON_RENDERER has no code");
+        assertAntonStore(store);
+        AntonRenderer art = AntonRenderer(renderer);
+        require(address(art.renderAssets()) == renderAssets, "ANTON_RENDERER assets mismatch");
+        require(address(art.scriptyBuilder()) == SCRIPTY_BUILDER_V2, "ANTON_RENDERER builder mismatch");
+        require(art.gunzipStore() == ETHFS_V2_FILE_STORAGE, "ANTON_RENDERER gunzip mismatch");
+        require(art.injectionVersion() == 1, "ANTON_RENDERER version mismatch");
+        CodeRef[] memory code = art.code();
+        require(
+            code.length == 1 && code[0].store == store && code[0].kind == CodeKind.ScriptGzip
+                && keccak256(bytes(code[0].name)) == keccak256(bytes("anton.js")),
+            "ANTON_RENDERER store mismatch"
         );
     }
 

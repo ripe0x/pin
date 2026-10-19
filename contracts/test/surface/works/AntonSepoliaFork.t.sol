@@ -20,12 +20,17 @@ contract AntonDeployHarness is AntonDeploy {
     function fromStore(address store, address assets) external returns (address renderer) {
         return deployAntonRendererFromStore(store, assets);
     }
+
+    function verify(address renderer, address store, address assets) external view {
+        assertAntonRenderer(renderer, store, assets);
+    }
 }
 
 contract AntonSepoliaForkTest is Test {
     address constant COLLECTION = 0xE95F98179a6365881aed0cb5331D96976E9Fe09b;
     address constant OWNER = 0xCB43078C32423F5348Cab5885911C3B5faE217F9;
     address constant OLD_ASSETS = 0xF314c0CAA5E3f55e1046626D1CAdF511c127423F;
+    address constant OLD_STORE = 0xD6b2bAf7e617B08B0B5E46a90971F23954D508Be;
 
     function test_liveCollectionCanUseV3AndEditableText() public {
         string memory rpc = vm.envOr("SEPOLIA_RPC_URL", string(""));
@@ -53,6 +58,11 @@ contract AntonSepoliaForkTest is Test {
         (address store, address renderer) = harness.deploy(address(assets));
         vm.expectRevert(bytes("RENDER_ASSETS lacks editable text"));
         harness.fromStore(store, OLD_ASSETS);
+        vm.expectRevert(bytes("ANTON_STORE content mismatch"));
+        harness.fromStore(OLD_STORE, address(assets));
+        harness.verify(renderer, store, address(assets));
+        vm.expectRevert(bytes("ANTON_RENDERER assets mismatch"));
+        harness.verify(renderer, store, OLD_ASSETS);
 
         vm.startPrank(OWNER);
         collection.setRenderer(renderer);

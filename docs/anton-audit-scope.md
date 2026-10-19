@@ -101,7 +101,9 @@ deps) use the same `AntonDeploy` helpers in local rehearsal and live deployment:
   scripty, EthFS gunzip, and a caller-supplied `RenderAssets` address. Metadata
   text (token description, collection description, external URL) is read from
   `script/anton-metadata.json`. It rejects a `RenderAssets` deployment that
-  lacks the editable-text getters, before a new renderer can be deployed.
+  lacks the editable-text getters and rejects a store whose `getContent`
+  differs from the current `script/anton.js.gz`, before a new renderer can be
+  deployed.
 - `DeployAntonStore.s.sol` and `DeployAntonRenderer.s.sol` each broadcast one
   deployment transaction. The artist then creates the collection from their own
   wallet in the studio, pasting the renderer address, then calls `addAdmin`
@@ -111,9 +113,16 @@ deps) use the same `AntonDeploy` helpers in local rehearsal and live deployment:
   renderer, then calls `createSurface` directly so a fork or testnet run
   produces a full collection in one step.
 - `SwapAntonRenderer.s.sol`, which broadcasts only `setRenderer` for an
-  already-deployed renderer on an unlocked collection.
+  already-deployed renderer on an unlocked collection. It checks the reviewed
+  script-store bytes and the renderer's store, assets and Scripty bindings
+  before repointing the collection.
+- `MigrateAntonCaptures.s.sol`, which copies the old registry's capture
+  template to the new registry and checks image parity for minted tokens.
 - `SetAntonText.s.sol`, which reads `script/anton-metadata.json` and broadcasts
   one owner/admin `RenderAssets.setText` transaction.
+- `RefreshAntonMetadata.s.sol`, a separate one-transaction refresh after a text
+  edit. While unlocked it re-sets the same renderer to emit both token and
+  collection update events; after lock it emits the available token event.
 
 Mainnet sequence: deploy a `RenderAssets` with editable-text getters → deploy
 the Anton store → deploy the renderer against both → the artist creates the
