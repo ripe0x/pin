@@ -170,6 +170,15 @@ current=$(cast call "$COLLECTION" 'renderer()(address)' --rpc-url "$RPC_URL")
 if [[ "$(printf '%s' "$current" | lower)" != "$(printf '%s' "$renderer" | lower)" ]]; then
   [[ "$(printf '%s' "$current" | lower)" == "$(printf '%s' "$OLD_RENDERER" | lower)" ]] || { echo "Unknown current renderer: $current" >&2; exit 1; }
   [[ "$(cast call "$COLLECTION" 'isRendererLocked()(bool)' --rpc-url "$RPC_URL")" == false ]] || { echo 'Renderer is locked' >&2; exit 1; }
+  # Captures may have changed in the old registry while this run was paused.
+  minted_now=$(config | tail -1)
+  for ((id=1; id<=minted_now; id++)); do
+    old_image=$(cast call "$OLD_ASSETS" 'imageFor(address,uint256)(string)' "$COLLECTION" "$id" --rpc-url "$RPC_URL")
+    new_image=$(cast call "$assets" 'imageFor(address,uint256)(string)' "$COLLECTION" "$id" --rpc-url "$RPC_URL")
+    [[ "$old_image" == "$new_image" ]] || { echo "Capture mismatch at token $id; stop before renderer swap" >&2; exit 1; }
+  done
+  [[ "$(config | tail -1)" == "$minted_now" ]] || { echo 'Minted count changed during capture check; retry' >&2; exit 1; }
+  printf 'Capture images match for %s minted tokens.\n' "$minted_now"
   confirm "CALL collection.setRenderer($renderer) on $COLLECTION. Updates metadata and animation for all existing tokens; mint price and ownership unchanged." rendererSwap
   ANTON_COLLECTION="$COLLECTION" ANTON_RENDERER="$renderer" ANTON_STORE="$store" RENDER_ASSETS="$assets" \
     run_forge script/SwapAntonRenderer.s.sol:SwapAntonRenderer
