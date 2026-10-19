@@ -16,6 +16,11 @@ creates a *new* collection and must not be used for this update.
 Keep writes to the old capture registry paused from the renderer-swap prompt
 through its receipt; the wrapper rechecks image parity immediately before
 sending, but a separate capture write could otherwise race that swap.
+If the first RenderAssets creation failed onchain and the wrapper reports a
+pending deployment, use `--retry-failed-render-assets <tx-hash>`. That path
+checks the failed receipt, signer, predicted address, absent code and consumed
+nonce before retrying with a larger gas estimate. Never clear the recovery
+record or blindly rerun a failed deployment.
 
 For a renderer update using editable copy, deploy a new `RenderAssets` with
 `tokenDescriptionOf`, `collectionDescriptionOf` and `externalUrlOf`. The old

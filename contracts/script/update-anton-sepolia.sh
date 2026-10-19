@@ -66,7 +66,7 @@ record_receipt() {
   [[ -n "$hash" ]] || { echo "Missing transaction hash in $file" >&2; exit 1; }
   chain_status=$(cast receipt "$hash" status --rpc-url "$RPC_URL")
   [[ "$chain_status" == 1 || "$chain_status" == 0x1 ]] || { echo "Onchain receipt failed: $hash" >&2; exit 1; }
-  tx_from=$(cast tx "$hash" from --rpc-url "$RPC_URL" | lower)
+  tx_from=$(cast receipt "$hash" from --rpc-url "$RPC_URL" | lower)
   [[ "$tx_from" == "$(printf '%s' "$SIGNER" | lower)" ]] || { echo "Unexpected transaction sender: $tx_from" >&2; exit 1; }
   if [[ -z "$address" ]]; then address=$(jq -r '.receipts[0].contractAddress // .transactions[0].contractAddress // empty' "$file"); fi
   if [[ "$key" == renderAssets || "$key" == store || "$key" == renderer ]]; then
@@ -82,7 +82,8 @@ record_receipt() {
 }
 run_forge() {
   forge script "$1" --rpc-url "$RPC_URL" --sender "$SIGNER" \
-    --account "$ACCOUNT" --password-file "$PASSWORD_FILE" --broadcast --slow
+    --account "$ACCOUNT" --password-file "$PASSWORD_FILE" \
+    --gas-estimate-multiplier 250 --broadcast --slow
 }
 
 echo "Existing collection: $COLLECTION"
@@ -92,7 +93,9 @@ echo "Mint price (1 token): $(cast call "$MINTER" 'priceOf(address,uint256)(uint
 [[ "$(cast call "$MINTER" 'priceOf(address,uint256)(uint256)' "$SIGNER" 1 --rpc-url "$RPC_URL" | cut -d' ' -f1)" == 1000000000000000 ]] || {
   echo "Mint price is no longer 0.001 ETH" >&2; exit 1;
 }
-[[ "${1:-}" == --plan || -z "${1:-}" ]] || { echo 'Usage: bash script/update-anton-sepolia.sh [--plan]' >&2; exit 1; }
+[[ "${1:-}" == --plan || -z "${1:-}" || "${1:-}" == --retry-failed-render-assets ]] || {
+  echo 'Usage: bash script/update-anton-sepolia.sh [--plan | --retry-failed-render-assets TX_HASH]' >&2; exit 1;
+}
 minted=$(config | tail -1)
 [[ "$minted" =~ ^[0-9]+$ && "$minted" -le 256 ]] || { echo "Minted count cannot fit cap 256: $minted" >&2; exit 1; }
 current_cap=$(cap)
@@ -116,6 +119,35 @@ if [[ "${1:-}" == --plan ]]; then
   echo 'The wrapper stops for explicit confirmation before each of the six transactions.'
   exit 0
 fi
+if [[ "${1:-}" == --retry-failed-render-assets ]]; then
+  failed_hash=${2:-}
+  [[ "$failed_hash" =~ ^0x[0-9a-fA-F]{64}$ ]] || { echo 'Provide the failed transaction hash' >&2; exit 1; }
+  pending=$(state_get pending)
+  [[ "$pending" =~ ^renderAssets\ \(nonce\ ([0-9]+)\)$ ]] || { echo "Unexpected pending step: $pending" >&2; exit 1; }
+  failed_nonce=${BASH_REMATCH[1]}
+  receipt=$(cast receipt "$failed_hash" --json --rpc-url "$RPC_URL")
+  [[ "$(jq -r '.status' <<< "$receipt")" == 0x0 ]] || { echo 'Transaction was not a confirmed failure' >&2; exit 1; }
+  [[ "$(jq -r '.from' <<< "$receipt" | lower)" == "$(printf '%s' "$SIGNER" | lower)" ]] || {
+    echo 'Failed transaction signer does not match' >&2; exit 1;
+  }
+  [[ "$(jq -r '.to // empty' <<< "$receipt")" == '' ]] || { echo 'Failed transaction was not a contract creation' >&2; exit 1; }
+  failed_address=$(cast compute-address "$SIGNER" --nonce "$failed_nonce")
+  receipt_address=$(jq -r '.contractAddress // empty' <<< "$receipt")
+  [[ -z "$receipt_address" || "$(printf '%s' "$receipt_address" | lower)" == "$(printf '%s' "$failed_address" | lower)" ]] || {
+    echo 'Failed receipt contract address does not match its signer and nonce' >&2; exit 1;
+  }
+  expected_address=$(jq -r '.transactions[0].contractAddress // empty' broadcast/DeployRenderModules.s.sol/11155111/run-latest.json)
+  [[ "$(printf '%s' "$failed_address" | lower)" == "$(printf '%s' "$expected_address" | lower)" ]] || {
+    echo 'Failed transaction address does not match the recorded deployment' >&2; exit 1;
+  }
+  code_exists "$failed_address" && { echo 'Failed deployment unexpectedly has code' >&2; exit 1; }
+  [[ "$(cast nonce "$SIGNER" --rpc-url "$RPC_URL")" == "$((failed_nonce + 1))" ]] || {
+    echo 'Signer nonce moved beyond the failed deployment; reconcile manually' >&2; exit 1;
+  }
+  state_set failedRenderAssetsTx "$failed_hash"
+  state_set pending ''
+  echo "Confirmed failed deployment $failed_hash; retry will use the next nonce with 250% gas estimate."
+fi
 check_pending
 
 assets=$(state_get renderAssets)
@@ -125,7 +157,8 @@ if [[ -z "$assets" ]]; then
   }
   confirm 'CREATE RenderAssets: ownerless editable metadata and capture registry. Existing collection unchanged.' renderAssets
   RENDER_ASSETS_ONLY=true env -u RENDER_ASSETS forge script script/DeployRenderModules.s.sol:DeployRenderModulesScript \
-    --rpc-url "$RPC_URL" --sender "$SIGNER" --account "$ACCOUNT" --password-file "$PASSWORD_FILE" --broadcast --slow
+    --rpc-url "$RPC_URL" --sender "$SIGNER" --account "$ACCOUNT" --password-file "$PASSWORD_FILE" \
+    --gas-estimate-multiplier 250 --broadcast --slow
   record_receipt broadcast/DeployRenderModules.s.sol/11155111/run-latest.json renderAssets
   assets=$(state_get renderAssets)
 fi
