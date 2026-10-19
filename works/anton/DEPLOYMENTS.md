@@ -6,6 +6,14 @@ studio. The Sepolia collection below is historical: it was created with a 999
 cap and must be updated onchain to 256. Do not infer its live renderer or cap
 from this file; read `renderer()` and `config()` before a broadcast.
 
+To update the existing Sepolia collection, run `bash script/update-anton-sepolia.sh`
+from `contracts/`. The wrapper uses the existing deploy scripts, checks the
+chain, signer, owner, price and receipts, and asks for explicit confirmation
+before each transaction. `--plan` only reads state. It saves public addresses
+and transaction hashes in ignored `contracts/broadcast/anton-sepolia-update.json`
+so an interrupted run can be reconciled and resumed. `DeployAntonWork.s.sol`
+creates a *new* collection and must not be used for this update.
+
 For a renderer update using editable copy, deploy a new `RenderAssets` with
 `tokenDescriptionOf`, `collectionDescriptionOf` and `externalUrlOf`. The old
 Sepolia registry at `0xF314c0CAA5E3f55e1046626D1CAdF511c127423F` lacks
