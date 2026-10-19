@@ -73,7 +73,9 @@ abstract contract AntonDeploy is Script {
         require(address(art.renderAssets()) == renderAssets, "ANTON_RENDERER assets mismatch");
         require(address(art.scriptyBuilder()) == SCRIPTY_BUILDER_V2, "ANTON_RENDERER builder mismatch");
         require(art.gunzipStore() == ETHFS_V2_FILE_STORAGE, "ANTON_RENDERER gunzip mismatch");
+        require(keccak256(bytes(art.gunzipFile())) == keccak256(bytes(GUNZIP_FILE)), "ANTON_RENDERER gunzip file mismatch");
         require(art.injectionVersion() == 1, "ANTON_RENDERER version mismatch");
+        require(art.deps().length == 0, "ANTON_RENDERER dependencies mismatch");
         CodeRef[] memory code = art.code();
         require(
             code.length == 1 && code[0].store == store && code[0].kind == CodeKind.ScriptGzip

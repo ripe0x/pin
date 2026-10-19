@@ -12,6 +12,7 @@ import {ISurfaceAuth} from "../../../src/surface/interfaces/ISurfaceAuth.sol";
 import {SurfaceConfig} from "../../../src/surface/SurfaceTypes.sol";
 import {Surface} from "../../../src/surface/Surface.sol";
 import {ScriptyRenderer} from "../../../src/surface/templates/ScriptyRenderer.sol";
+import {AntonRenderer} from "../../../src/surface/works/anton/AntonRenderer.sol";
 import {CodeKind, CodeRef, MetadataText} from "../../../src/surface/templates/CodeTypes.sol";
 
 contract AntonDeployHarness is AntonDeploy {
@@ -65,20 +66,36 @@ contract AntonSepoliaForkTest is Test {
         harness.verify(renderer, store, address(assets));
         vm.expectRevert(bytes("ANTON_RENDERER assets mismatch"));
         harness.verify(renderer, store, OLD_ASSETS);
-        CodeRef[] memory code = new CodeRef[](1);
-        code[0] = CodeRef({store: store, name: "anton.js", kind: CodeKind.ScriptGzip});
-        ScriptyRenderer generic = new ScriptyRenderer(
-            0xD7587F110E08F4D120A231bA97d3B577A81Df022,
-            0x8FAA1AAb9DA8c75917C43Fb24fDdb513edDC3245,
-            "gunzipScripts-0.0.1.js",
-            code,
-            new CodeRef[](0),
-            1,
-            address(assets),
-            MetadataText({tokenDescription: "", collectionDescription: "", externalUrl: ""})
-        );
-        vm.expectRevert(bytes("ANTON_RENDERER bytecode mismatch"));
-        harness.verify(address(generic), store, address(assets));
+        {
+            CodeRef[] memory code = new CodeRef[](1);
+            code[0] = CodeRef({store: store, name: "anton.js", kind: CodeKind.ScriptGzip});
+            ScriptyRenderer generic = new ScriptyRenderer(
+                0xD7587F110E08F4D120A231bA97d3B577A81Df022,
+                0x8FAA1AAb9DA8c75917C43Fb24fDdb513edDC3245,
+                "gunzipScripts-0.0.1.js",
+                code,
+                new CodeRef[](0),
+                1,
+                address(assets),
+                MetadataText({tokenDescription: "", collectionDescription: "", externalUrl: ""})
+            );
+            vm.expectRevert(bytes("ANTON_RENDERER bytecode mismatch"));
+            harness.verify(address(generic), store, address(assets));
+            CodeRef[] memory deps = new CodeRef[](1);
+            deps[0] = CodeRef({store: store, name: "extra.js", kind: CodeKind.ScriptGzip});
+            AntonRenderer extraDependency = new AntonRenderer(
+                0xD7587F110E08F4D120A231bA97d3B577A81Df022,
+                0x8FAA1AAb9DA8c75917C43Fb24fDdb513edDC3245,
+                "gunzipScripts-0.0.1.js",
+                code,
+                deps,
+                1,
+                address(assets),
+                MetadataText({tokenDescription: "", collectionDescription: "", externalUrl: ""})
+            );
+            vm.expectRevert(bytes("ANTON_RENDERER dependencies mismatch"));
+            harness.verify(address(extraDependency), store, address(assets));
+        }
 
         vm.startPrank(OWNER);
         collection.setRenderer(renderer);
@@ -104,11 +121,7 @@ contract AntonSepoliaForkTest is Test {
         assertTrue(_has(revisedCollection, "https://example.org"));
     }
 
-    function _config(ISurfaceCore collection)
-        private
-        view
-        returns (uint256, uint16, address, address, bool, bool)
-    {
+    function _config(ISurfaceCore collection) private view returns (uint256, uint16, address, address, bool, bool) {
         (SurfaceConfig memory cfg,) = collection.config();
         return (cfg.supplyCap, cfg.royaltyBps, cfg.royaltyReceiver, cfg.renderer, cfg.rendererLocked, cfg.supplyLocked);
     }
