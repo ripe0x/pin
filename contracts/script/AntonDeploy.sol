@@ -66,7 +66,7 @@ abstract contract AntonDeploy is Script {
         require(keccak256(actual) == keccak256(expected), "ANTON_STORE content mismatch");
     }
 
-    function assertAntonRenderer(address renderer, address store, address renderAssets) internal view {
+    function assertAntonRenderer(address renderer, address store, address renderAssets) internal {
         require(renderer.code.length > 0, "ANTON_RENDERER has no code");
         assertAntonStore(store);
         AntonRenderer art = AntonRenderer(renderer);
@@ -80,6 +80,11 @@ abstract contract AntonDeploy is Script {
                 && keccak256(bytes(code[0].name)) == keccak256(bytes("anton.js")),
             "ANTON_RENDERER store mismatch"
         );
+        // This local comparison deployment is outside startBroadcast. It
+        // verifies the runtime is this reviewed subclass, not the generic
+        // ScriptyRenderer with the same constructor bindings.
+        address expected = deployAntonRendererFromStore(store, renderAssets);
+        require(keccak256(expected.code) == keccak256(renderer.code), "ANTON_RENDERER bytecode mismatch");
     }
 
     function _readMetadataText() internal view returns (MetadataText memory) {
