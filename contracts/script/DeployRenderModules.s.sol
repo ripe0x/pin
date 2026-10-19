@@ -15,6 +15,8 @@ import {DefaultRenderer} from "../src/surface/renderers/DefaultRenderer.sol";
 /// @dev    DefaultRenderer takes the RenderAssets address in its constructor.
 ///         Set RENDER_ASSETS to reuse an already-deployed RenderAssets;
 ///         unset, the script deploys a fresh one first.
+///         Set RENDER_ASSETS_ONLY=true to deploy only the registry. This makes
+///         the registry deployment a single broadcast transaction.
 ///
 ///         The signer comes from the CLI, not from the script: vm.startBroadcast()
 ///         takes no key, so forge uses whatever --account / --ledger / --private-key
@@ -49,6 +51,8 @@ contract DeployRenderModulesScript is Script {
             require(renderAssets.code.length > 0, "RENDER_ASSETS has no code");
             console2.log("Using existing RenderAssets at:", renderAssets);
         }
+
+        if (vm.envOr("RENDER_ASSETS_ONLY", false)) return;
 
         // ── 2. DefaultRenderer, bound to RenderAssets in its constructor.
         vm.startBroadcast();

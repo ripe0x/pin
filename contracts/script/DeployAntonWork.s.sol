@@ -13,7 +13,7 @@ import {AntonDeploy} from "./AntonDeploy.sol";
 
 /// @notice Full local/rehearsal path for the anton work: store + renderer,
 ///         then `createSurface` (which bundles the stock fixed-price minter —
-///         no custom minter, no per-token params). Placeholder config is
+///         no custom minter, no per-token params). Rehearsal config is
 ///         env-overridable. On mainnet, use DeployAntonRenderer instead; the
 ///         artist creates the collection from their own wallet in the studio.
 ///
@@ -21,12 +21,11 @@ import {AntonDeploy} from "./AntonDeploy.sol";
 ///         addresses (mainnet or a fork). Run against a local anvil fork first:
 ///
 ///           anvil --fork-url https://ethereum-rpc.publicnode.com --port 8545
-///           PRIVATE_KEY=<key> RENDER_ASSETS=<addr> forge script script/DeployAntonWork.s.sol \
-///             --rpc-url http://localhost:8545 --broadcast
+///           ANTON_OWNER=<addr> RENDER_ASSETS=<addr> forge script script/DeployAntonWork.s.sol \
+///             --rpc-url http://localhost:8545 --account <name> --sender <addr>
 ///
-///         PRIVATE_KEY    deployer/signer
 ///         RENDER_ASSETS  deployed RenderAssets singleton; required, non-zero
-///         ANTON_OWNER    collection owner; defaults to the signer
+///         ANTON_OWNER    collection owner
 ///         ANTON_FACTORY  canonical SurfaceFactory; unset deploys a fresh one
 ///         ANTON_SUPPLY   supply cap; defaults to 256
 ///         ANTON_ROYALTY_BPS  royalty bps; defaults to 500
@@ -35,11 +34,10 @@ import {AntonDeploy} from "./AntonDeploy.sol";
 ///         ANTON_SYMBOL   collection symbol; defaults to "SOLITUDE"
 contract DeployAntonWork is AntonDeploy {
     function run() external {
-        uint256 pk = vm.envUint("PRIVATE_KEY");
-        address owner = vm.envOr("ANTON_OWNER", vm.addr(pk));
+        address owner = vm.envAddress("ANTON_OWNER");
         address renderAssets = vm.envAddress("RENDER_ASSETS");
 
-        vm.startBroadcast(pk);
+        vm.startBroadcast();
 
         (address store, address renderer) = deployAntonRenderer(renderAssets);
         address factory = _factory();

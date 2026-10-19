@@ -1,9 +1,19 @@
 # anton — deployments
 
-Config: name `Form of Solitude` / symbol `SOLITUDE` (symbol is a placeholder),
-price 0.001 ETH, supply cap 999, open-ended window, 5% royalty, owner
-`ripe0x.eth` (`0xCB43078C32423F5348Cab5885911C3B5faE217F9`). Not audited; not
-final.
+Current target: `Form of Solitude` / `SOLITUDE`, supply cap 256. Local and
+Sepolia mint price: 0.001 ETH. Mainnet price is configured separately in the
+studio. The Sepolia collection below is historical: it was created with a 999
+cap and must be updated onchain to 256. Do not infer its live renderer or cap
+from this file; read `renderer()` and `config()` before a broadcast.
+
+For a renderer update using editable copy, deploy a new `RenderAssets` with
+`tokenDescriptionOf`, `collectionDescriptionOf` and `externalUrlOf`. The old
+Sepolia registry at `0xF314c0CAA5E3f55e1046626D1CAdF511c127423F` lacks
+those getters. Its capture template for this collection is
+`ar://BBUEubbqaZ4AEhfczg9ciU2HkQA3LGHqFsCZRitrEJaX/{id}.png`, bound to
+token ID 5; migrate it to the new registry before switching renderers. The
+old registry has no cover for this collection. At the pinned review block
+11949921, token images 1–5 resolved through the template and 6–25 were empty.
 
 ## Sepolia (stateless build, 2026-09-04)
 

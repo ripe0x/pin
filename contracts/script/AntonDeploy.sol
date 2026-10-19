@@ -6,6 +6,7 @@ import {Base64} from "solady/utils/Base64.sol";
 
 import {AntonScriptStore} from "../src/surface/works/anton/AntonScriptStore.sol";
 import {AntonRenderer} from "../src/surface/works/anton/AntonRenderer.sol";
+import {RenderAssets} from "../src/surface/renderers/RenderAssets.sol";
 import {CodeKind, CodeRef, MetadataText} from "../src/surface/templates/CodeTypes.sol";
 
 /// @notice Shared deploy step for the anton work's stateless art contracts.
@@ -17,19 +18,30 @@ abstract contract AntonDeploy is Script {
     string constant GUNZIP_FILE = "gunzipScripts-0.0.1.js";
     string constant METADATA_FILE = "script/anton-metadata.json";
 
-    /// @dev Reads script/anton.js.gz, deploys AntonScriptStore, then
-    ///      AntonRenderer wired to scripty + EthFS gunzip and the given
-    ///      RenderAssets singleton. Metadata text (tokenDescription,
-    ///      collectionDescription, externalUrl) is read from
-    ///      script/anton-metadata.json so long artist text does not pass
-    ///      through env vars. Caller must wrap this in its own
-    ///      vm.startBroadcast/stopBroadcast.
+    /// @dev Shared local/fork path. Live deployments call the two steps
+    ///      separately so each broadcast can be checked before sending.
     function deployAntonRenderer(address renderAssets) internal returns (address store, address renderer) {
-        require(renderAssets != address(0), "RENDER_ASSETS not set");
+        store = deployAntonStore();
+        renderer = deployAntonRendererFromStore(store, renderAssets);
+    }
 
+    function deployAntonStore() internal returns (address store) {
         // Scripty stores serve base64 TEXT (the EthFS convention).
         bytes memory scriptB64 = bytes(Base64.encode(vm.readFileBinary("script/anton.js.gz")));
         store = address(new AntonScriptStore(scriptB64));
+    }
+
+    function deployAntonRendererFromStore(address store, address renderAssets) internal returns (address renderer) {
+        require(store.code.length > 0, "ANTON_STORE has no code");
+        require(renderAssets.code.length > 0, "RENDER_ASSETS has no code");
+        // An older RenderAssets deployment lacks these getters. Binding to it
+        // would make every Anton tokenURI and contractURI revert.
+        try RenderAssets(renderAssets).tokenDescriptionOf(address(this)) returns (string memory) {}
+        catch { revert("RENDER_ASSETS lacks editable text"); }
+        try RenderAssets(renderAssets).collectionDescriptionOf(address(this)) returns (string memory) {}
+        catch { revert("RENDER_ASSETS lacks editable text"); }
+        try RenderAssets(renderAssets).externalUrlOf(address(this)) returns (string memory) {}
+        catch { revert("RENDER_ASSETS lacks editable text"); }
 
         CodeRef[] memory code = new CodeRef[](1);
         code[0] = CodeRef({store: store, name: "anton.js", kind: CodeKind.ScriptGzip});

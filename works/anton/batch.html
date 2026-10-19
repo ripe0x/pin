@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>untitled batch</title>
+    <title>Form of Solitude batch</title>
     <style>
       /* Matches the source app: a warm light-gray ground, frosted-glass panels
          and pills, rounded tiles with a bold name and muted address beneath. */
@@ -98,25 +98,10 @@
   </head>
   <body>
     <header class="glass">
-      <span class="brand">untitled</span>
+      <span class="brand">Form of Solitude</span>
       <div class="field">
         <label for="count">batch size</label>
         <input id="count" type="number" min="1" max="60" value="12" />
-      </div>
-      <div class="field">
-        <label for="mode">selection</label>
-        <select id="mode">
-          <option value="random">random</option>
-          <option value="sweep-palette">sweep palettes</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="palette">palette</label>
-        <select id="palette"></select>
-      </div>
-      <div class="field">
-        <label for="tone">tone</label>
-        <select id="tone"><option value="random">random</option><option value="sun">sun</option><option value="moon">moon</option></select>
       </div>
       <div class="field">
         <label for="ownerMode">owners</label>
@@ -147,15 +132,12 @@
     </div>
 
     <script>
-      // Vocabularies. Order is the parity contract with anton.js and
-      // AntonRenderer: index -> name here must equal the renderer's arrays.
-      // Shape and background are not minted: they morph over time in the work,
-      // synced to the owner. Per-output variety comes from the seed.
-      var PALETTES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
-      var TONES = ["sun", "moon"]; // index 0 = sun, 1 = moon
+      // Keep these names and seed bits in lockstep with AntonRenderer._attributes.
+      var PALETTES = ["Celestial Azure", "Purple Thunder", "Jade Mist", "Fiery Origin", "Twilight Amber", "Lunar Depth", "Turquoise Current", "Rose Ash", "Sapphire Silence", "Golden Rift"];
+      var MODES = ["Sun", "Moon"];
+      var FLOWS = ["down", "up"];
 
       var $ = function (id) { return document.getElementById(id); };
-      PALETTES.forEach(function (p) { var o = document.createElement("option"); o.textContent = p; $("palette").appendChild(o); });
 
       function randInt(n) { return Math.floor(Math.random() * n); }
       function randHex(len) { var h = "0123456789abcdef", s = ""; for (var i = 0; i < len; i++) s += h[randInt(16)]; return s; }
@@ -165,51 +147,41 @@
       function shortAddr(a) { return "0x" + a.slice(2, 6).toUpperCase() + "..." + a.slice(-4).toUpperCase(); }
       function shortSeed(s) { return s.slice(0, 10) + "…" + s.slice(-6); }
 
-      // The generator's own picks use Math.random (a UI convenience). Each output
-      // gets a sample seed standing in for the token seed assigned at mint, which
-      // drives that token's variety.
+      // These are sample seeds; minting assigns the real seed onchain.
       function buildBatch() {
         var count = Math.max(1, Math.min(60, parseInt($("count").value || "1", 10)));
-        var mode = $("mode").value;
-        var toneSel = $("tone").value;
-        var fixedPalette = PALETTES.indexOf($("palette").value);
         var startId = Math.max(1, parseInt($("startId").value || "1", 10));
-        function toneIdx() { return toneSel === "random" ? randInt(2) : TONES.indexOf(toneSel); }
         var ownerMode = $("ownerMode").value;
         var oneOwner = $("owner").value.trim();
 
         var items = [];
         for (var i = 0; i < count; i++) {
-          var pi = mode === "sweep-palette" ? i % PALETTES.length : randInt(PALETTES.length);
           var owner = ownerMode === "varied" ? randomAddress() : oneOwner;
-          items.push({ mintId: startId + i, palette: pi, tone: toneIdx(), owner: owner, seed: randomSeed() });
+          items.push({ mintId: startId + i, owner: owner, seed: randomSeed() });
         }
         return items;
       }
 
-      // abi.encode(uint8 palette, uint8 tone): two 32-byte words. Exactly the
-      // `data` AntonMinter.mint decodes.
-      function pad32(n) { return n.toString(16).padStart(64, "0"); }
-      function mintData(it) { return "0x" + pad32(it.palette) + pad32(it.tone); }
+      function traits(it) {
+        var seed = BigInt(it.seed);
+        return { palette: PALETTES[Number(seed % 10n)], mode: MODES[Number((seed >> 8n) & 1n)], flow: FLOWS[Number((seed >> 16n) & 1n)] };
+      }
 
-      // The metadata AntonRenderer publishes. The real seed is stamped at mint;
-      // this sample seed stands in for the preview.
+      // Illustrative attributes for the sample seed, not tokenURI metadata.
       function metadata(it) {
+        var t = traits(it);
         return {
-          name: "untitled #" + it.mintId,
+          name: "Form of Solitude #" + it.mintId,
           attributes: [
-            { trait_type: "Mint Order", value: it.mintId },
-            { trait_type: "Seed", value: it.seed + " (sample)" },
-            { trait_type: "Palette", value: PALETTES[it.palette] },
-            { trait_type: "Tone", value: TONES[it.tone] }
+            { trait_type: "Palette", value: t.palette },
+            { trait_type: "Mode", value: t.mode },
+            { trait_type: "Flow", value: t.flow }
           ]
         };
       }
 
       function frameSrc(it) {
         var q = new URLSearchParams();
-        q.set("palette", PALETTES[it.palette]);
-        q.set("tone", TONES[it.tone]);
         q.set("owner", it.owner);
         q.set("hash", it.seed);
         q.set("tokenId", String(it.mintId));
@@ -233,7 +205,7 @@
           tile.dataset.index = idx;
           tile.innerHTML =
             '<div class="render"><iframe loading="lazy" src="' + frameSrc(it) + '"></iframe></div>' +
-            '<div class="name">untitled #' + pad3(it.mintId) + "</div>" +
+            '<div class="name">Form of Solitude #' + pad3(it.mintId) + "</div>" +
             '<div class="addr">' + shortAddr(it.owner) + "</div>";
           grid.appendChild(tile);
         });
@@ -252,19 +224,18 @@
         var it = lastBatch[idx];
         if (!it) return;
         var md = metadata(it);
-        var data = mintData(it);
+        var t = traits(it);
         $("modalFrame").src = frameSrc(it);
         $("modalSide").innerHTML =
-          "<h2>untitled #" + pad3(it.mintId) + "</h2>" +
+          "<h2>Form of Solitude #" + pad3(it.mintId) + "</h2>" +
           '<div class="chips">' +
-          '<span class="chip"><b>palette</b> ' + PALETTES[it.palette] + " (" + it.palette + ")</span>" +
-          '<span class="chip"><b>tone</b> ' + TONES[it.tone] + " (" + it.tone + ")</span>" +
+          '<span class="chip"><b>Palette</b> ' + t.palette + "</span>" +
+          '<span class="chip"><b>Mode</b> ' + t.mode + "</span>" +
+          '<span class="chip"><b>Flow</b> ' + t.flow + "</span>" +
           "</div>" +
           '<div><div class="hint">owner (shape + bg sync)</div>' + shortAddr(it.owner) + "</div>" +
           '<div><div class="hint">seed (sample)</div>' + shortSeed(it.seed) + "</div>" +
-          '<div class="hint">metadata</div><pre>' + escapeHtml(JSON.stringify(md, null, 2)) + "</pre>" +
-          '<div class="row"><span class="hint">mint data</span><button class="copy" data-copy="' + data + '">copy</button></div>' +
-          "<pre>" + data + "</pre>";
+          '<div class="hint">sample attributes (not minted)</div><pre>' + escapeHtml(JSON.stringify(md.attributes, null, 2)) + "</pre>";
         $("modal").classList.add("open");
       }
       function closeDetail() {
@@ -274,17 +245,10 @@
       document.querySelector("#modal .backdrop").onclick = closeDetail;
       document.querySelector("#modal .close").onclick = closeDetail;
       document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDetail(); });
-      $("modalSide").addEventListener("click", function (e) {
-        var btn = e.target.closest("[data-copy]");
-        if (!btn) return;
-        navigator.clipboard.writeText(btn.getAttribute("data-copy"));
-        var t = btn.textContent; btn.textContent = "copied"; setTimeout(function () { btn.textContent = t; }, 900);
-      });
-
       $("gen").onclick = render;
       $("export").onclick = function () {
         var out = lastBatch.map(function (it) {
-          return { mintId: it.mintId, owner: it.owner, seed: it.seed, params: { palette: PALETTES[it.palette], tone: TONES[it.tone] }, indices: { palette: it.palette, tone: it.tone }, mintData: mintData(it), metadata: metadata(it) };
+          return { sampleTokenId: it.mintId, owner: it.owner, sampleSeed: it.seed, sampleAttributes: metadata(it).attributes };
         });
         var blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
         var a = document.createElement("a");

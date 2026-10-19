@@ -10,14 +10,13 @@ import {RenderAssets} from "../src/surface/renderers/RenderAssets.sol";
 ///         collection's owner or an admin (RenderAssets borrows the
 ///         collection's own authority).
 ///
-///         PRIVATE_KEY       deployer/signer (owner or admin of the collection)
+///         Signer: collection owner or admin, passed with forge --account/--sender.
 ///         RENDER_ASSETS     deployed RenderAssets singleton
 ///         ANTON_COLLECTION  Surface collection to configure
 ///         ANTON_CAPTURER    account granted the capturer role
 ///         ANTON_COVER       cover image URI; omit or leave empty to skip
 contract ConfigureAntonAssets is Script {
     function run() external {
-        uint256 pk = vm.envUint("PRIVATE_KEY");
         address renderAssetsAddr = vm.envAddress("RENDER_ASSETS");
         require(renderAssetsAddr != address(0), "RENDER_ASSETS not set");
         address collection = vm.envAddress("ANTON_COLLECTION");
@@ -26,7 +25,7 @@ contract ConfigureAntonAssets is Script {
 
         RenderAssets renderAssets = RenderAssets(renderAssetsAddr);
 
-        vm.startBroadcast(pk);
+        vm.startBroadcast();
 
         renderAssets.setCapturer(collection, capturer, true);
         if (bytes(cover).length > 0) {

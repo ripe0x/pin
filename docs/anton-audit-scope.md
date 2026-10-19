@@ -44,6 +44,11 @@ Plus shared changes, in scope for the diff:
   incrementally with scoped locals (stack limit); output bytes are unchanged
   (full suite green). Confirm the auth is collection owner/admin only and that
   an empty override falls back to the baked default.
+  `setText` emits from RenderAssets, not the collection. Token metadata can be
+  refreshed through `notifyMetadataUpdate`; the existing Surface core has no
+  collection-level notification for later text edits. While the renderer is
+  unlocked, setting the same renderer again emits `ContractURIUpdated`; after
+  lock, marketplace collection-copy refresh requires marketplace tooling.
 
 ## Out of scope
 
@@ -57,10 +62,10 @@ Plus shared changes, in scope for the diff:
 
 1. `AntonRenderer.tokenURI` / `previewURI` never mutate state and never revert
    for a minted token (owner read is try/catch).
-2. Palette/tone traits are derived from the seed exactly as `anton.js` derives
-   them (`palette = seed % 10`, `tone = (seed >> 8) % 2`) — a mismatch is a
-   correctness bug (traits disagree with the render), not a security one.
-   `tokenURI` attributes are exactly Palette and Tone; `AntonRenderer`
+2. Palette, Mode and Flow traits are derived from the seed exactly as `anton.js`
+   derives them (`palette = seed % 10`, `mode = (seed >> 8) & 1`,
+   `flow = (seed >> 16) & 1`) — a mismatch is a correctness bug.
+   `tokenURI` attributes are exactly Palette, Mode and Flow; `AntonRenderer`
    overrides the base's Mint Order and Seed provenance traits and does not
    publish them.
 3. No field injected into the rendered JSON/HTML can break out of its string
@@ -74,7 +79,7 @@ Plus shared changes, in scope for the diff:
 
 - **`AntonRenderer`** JSON/HTML assembly for injection safety across all injected
   fields; the seed→trait derivation matching the JS; that `_attributes` emits
-  exactly Palette and Tone; and that the inherited `previewURI` (not faithful
+  exactly Palette, Mode and Flow; and that the inherited `previewURI` (not faithful
   for this chain-live work) can't mislead — it returns a document with owner
   defaulted to zero for a nonexistent id.
 - **`AntonScriptStore`** immutability and correct SSTORE2 round-trip of the
@@ -83,36 +88,37 @@ Plus shared changes, in scope for the diff:
 - The `ScriptyRenderer` metadata-text constructor addition: escaping of the
   token description, collection description, and external URL; that each
   field is set once with no setter; and that `AntonDeploy` reads them from
-  `script/anton-metadata.json` rather than an env var.
+  `script/anton-metadata.json` rather than an env var. The current file holds
+  artist-supplied defaults; owner/admin can override them through RenderAssets.
 
 ## Deployment shape (for context)
 
 `AntonScriptStore` and `AntonRenderer` (wired to scripty + EthFS gunzip, no
-deps) share one deploy step, `AntonDeploy.deployAntonRenderer`, used by all
-three anton scripts in `contracts/script/`:
+deps) use the same `AntonDeploy` helpers in local rehearsal and live deployment:
 
-- `AntonDeploy.sol`, a shared abstract helper, not run directly. Deploys
+- `AntonDeploy.sol`, a shared abstract helper, not run directly. Creates
   `AntonScriptStore` from `script/anton.js.gz`, then `AntonRenderer` bound to
   scripty, EthFS gunzip, and a caller-supplied `RenderAssets` address. Metadata
   text (token description, collection description, external URL) is read from
-  `script/anton-metadata.json`; the checked-in file holds placeholder text that
-  must be replaced before a mainnet deploy.
-- `DeployAntonRenderer.s.sol`, the mainnet step. Deploys the store and
-  renderer only. The artist then creates the collection from their own
+  `script/anton-metadata.json`. It rejects a `RenderAssets` deployment that
+  lacks the editable-text getters, before a new renderer can be deployed.
+- `DeployAntonStore.s.sol` and `DeployAntonRenderer.s.sol` each broadcast one
+  deployment transaction. The artist then creates the collection from their own
   wallet in the studio, pasting the renderer address, then calls `addAdmin`
   for the deployer; the admin configures `RenderAssets` (capturer, cover) and
   locks the renderer.
 - `DeployAntonWork.s.sol`, the local/rehearsal path. Deploys the store and
   renderer, then calls `createSurface` directly so a fork or testnet run
   produces a full collection in one step.
-- `SwapAntonRenderer.s.sol`, which repoints an existing collection at a
-  freshly deployed store and renderer, for a render-code update after launch.
+- `SwapAntonRenderer.s.sol`, which broadcasts only `setRenderer` for an
+  already-deployed renderer on an unlocked collection.
+- `SetAntonText.s.sol`, which reads `script/anton-metadata.json` and broadcasts
+  one owner/admin `RenderAssets.setText` transaction.
 
-Mainnet sequence: `DeployRenderModules.s.sol` deploys the `RenderAssets`
-singleton once (or reuses an existing one) → `DeployAntonRenderer.s.sol`
-deploys the anton store and renderer against it → the artist creates the
+Mainnet sequence: deploy a `RenderAssets` with editable-text getters → deploy
+the Anton store → deploy the renderer against both → the artist creates the
 collection in the studio with the renderer address → the artist grants the
 deployer (or configurer) admin via `addAdmin` → the admin runs
 `ConfigureAntonAssets.s.sol` to grant a capturer and set the cover on
-`RenderAssets`, then locks the renderer. Proven end to end on a mainnet fork
-and on sepolia (`works/anton/DEPLOYMENTS.md`).
+`RenderAssets`, then locks the renderer. The earlier build was exercised on a
+fork and Sepolia; the current build needs a new rehearsal before release.

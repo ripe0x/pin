@@ -4,21 +4,19 @@ pragma solidity ^0.8.24;
 import {console2} from "forge-std/Script.sol";
 import {AntonDeploy} from "./AntonDeploy.sol";
 
-/// @notice Deploys the anton work's stateless art contracts: AntonScriptStore
-///         and AntonRenderer, bound to an existing RenderAssets singleton. This
-///         is the mainnet deploy step; the artist then creates the collection
-///         from their own wallet in the studio UI, pasting the renderer address.
+/// @notice One-transaction renderer deployment, bound to an existing Anton
+///         store and an editable-text RenderAssets. Deploy the store first.
 ///
-///         PRIVATE_KEY    deployer/signer
+///         ANTON_STORE    AntonScriptStore deployed from the current artwork
 ///         RENDER_ASSETS  deployed RenderAssets singleton (see
-///                        DeployRenderModules.s.sol); required, non-zero
+///                        DeployRenderModules.s.sol); must have setText getters
 contract DeployAntonRenderer is AntonDeploy {
     function run() external {
-        uint256 pk = vm.envUint("PRIVATE_KEY");
+        address store = vm.envAddress("ANTON_STORE");
         address renderAssets = vm.envAddress("RENDER_ASSETS");
 
-        vm.startBroadcast(pk);
-        (address store, address renderer) = deployAntonRenderer(renderAssets);
+        vm.startBroadcast();
+        address renderer = deployAntonRendererFromStore(store, renderAssets);
         vm.stopBroadcast();
 
         console2.log("AntonScriptStore:", store);
