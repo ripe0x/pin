@@ -13,6 +13,9 @@ before each transaction. `--plan` only reads state. It saves public addresses
 and transaction hashes in ignored `contracts/broadcast/anton-sepolia-update.json`
 so an interrupted run can be reconciled and resumed. `DeployAntonWork.s.sol`
 creates a *new* collection and must not be used for this update.
+By default, Foundry prompts for the `ripe0x` keystore password; the wrapper
+does not choose a password file. To use an existing file deliberately, set
+`ANTON_PASSWORD_FILE` to its path before running.
 Keep writes to the old capture registry paused from the renderer-swap prompt
 through its receipt; the wrapper rechecks image parity immediately before
 sending, but a separate capture write could otherwise race that swap.
@@ -21,6 +24,9 @@ pending deployment, use `--retry-failed-render-assets <tx-hash>`. That path
 checks the failed receipt, signer, predicted address, absent code and consumed
 nonce before retrying with a larger gas estimate. Never clear the recovery
 record or blindly rerun a failed deployment.
+Each Foundry transaction uses a dry run followed by Sepolia's live
+`eth_estimateGas` with 25% gas-limit headroom. Sepolia's state-creation gas
+rules make Forge's local estimate too low for these deployments.
 
 For a renderer update using editable copy, deploy a new `RenderAssets` with
 `tokenDescriptionOf`, `collectionDescriptionOf` and `externalUrlOf`. The old

@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 RPC_URL=${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
 ACCOUNT=${ANTON_ACCOUNT:-ripe0x}
-PASSWORD_FILE=${ANTON_PASSWORD_FILE:-$HOME/.foundry/megarip-keystore.pass}
+PASSWORD_FILE=${ANTON_PASSWORD_FILE:-}
 SIGNER=0xCB43078C32423F5348Cab5885911C3B5faE217F9
 COLLECTION=0xE95F98179a6365881aed0cb5331D96976E9Fe09b
 OLD_ASSETS=0xF314c0CAA5E3f55e1046626D1CAdF511c127423F
@@ -17,9 +17,15 @@ STATE=broadcast/anton-sepolia-update.json
 
 for tool in cast forge jq; do command -v "$tool" >/dev/null || { echo "Missing $tool" >&2; exit 1; }; done
 lower() { tr '[:upper:]' '[:lower:]'; }
-[[ -r "$PASSWORD_FILE" ]] || { echo "Keystore password file is unavailable" >&2; exit 1; }
+WALLET_ARGS=(--account "$ACCOUNT")
+if [[ -n "$PASSWORD_FILE" ]]; then
+  [[ -r "$PASSWORD_FILE" ]] || { echo "Specified keystore password file is unavailable" >&2; exit 1; }
+  WALLET_ARGS+=(--password-file "$PASSWORD_FILE")
+else
+  [[ -t 0 ]] || { echo 'Run in an interactive terminal to enter the keystore password' >&2; exit 1; }
+fi
 [[ "$(cast chain-id --rpc-url "$RPC_URL")" == 11155111 ]] || { echo "Expected Sepolia chain 11155111" >&2; exit 1; }
-[[ "$(printf '%s' "$SIGNER" | lower)" == "$(cast wallet address --account "$ACCOUNT" --password-file "$PASSWORD_FILE" | lower)" ]] || {
+[[ "$(printf '%s' "$SIGNER" | lower)" == "$(cast wallet address "${WALLET_ARGS[@]}" | lower)" ]] || {
   echo "Keystore signer does not match the collection owner" >&2; exit 1;
 }
 [[ "$(printf '%s' "$SIGNER" | lower)" == "$(cast call "$COLLECTION" 'owner()(address)' --rpc-url "$RPC_URL" | lower)" ]] || {
@@ -80,10 +86,55 @@ record_receipt() {
   printf 'Confirmed %s: %s\n' "$key" "$hash"
   [[ -z "$address" || "$address" == true ]] || printf 'Address: %s\n' "$address"
 }
-run_forge() {
-  forge script "$1" --rpc-url "$RPC_URL" --sender "$SIGNER" \
-    --account "$ACCOUNT" --password-file "$PASSWORD_FILE" \
-    --gas-estimate-multiplier 250 --broadcast --slow
+forge_env() {
+  local kind=$1
+  shift
+  if [[ "$kind" == renderAssets ]]; then
+    env -u RENDER_ASSETS RENDER_ASSETS_ONLY=true "$@"
+  else
+    "$@"
+  fi
+}
+prepare_forge_tx() {
+  local script=$1 record=$2 kind=$3 local_hex live_hex payload input to
+  # Forge's local EVM underestimates Sepolia's state-creation gas. First run
+  # this exact script without a wallet/broadcast, then estimate its transaction
+  # on the live chain and give the broadcast gas limit 25% headroom.
+  forge_env "$kind" forge script "$script" --rpc-url "$RPC_URL" --sender "$SIGNER" \
+    --gas-estimate-multiplier 100 >/dev/null
+  [[ "$(jq '.transactions | length' "$record")" == 1 ]] || { echo "Expected one transaction in $record" >&2; exit 1; }
+  [[ "$(jq -r '.chain' "$record")" == 11155111 ]] || { echo 'Dry-run chain mismatch' >&2; exit 1; }
+  [[ "$(jq -r '.transactions[0].transaction.from' "$record" | lower)" == "$(printf '%s' "$SIGNER" | lower)" ]] || {
+    echo 'Dry-run signer mismatch' >&2; exit 1;
+  }
+  to=$(jq -r '.transactions[0].transaction.to // empty' "$record")
+  if [[ "$kind" == call ]]; then
+    [[ "$to" =~ ^0x[0-9a-fA-F]{40}$ ]] || { echo 'Dry-run has no call target' >&2; exit 1; }
+  else
+    [[ -z "$to" ]] || { echo 'Dry-run is not a contract creation' >&2; exit 1; }
+  fi
+  [[ "$(jq -r '.transactions[0].transaction.value' "$record")" == 0x0 ]] || {
+    echo 'Unexpected native value in transaction' >&2; exit 1;
+  }
+  input=$(jq -r '.transactions[0].transaction.input' "$record")
+  local_hex=$(jq -r '.transactions[0].transaction.gas' "$record")
+  [[ "$input" =~ ^0x[0-9a-fA-F]+$ && "$local_hex" =~ ^0x[0-9a-fA-F]+$ ]] || {
+    echo 'Invalid dry-run transaction' >&2; exit 1;
+  }
+  payload=$(jq -cn --arg from "$SIGNER" --arg data "$input" --arg to "$to" \
+    '{from:$from,data:$data,value:"0x0"} + (if $to == "" then {} else {to:$to} end)')
+  live_hex=$(cast rpc eth_estimateGas "$payload" --rpc-url "$RPC_URL" | tr -d '"')
+  [[ "$live_hex" =~ ^0x[0-9a-fA-F]+$ ]] || { echo 'Invalid live gas estimate' >&2; exit 1; }
+  LOCAL_GAS=$((16#${local_hex#0x}))
+  LIVE_GAS=$((16#${live_hex#0x}))
+  GAS_MULTIPLIER=$(((LIVE_GAS * 125 + LOCAL_GAS - 1) / LOCAL_GAS))
+  GAS_LIMIT=$((LOCAL_GAS * GAS_MULTIPLIER / 100))
+  [[ "$GAS_LIMIT" -ge "$LIVE_GAS" ]] || { echo 'Gas limit below live estimate' >&2; exit 1; }
+  printf 'Sepolia gas estimate: %s; broadcast limit: %s (25%% headroom).\n' "$LIVE_GAS" "$GAS_LIMIT"
+}
+run_forge_tx() {
+  forge_env "${2:-}" forge script "$1" --rpc-url "$RPC_URL" --sender "$SIGNER" \
+    "${WALLET_ARGS[@]}" --gas-estimate-multiplier "$GAS_MULTIPLIER" --broadcast --slow
 }
 
 echo "Existing collection: $COLLECTION"
@@ -146,7 +197,7 @@ if [[ "${1:-}" == --retry-failed-render-assets ]]; then
   }
   state_set failedRenderAssetsTx "$failed_hash"
   state_set pending ''
-  echo "Confirmed failed deployment $failed_hash; retry will use the next nonce with 250% gas estimate."
+  echo "Confirmed failed deployment $failed_hash; retry will use the next nonce and Sepolia's live gas estimate."
 fi
 check_pending
 
@@ -155,10 +206,11 @@ if [[ -z "$assets" ]]; then
   [[ "$(cast call "$COLLECTION" 'renderer()(address)' --rpc-url "$RPC_URL")" == "$OLD_RENDERER" ]] || {
     echo "Collection renderer changed; reconcile before deploying" >&2; exit 1;
   }
+  prepare_forge_tx \
+    script/DeployRenderModules.s.sol:DeployRenderModulesScript \
+    broadcast/DeployRenderModules.s.sol/11155111/dry-run/run-latest.json renderAssets
   confirm 'CREATE RenderAssets: ownerless editable metadata and capture registry. Existing collection unchanged.' renderAssets
-  RENDER_ASSETS_ONLY=true env -u RENDER_ASSETS forge script script/DeployRenderModules.s.sol:DeployRenderModulesScript \
-    --rpc-url "$RPC_URL" --sender "$SIGNER" --account "$ACCOUNT" --password-file "$PASSWORD_FILE" \
-    --gas-estimate-multiplier 250 --broadcast --slow
+  run_forge_tx script/DeployRenderModules.s.sol:DeployRenderModulesScript renderAssets
   record_receipt broadcast/DeployRenderModules.s.sol/11155111/run-latest.json renderAssets
   assets=$(state_get renderAssets)
 fi
@@ -170,9 +222,12 @@ cast call "$assets" 'tokenDescriptionOf(address)(string)' "$COLLECTION" --rpc-ur
 if [[ "$(state_get capturesMigrated)" != true ]]; then
   template=$(cast call "$OLD_ASSETS" 'templateOf(address)(string)' "$COLLECTION" --rpc-url "$RPC_URL")
   bound=$(cast call "$OLD_ASSETS" 'templateMaxTokenIdOf(address)(uint256)' "$COLLECTION" --rpc-url "$RPC_URL" | cut -d' ' -f1)
+  ANTON_COLLECTION="$COLLECTION" ANTON_OLD_RENDER_ASSETS="$OLD_ASSETS" RENDER_ASSETS="$assets" \
+    prepare_forge_tx script/MigrateAntonCaptures.s.sol:MigrateAntonCaptures \
+      broadcast/MigrateAntonCaptures.s.sol/11155111/dry-run/run-latest.json call
   confirm "CALL RenderAssets.setCaptureTemplate(collection=$COLLECTION, template=$template, maxTokenId=$bound). Preserves existing token images." capturesMigrated
   ANTON_COLLECTION="$COLLECTION" ANTON_OLD_RENDER_ASSETS="$OLD_ASSETS" RENDER_ASSETS="$assets" \
-    run_forge script/MigrateAntonCaptures.s.sol:MigrateAntonCaptures
+    run_forge_tx script/MigrateAntonCaptures.s.sol:MigrateAntonCaptures
   record_receipt broadcast/MigrateAntonCaptures.s.sol/11155111/run-latest.json capturesMigrated true
 fi
 [[ "$(cast call "$assets" 'templateOf(address)(string)' "$COLLECTION" --rpc-url "$RPC_URL")" == "$(cast call "$OLD_ASSETS" 'templateOf(address)(string)' "$COLLECTION" --rpc-url "$RPC_URL")" ]] || {
@@ -184,8 +239,10 @@ fi
 
 store=$(state_get store)
 if [[ -z "$store" ]]; then
+  prepare_forge_tx script/DeployAntonStore.s.sol:DeployAntonStore \
+    broadcast/DeployAntonStore.s.sol/11155111/dry-run/run-latest.json create
   confirm 'CREATE AntonScriptStore: the reviewed v3 gzipped artwork. Existing collection unchanged.' store
-  run_forge script/DeployAntonStore.s.sol:DeployAntonStore
+  run_forge_tx script/DeployAntonStore.s.sol:DeployAntonStore
   record_receipt broadcast/DeployAntonStore.s.sol/11155111/run-latest.json store
   store=$(state_get store)
 fi
@@ -193,8 +250,11 @@ code_exists "$store" || { echo "AntonScriptStore has no code: $store" >&2; exit 
 
 renderer=$(state_get renderer)
 if [[ -z "$renderer" ]]; then
+  ANTON_STORE="$store" RENDER_ASSETS="$assets" prepare_forge_tx \
+    script/DeployAntonRenderer.s.sol:DeployAntonRenderer \
+    broadcast/DeployAntonRenderer.s.sol/11155111/dry-run/run-latest.json create
   confirm "CREATE AntonRenderer(store=$store, renderAssets=$assets, builder=0xD7587F110E08F4D120A231bA97d3B577A81Df022, gunzipStore=0x8FAA1AAb9DA8c75917C43Fb24fDdb513edDC3245, injectionVersion=1). Existing collection unchanged." renderer
-  ANTON_STORE="$store" RENDER_ASSETS="$assets" run_forge script/DeployAntonRenderer.s.sol:DeployAntonRenderer
+  ANTON_STORE="$store" RENDER_ASSETS="$assets" run_forge_tx script/DeployAntonRenderer.s.sol:DeployAntonRenderer
   record_receipt broadcast/DeployAntonRenderer.s.sol/11155111/run-latest.json renderer
   renderer=$(state_get renderer)
 fi
@@ -204,6 +264,9 @@ current=$(cast call "$COLLECTION" 'renderer()(address)' --rpc-url "$RPC_URL")
 if [[ "$(printf '%s' "$current" | lower)" != "$(printf '%s' "$renderer" | lower)" ]]; then
   [[ "$(printf '%s' "$current" | lower)" == "$(printf '%s' "$OLD_RENDERER" | lower)" ]] || { echo "Unknown current renderer: $current" >&2; exit 1; }
   [[ "$(cast call "$COLLECTION" 'isRendererLocked()(bool)' --rpc-url "$RPC_URL")" == false ]] || { echo 'Renderer is locked' >&2; exit 1; }
+  ANTON_COLLECTION="$COLLECTION" ANTON_RENDERER="$renderer" ANTON_STORE="$store" RENDER_ASSETS="$assets" \
+    prepare_forge_tx script/SwapAntonRenderer.s.sol:SwapAntonRenderer \
+      broadcast/SwapAntonRenderer.s.sol/11155111/dry-run/run-latest.json call
   confirm "CALL collection.setRenderer($renderer) on $COLLECTION. Updates metadata and animation for all existing tokens; mint price and ownership unchanged. Keep capture writes paused until the swap receipt." rendererSwap defer
   # Captures may have changed in the old registry while this run was paused.
   # Check after approval, as close to the broadcast as this interface permits.
@@ -218,7 +281,7 @@ if [[ "$(printf '%s' "$current" | lower)" != "$(printf '%s' "$renderer" | lower)
   printf 'Capture images match for %s minted tokens.\n' "$minted_now"
   state_set pending "rendererSwap (nonce $CONFIRMED_NONCE)"
   ANTON_COLLECTION="$COLLECTION" ANTON_RENDERER="$renderer" ANTON_STORE="$store" RENDER_ASSETS="$assets" \
-    run_forge script/SwapAntonRenderer.s.sol:SwapAntonRenderer
+    run_forge_tx script/SwapAntonRenderer.s.sol:SwapAntonRenderer
   record_receipt broadcast/SwapAntonRenderer.s.sol/11155111/run-latest.json rendererSwap "$renderer"
 fi
 [[ "$(printf '%s' "$renderer" | lower)" == "$(cast call "$COLLECTION" 'renderer()(address)' --rpc-url "$RPC_URL" | lower)" ]] || {
@@ -230,7 +293,7 @@ if [[ "$current_cap" != 256 ]]; then
   [[ "$(cast call "$COLLECTION" 'isSupplyLocked()(bool)' --rpc-url "$RPC_URL")" == false ]] || { echo 'Supply is locked' >&2; exit 1; }
   confirm "CALL collection.setSupplyCap(256) on $COLLECTION; current cap=$current_cap. Existing tokens remain minted." supplyCap
   hash=$(cast send "$COLLECTION" 'setSupplyCap(uint256)' 256 --rpc-url "$RPC_URL" --from "$SIGNER" \
-    --account "$ACCOUNT" --password-file "$PASSWORD_FILE" --json | jq -r '.transactionHash')
+    "${WALLET_ARGS[@]}" --json | jq -r '.transactionHash')
   [[ -n "$hash" && "$hash" != null ]] || { echo 'Missing cap transaction hash; reconcile before resuming' >&2; exit 1; }
   cap_status=$(cast receipt "$hash" status --rpc-url "$RPC_URL")
   [[ "$cap_status" == 1 || "$cap_status" == 0x1 ]] || { echo 'Cap transaction failed' >&2; exit 1; }
