@@ -13,6 +13,9 @@ before each transaction. `--plan` only reads state. It saves public addresses
 and transaction hashes in ignored `contracts/broadcast/anton-sepolia-update.json`
 so an interrupted run can be reconciled and resumed. `DeployAntonWork.s.sol`
 creates a *new* collection and must not be used for this update.
+Keep writes to the old capture registry paused from the renderer-swap prompt
+through its receipt; the wrapper rechecks image parity immediately before
+sending, but a separate capture write could otherwise race that swap.
 
 For a renderer update using editable copy, deploy a new `RenderAssets` with
 `tokenDescriptionOf`, `collectionDescriptionOf` and `externalUrlOf`. The old
