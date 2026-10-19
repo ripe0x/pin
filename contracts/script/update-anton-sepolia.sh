@@ -55,7 +55,7 @@ confirm() {
   state_set pending "$2 (nonce $nonce)"
 }
 record_receipt() {
-  local file=$1 key=$2 address=${3:-} count status hash
+  local file=$1 key=$2 address=${3:-} count status hash chain_status tx_from
   [[ -f "$file" ]] || { echo "Missing broadcast receipt: $file" >&2; exit 1; }
   count=$(jq '.transactions | length' "$file")
   [[ "$count" == 1 ]] || { echo "Expected exactly one transaction in $file" >&2; exit 1; }
@@ -63,7 +63,16 @@ record_receipt() {
   [[ "$status" == 1 || "$status" == 0x1 ]] || { echo "Receipt is not successful: $status" >&2; exit 1; }
   hash=$(jq -r '.receipts[0].transactionHash // empty' "$file")
   [[ -n "$hash" ]] || { echo "Missing transaction hash in $file" >&2; exit 1; }
+  chain_status=$(cast receipt "$hash" status --rpc-url "$RPC_URL")
+  [[ "$chain_status" == 1 || "$chain_status" == 0x1 ]] || { echo "Onchain receipt failed: $hash" >&2; exit 1; }
+  tx_from=$(cast tx "$hash" from --rpc-url "$RPC_URL" | lower)
+  [[ "$tx_from" == "$(printf '%s' "$SIGNER" | lower)" ]] || { echo "Unexpected transaction sender: $tx_from" >&2; exit 1; }
   if [[ -z "$address" ]]; then address=$(jq -r '.receipts[0].contractAddress // .transactions[0].contractAddress // empty' "$file"); fi
+  if [[ "$key" == renderAssets || "$key" == store || "$key" == renderer ]]; then
+    [[ "$address" =~ ^0x[0-9a-fA-F]{40}$ ]] && code_exists "$address" || {
+      echo "Deployment address is missing or has no code; reconcile $hash before resuming" >&2; exit 1;
+    }
+  fi
   [[ -z "$address" ]] || state_set "$key" "$address"
   state_set "${key}Tx" "$hash"
   state_set pending ''
@@ -83,6 +92,24 @@ echo "Mint price (1 token): $(cast call "$MINTER" 'priceOf(address,uint256)(uint
   echo "Mint price is no longer 0.001 ETH" >&2; exit 1;
 }
 [[ "${1:-}" == --plan || -z "${1:-}" ]] || { echo 'Usage: bash script/update-anton-sepolia.sh [--plan]' >&2; exit 1; }
+minted=$(config | tail -1)
+[[ "$minted" =~ ^[0-9]+$ && "$minted" -le 256 ]] || { echo "Minted count cannot fit cap 256: $minted" >&2; exit 1; }
+current_cap=$(cap)
+if [[ "$current_cap" != 256 ]]; then
+  [[ "$(cast call "$COLLECTION" 'isSupplyLocked()(bool)' --rpc-url "$RPC_URL")" == false ]] || {
+    echo "Supply is locked at $current_cap; cannot update to 256" >&2; exit 1;
+  }
+fi
+current_renderer=$(cast call "$COLLECTION" 'renderer()(address)' --rpc-url "$RPC_URL")
+if [[ "$(printf '%s' "$current_renderer" | lower)" == "$(printf '%s' "$OLD_RENDERER" | lower)" ]]; then
+  [[ "$(cast call "$COLLECTION" 'isRendererLocked()(bool)' --rpc-url "$RPC_URL")" == false ]] || {
+    echo 'Existing renderer is locked; cannot update the artwork' >&2; exit 1;
+  }
+else
+  [[ -n "$(state_get renderer)" && "$(printf '%s' "$current_renderer" | lower)" == "$(state_get renderer | lower)" ]] || {
+    echo "Collection renderer changed unexpectedly: $current_renderer" >&2; exit 1;
+  }
+fi
 if [[ "${1:-}" == --plan ]]; then
   echo 'Plan: deploy RenderAssets; copy capture template; deploy artwork store and renderer; switch this collection; set cap to 256.'
   echo 'The wrapper stops for explicit confirmation before each of the six transactions.'
@@ -114,6 +141,12 @@ if [[ "$(state_get capturesMigrated)" != true ]]; then
     run_forge script/MigrateAntonCaptures.s.sol:MigrateAntonCaptures
   record_receipt broadcast/MigrateAntonCaptures.s.sol/11155111/run-latest.json capturesMigrated true
 fi
+[[ "$(cast call "$assets" 'templateOf(address)(string)' "$COLLECTION" --rpc-url "$RPC_URL")" == "$(cast call "$OLD_ASSETS" 'templateOf(address)(string)' "$COLLECTION" --rpc-url "$RPC_URL")" ]] || {
+  echo 'Capture template readback mismatch' >&2; exit 1;
+}
+[[ "$(cast call "$assets" 'templateMaxTokenIdOf(address)(uint256)' "$COLLECTION" --rpc-url "$RPC_URL" | cut -d' ' -f1)" == "$(cast call "$OLD_ASSETS" 'templateMaxTokenIdOf(address)(uint256)' "$COLLECTION" --rpc-url "$RPC_URL" | cut -d' ' -f1)" ]] || {
+  echo 'Capture bound readback mismatch' >&2; exit 1;
+}
 
 store=$(state_get store)
 if [[ -z "$store" ]]; then
@@ -153,6 +186,8 @@ if [[ "$current_cap" != 256 ]]; then
   hash=$(cast send "$COLLECTION" 'setSupplyCap(uint256)' 256 --rpc-url "$RPC_URL" --from "$SIGNER" \
     --account "$ACCOUNT" --password-file "$PASSWORD_FILE" --json | jq -r '.transactionHash')
   [[ -n "$hash" && "$hash" != null ]] || { echo 'Missing cap transaction hash; reconcile before resuming' >&2; exit 1; }
+  cap_status=$(cast receipt "$hash" status --rpc-url "$RPC_URL")
+  [[ "$cap_status" == 1 || "$cap_status" == 0x1 ]] || { echo 'Cap transaction failed' >&2; exit 1; }
   [[ "$(cap)" == 256 ]] || { echo 'Cap readback mismatch' >&2; exit 1; }
   state_set supplyCapTx "$hash"
   state_set pending ''
