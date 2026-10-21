@@ -2,9 +2,7 @@
 
 Current target: `Form of Solitude` / `SOLITUDE`, supply cap 256. Local and
 Sepolia mint price: 0.001 ETH. Mainnet price is configured separately in the
-studio. The Sepolia collection below is historical: it was created with a 999
-cap and must be updated onchain to 256. Do not infer its live renderer or cap
-from this file; read `renderer()` and `config()` before a broadcast.
+studio. Read `renderer()` and `config()` before any further broadcast.
 
 To update the existing Sepolia collection, run `bash script/update-anton-sepolia.sh`
 from `contracts/`. The wrapper uses the existing deploy scripts, checks the
@@ -39,7 +37,44 @@ old registry has no cover for this collection. At the pinned review block
 `MigrateAntonCaptures.s.sol` performs this copy as one authorized transaction
 and checks every minted token against the old registry before broadcast.
 
-## Sepolia (stateless build, 2026-09-04)
+## Sepolia (artist v3 update, 2026-10-21)
+
+The existing collection now uses the artist's v3 script. The update retained
+the 25 minted tokens, their seeds, the minter, and the capture template.
+
+| Contract | Address |
+| --- | --- |
+| collection (Form of Solitude) | `0xE95F98179a6365881aed0cb5331D96976E9Fe09b` |
+| minter (stock FixedPriceMinter) | `0x76EA8061A941858001811B003a630EC67029284e` |
+| AntonRenderer | `0x502d3a5B7Eb0d81494D6e16d7D35Ed12936F0DFd` |
+| AntonScriptStore | `0xd9c8fc6d15e31bdd8f5eb59477a54fd7ebaa1304` |
+| RenderAssets (editable metadata and captures) | `0xe248c1ebcd2075b2cbadb6ce2eaae45a02a15e7d` |
+
+Confirmed collection state: supply cap 256, price 0.001 ETH, 25 minted.
+`tokenURI` returns named Palette, Mode, and Flow traits plus the artist's token
+description; `contractURI` returns the artist's collection description. The
+descriptions and external URL can be edited in RenderAssets after deployment.
+The preview is https://ripe-anton-untitled-preview.netlify.app/.
+
+Update transactions: RenderAssets
+`0x96602f58bb2cd08c04d5f340800ccd48669ae9f9784d95391172f57d6d4ee229`,
+capture migration
+`0x9105ab28513f82f7e3285d830a942e2eecf7396e5553c01458ce7d3b25602b14`,
+script store
+`0x1e5ef9625080503691ca9ff308c291ad74de7b7b92b24f350878e5b74a0e8828`,
+renderer
+`0xd4bace4057341094404303084c620d07cb148d4be3d96d62969b631162c6e35a`,
+renderer swap
+`0xeb9fbd2179ca44af429a83ce89b4acc48b48f02d61190d7c10dbb615d1547f86`,
+and supply cap
+`0xe0ee41aa3974b09a5cd291d8339209f8446682ee3999165654e377ea85be52a3`.
+
+The migrated capture template is bound through token 5. Tokens 6–25 currently
+have no `image` in `tokenURI`; animation URLs work. The collection cover image
+and external URL have not been set. A cover image URI is needed for marketplace
+thumbnails while token captures are pending.
+
+## Sepolia (stateless build, 2026-09-04, superseded renderer)
 
 Stateless animation (wall clock + owner offset + seed, no per-frame state),
 viewport-filling live canvas, minified script (6.5 KB gz). Reuses the sepolia
