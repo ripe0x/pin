@@ -36,11 +36,11 @@ abstract contract AntonDeploy is Script {
         require(renderAssets.code.length > 0, "RENDER_ASSETS has no code");
         // An older RenderAssets deployment lacks these getters. Binding to it
         // would make every Anton tokenURI and contractURI revert.
-        try RenderAssets(renderAssets).tokenDescriptionOf(address(this)) returns (string memory) {}
+        try RenderAssets(renderAssets).tokenDescriptionOf(address(0)) returns (string memory) {}
         catch { revert("RENDER_ASSETS lacks editable text"); }
-        try RenderAssets(renderAssets).collectionDescriptionOf(address(this)) returns (string memory) {}
+        try RenderAssets(renderAssets).collectionDescriptionOf(address(0)) returns (string memory) {}
         catch { revert("RENDER_ASSETS lacks editable text"); }
-        try RenderAssets(renderAssets).externalUrlOf(address(this)) returns (string memory) {}
+        try RenderAssets(renderAssets).externalUrlOf(address(0)) returns (string memory) {}
         catch { revert("RENDER_ASSETS lacks editable text"); }
 
         CodeRef[] memory code = new CodeRef[](1);
