@@ -71,7 +71,7 @@ record_receipt() {
   hash=$(jq -r '.receipts[0].transactionHash // empty' "$file")
   [[ -n "$hash" ]] || { echo "Missing transaction hash in $file" >&2; exit 1; }
   chain_status=$(cast receipt "$hash" status --rpc-url "$RPC_URL")
-  [[ "$chain_status" == 1 || "$chain_status" == 0x1 ]] || { echo "Onchain receipt failed: $hash" >&2; exit 1; }
+  [[ "$chain_status" == true || "$chain_status" == 1 || "$chain_status" == 0x1 ]] || { echo "Onchain receipt failed: $hash" >&2; exit 1; }
   tx_from=$(cast receipt "$hash" from --rpc-url "$RPC_URL" | lower)
   [[ "$tx_from" == "$(printf '%s' "$SIGNER" | lower)" ]] || { echo "Unexpected transaction sender: $tx_from" >&2; exit 1; }
   if [[ -z "$address" ]]; then address=$(jq -r '.receipts[0].contractAddress // .transactions[0].contractAddress // empty' "$file"); fi
@@ -296,7 +296,7 @@ if [[ "$current_cap" != 256 ]]; then
     "${WALLET_ARGS[@]}" --json | jq -r '.transactionHash')
   [[ -n "$hash" && "$hash" != null ]] || { echo 'Missing cap transaction hash; reconcile before resuming' >&2; exit 1; }
   cap_status=$(cast receipt "$hash" status --rpc-url "$RPC_URL")
-  [[ "$cap_status" == 1 || "$cap_status" == 0x1 ]] || { echo 'Cap transaction failed' >&2; exit 1; }
+  [[ "$cap_status" == true || "$cap_status" == 1 || "$cap_status" == 0x1 ]] || { echo 'Cap transaction failed' >&2; exit 1; }
   [[ "$(cap)" == 256 ]] || { echo 'Cap readback mismatch' >&2; exit 1; }
   state_set supplyCapTx "$hash"
   state_set pending ''
