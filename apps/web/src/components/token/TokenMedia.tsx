@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useIpfsGatewayFallback } from "@/lib/use-ipfs-fallback"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
@@ -86,6 +86,16 @@ export function TokenMedia({
     if (ambiguous && !escalated) setEscalated(true)
   }
 
+  // A server-rendered <img> can fail before hydration attaches onError
+  // (an extension-less video URL fails fast), so the escalation above
+  // would never run. Replay the missed error on mount.
+  const imgRef = useRef<HTMLImageElement>(null)
+  useEffect(() => {
+    const img = imgRef.current
+    if (img?.complete && img.naturalWidth === 0) handleImageError()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   if (kind === "video") {
     const v = escalated ? escalatedVideo : media
     return (
@@ -133,6 +143,7 @@ export function TokenMedia({
 
   return (
     <img
+      ref={imgRef}
       src={media.src}
       alt={title}
       className={fill ? "h-full w-full object-cover" : "max-h-[80vh] w-auto object-contain"}
