@@ -87,6 +87,25 @@ contract FixedPriceSaleTest is SurfaceV2Base {
         _initRaw(s, address(token));
     }
 
+    function test_init_emitsEveryConfigEvent() public {
+        FixedPriceSale s = _rawSale();
+        MockGate g = new MockGate();
+        vm.expectEmit(address(s));
+        emit FixedPriceSale.PriceSet(PRICE);
+        vm.expectEmit(address(s));
+        emit FixedPriceSale.MintWindowSet(10, 20);
+        vm.expectEmit(address(s));
+        emit FixedPriceSale.MaxMintsSet(7);
+        vm.expectEmit(address(s));
+        emit FixedPriceSale.WalletCapSet(3);
+        vm.expectEmit(address(s));
+        emit FixedPriceSale.PayoutRecipientSet(stranger);
+        vm.expectEmit(address(s));
+        emit FixedPriceSale.GateSet(address(g));
+        vm.prank(artist);
+        s.initialize(address(token), PRICE, 10, 20, 7, 3, stranger, address(g), pnd);
+    }
+
     function test_init_validation() public {
         FixedPriceSale s = _rawSale();
         vm.startPrank(artist);

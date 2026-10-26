@@ -190,8 +190,9 @@ payout recipient, gate and default referrer. Reverts `CollectionRequired`,
 and `BadMintWindow`. Through the factory the caller is the factory, so only
 the first authority path applies: grant the predicted address
 (`predictCreate` or `predict` on the sale factory, both namespaced to the
-caller) as minter first, as the launcher does. Emits `MintWindowSet`, `PayoutRecipientSet` and
-`GateSet`.
+caller) as minter first, as the launcher does. Emits `PriceSet`, `MintWindowSet`,
+`MaxMintsSet`, `WalletCapSet`, `PayoutRecipientSet` and `GateSet`, so the
+sale's full initial config is in its logs.
 
 ## Read functions
 
@@ -363,7 +364,7 @@ Standard OpenZeppelin Initializable event, emitted once by `initialize`.
 event MaxMintsSet(uint256 maxMints)
 ```
 
-The ceiling changed.
+The ceiling changed, including at initialize.
 
 ### MintWindowSet
 
@@ -387,7 +388,7 @@ The payout recipient changed, including at initialize.
 event PriceSet(uint256 price)
 ```
 
-The price changed.
+The price changed, including at initialize.
 
 ### ReferralPaid
 
@@ -412,7 +413,7 @@ and first token id.
 event WalletCapSet(uint256 walletCap)
 ```
 
-The wallet cap changed.
+The wallet cap changed, including at initialize.
 
 ### Withdrawn
 

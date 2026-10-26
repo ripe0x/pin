@@ -138,8 +138,9 @@ payout recipient, gate and default referrer. Reverts `CollectionRequired`,
 and `BadMintWindow`. Through the factory the caller is the factory, so only
 the first authority path applies: grant the predicted address
 (`predictCreate` or `predict` on the sale factory, both namespaced to the
-caller) as minter first, as the launcher does. Emits `MintWindowSet`, `PayoutRecipientSet` and
-`GateSet`.
+caller) as minter first, as the launcher does. Emits `PriceSet`, `MintWindowSet`,
+`MaxMintsSet`, `WalletCapSet`, `PayoutRecipientSet` and `GateSet`, so the
+sale's full initial config is in its logs.
 
 ## function REFERRAL_SHARE_BPS
 
@@ -225,7 +226,7 @@ the amount.
 
 ## event PriceSet
 
-The price changed.
+The price changed, including at initialize.
 
 ## event MintWindowSet
 
@@ -233,11 +234,11 @@ The window changed, including at initialize.
 
 ## event MaxMintsSet
 
-The ceiling changed.
+The ceiling changed, including at initialize.
 
 ## event WalletCapSet
 
-The wallet cap changed.
+The wallet cap changed, including at initialize.
 
 ## event PayoutRecipientSet
 

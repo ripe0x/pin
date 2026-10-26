@@ -91,13 +91,18 @@ contract FixedPriceSale is Initializable, ReentrancyGuardUpgradeable, IMinter, I
         }
         __ReentrancyGuard_init();
         collection = collection_;
+        defaultReferrer = defaultReferrer_;
+        // Every config value is logged at init through the same events its
+        // setter emits, so an indexer learns the sale's state from logs.
         price = price_;
+        emit PriceSet(price_);
         _setMintWindow(mintStart_, mintEnd_);
         maxMints = maxMints_;
+        emit MaxMintsSet(maxMints_);
         walletCap = walletCap_;
+        emit WalletCapSet(walletCap_);
         _setPayoutRecipient(payoutRecipient_);
         _setGate(gate_);
-        defaultReferrer = defaultReferrer_;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

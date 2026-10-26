@@ -128,19 +128,19 @@ Every event the Surface contracts emit, grouped by contract. Signatures and fiel
 
 **[`Initialized`](/docs/surface/contracts/fixed-price-sale#initialized)** · Standard OpenZeppelin Initializable event, emitted once by `initialize`.
 
-**[`MaxMintsSet`](/docs/surface/contracts/fixed-price-sale#maxmintsset)** · The ceiling changed.
+**[`MaxMintsSet`](/docs/surface/contracts/fixed-price-sale#maxmintsset)** · The ceiling changed, including at initialize.
 
 **[`MintWindowSet`](/docs/surface/contracts/fixed-price-sale#mintwindowset)** · The window changed, including at initialize.
 
 **[`PayoutRecipientSet`](/docs/surface/contracts/fixed-price-sale#payoutrecipientset)** · The payout recipient changed, including at initialize.
 
-**[`PriceSet`](/docs/surface/contracts/fixed-price-sale#priceset)** · The price changed.
+**[`PriceSet`](/docs/surface/contracts/fixed-price-sale#priceset)** · The price changed, including at initialize.
 
 **[`ReferralPaid`](/docs/surface/contracts/fixed-price-sale#referralpaid)** · A nonzero referral amount accrued to a referrer.
 
 **[`Sold`](/docs/surface/contracts/fixed-price-sale#sold)** · One per successful mint: payer, recipient, referrer, quantity, exact payment and first token id.
 
-**[`WalletCapSet`](/docs/surface/contracts/fixed-price-sale#walletcapset)** · The wallet cap changed.
+**[`WalletCapSet`](/docs/surface/contracts/fixed-price-sale#walletcapset)** · The wallet cap changed, including at initialize.
 
 **[`Withdrawn`](/docs/surface/contracts/fixed-price-sale#withdrawn)** · An owed balance was paid out: the account it was owed to, where it went, and the amount.
 
