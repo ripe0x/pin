@@ -1,5 +1,9 @@
 # Surface v2 (art core): implementation plan and spec
 
+> **SUPERSEDED 2026-10-26** by `docs/pnd-surface-v2-design.md` (the
+> primitive-first design). Kept for the history of the August strip plan;
+> do not build against it.
+
 Status: implementation branch `claude/surface-v2-art-core`. This is the
 "path 1" strip plan agreed 2026-08-18: Surface becomes an art-only
 protocol; backed/redeemable works are out of scope for this system (a
