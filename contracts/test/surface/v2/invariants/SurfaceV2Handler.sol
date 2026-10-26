@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 
 import {Surface} from "../../../../src/surface/v2/Surface.sol";
+import {ISurface} from "../../../../src/surface/v2/interfaces/ISurface.sol";
 import {MockRenderer} from "../../mocks/SurfaceMocks.sol";
 
 /// @dev Drives a token as both its owner and its minter: mints, burns,
@@ -16,6 +17,8 @@ contract SurfaceV2Handler is Test {
 
     uint256 public ghostMinted;
     uint256 public ghostBurned;
+    uint256 public ghostCapRejections;
+    uint256 public ghostRenounces;
     bool public idReused;
     mapping(uint256 => bytes32) public seedAtMint;
 
@@ -41,8 +44,9 @@ contract SurfaceV2Handler is Test {
         if (token.minter() != address(this)) return;
         uint256 cap = token.supplyCap();
         if (cap != 0 && ghostMinted + quantity > cap) {
-            vm.expectRevert();
+            vm.expectRevert(abi.encodeWithSelector(ISurface.ExceedsCap.selector, cap, ghostMinted + quantity));
             token.mintTo(holders[holderSeed % 3], quantity);
+            ghostCapRejections++;
             return;
         }
         uint256 first = token.mintTo(holders[holderSeed % 3], quantity);
@@ -51,6 +55,17 @@ contract SurfaceV2Handler is Test {
             seedAtMint[first + i] = token.tokenSeed(first + i);
         }
         ghostMinted += quantity;
+    }
+
+    /// @dev Force the cap boundary without relying on random values to
+    ///      select precisely the current lifetime mint count.
+    function probeCap(uint256 holderSeed) external {
+        if (renounced || token.minter() != address(this) || ghostMinted == 0) return;
+        vm.prank(owner);
+        token.setSupplyCap(ghostMinted);
+        vm.expectRevert(abi.encodeWithSelector(ISurface.ExceedsCap.selector, ghostMinted, ghostMinted + 1));
+        token.mintTo(holders[holderSeed % 3], 1);
+        ghostCapRejections++;
     }
 
     function burn(uint256 idSeed) external {
@@ -113,6 +128,7 @@ contract SurfaceV2Handler is Test {
         vm.prank(owner);
         token.renounceOwnership();
         renounced = true;
+        ghostRenounces++;
         frozenConfig = configHash();
     }
 

@@ -18,6 +18,18 @@ contract SurfaceV2InvariantsTest is StdInvariant, SurfaceV2Base {
         vm.prank(artist);
         token.setMinter(address(handler));
         targetContract(address(handler));
+        bytes4[] memory selectors = new bytes4[](10);
+        selectors[0] = SurfaceV2Handler.mint.selector;
+        selectors[1] = SurfaceV2Handler.probeCap.selector;
+        selectors[2] = SurfaceV2Handler.burn.selector;
+        selectors[3] = SurfaceV2Handler.transfer.selector;
+        selectors[4] = SurfaceV2Handler.setSupplyCap.selector;
+        selectors[5] = SurfaceV2Handler.setMinter.selector;
+        selectors[6] = SurfaceV2Handler.setRenderer.selector;
+        selectors[7] = SurfaceV2Handler.setRoyalty.selector;
+        selectors[8] = SurfaceV2Handler.setName.selector;
+        selectors[9] = SurfaceV2Handler.renounce.selector;
+        targetSelector(StdInvariant.FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
     /// @dev Ids equal mint order and are never reused.
@@ -54,5 +66,21 @@ contract SurfaceV2InvariantsTest is StdInvariant, SurfaceV2Base {
 
     function invariant_holdsNoETH() public view {
         assertEq(address(token).balance, 0);
+    }
+
+    /// @dev Check that cap rejection, burn, and renounce actions actually
+    ///      execute rather than merely appearing in the selector list.
+    function test_handlerReachability() public {
+        handler.mint(0, 2);
+        assertEq(handler.ghostMinted(), 2);
+        handler.probeCap(1);
+        assertEq(handler.ghostCapRejections(), 1);
+        handler.burn(1);
+        assertEq(handler.ghostBurned(), 1);
+        handler.renounce(0);
+        assertEq(handler.ghostRenounces(), 1);
+        assertEq(token.owner(), address(0));
+        handler.setName(true);
+        assertFalse(handler.changedAfterRenounce());
     }
 }

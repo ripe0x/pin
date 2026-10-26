@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Vm} from "forge-std/Vm.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
+import {OwnableUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
 
 import {SurfaceV2Base, MockGate} from "./SurfaceV2Base.sol";
 import {Surface} from "../../../src/surface/v2/Surface.sol";
@@ -112,8 +113,17 @@ contract LauncherTest is SurfaceV2Base {
     function test_launch_propagatesTokenValidation() public {
         Launcher.TokenParams memory t = _tokenParams();
         t.owner = address(0);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableInvalidOwner.selector, address(0)));
         launcher.launch(t, _saleParams());
+    }
+
+    function test_launch_rejectsFactoryPredictionMismatch() public {
+        MismatchingSaleFactory fake = new MismatchingSaleFactory();
+        Launcher guarded = new Launcher(tokenFactory, CloneFactory(address(fake)), pnd, launcherOwner);
+        vm.expectRevert(
+            abi.encodeWithSelector(Launcher.SalePredictionMismatch.selector, address(0x1234), address(0x5678))
+        );
+        guarded.launch(_tokenParams(), _saleParams());
     }
 
     // ─── default referrer ───────────────────────────────────────────────────
@@ -157,6 +167,18 @@ contract LauncherTest is SurfaceV2Base {
         m.mint(token, collector, 3);
         assertEq(token.balanceOf(collector), 3);
         assertEq(token.minter(), address(m));
+    }
+}
+
+/// @dev Exercises the launcher's defensive check when its configured sale
+///      factory lies about CREATE2's result.
+contract MismatchingSaleFactory {
+    function predict(bytes32, address) external pure returns (address) {
+        return address(0x1234);
+    }
+
+    function createDeterministic(bytes32, bytes calldata) external pure returns (address) {
+        return address(0x5678);
     }
 }
 
