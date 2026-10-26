@@ -198,6 +198,45 @@ key so the v1 keys are untouched (Sepolia's top-level `deployer` and
 equivalent and is gitignored. A simulation has no receipts, so it can never
 produce a record.
 
+## Surface v2 assurance
+
+Beyond `forge test` (unit, fuzz and invariant suites under
+`test/surface/v2/`), the v2 primitives have five more layers. CI runs the
+first four on every PR (`contracts-v2-e2e`, `contracts-v2-slither`) and the
+mutation run weekly (`contracts-v2-mutation`).
+
+| Layer | Command (from `contracts/`) | What it proves |
+| --- | --- | --- |
+| Forge end-to-end | `forge test --match-path test/surface/v2/E2E.t.sol` | One collection's whole life through a real `DeploySurfaceV2` deploy, with every wei accounted for |
+| Anvil end-to-end | `bash script/test/e2e-anvil.sh` | `deploy.sh` on a live chain, the record from receipts, a `cast`-driven lifecycle, and the record step refusing tampered broadcast files and config drift |
+| Deep invariants | `FOUNDRY_PROFILE=invariant forge test --match-path "test/surface/v2/invariants/*"` | Value conservation, close/renounce finality, ids, cap, seeds, at 512 runs x 100 calls |
+| Slither | `slither . --config-file slither.config.json --fail-medium` | No unreviewed medium-or-higher finding |
+| Mutation | `python3 -I script/test/mutate.py .` | Each of 85 targeted mutants (deleted, flipped or reordered checks, wrong payees, dropped modifiers) makes a v2 test fail |
+
+Coverage (`forge coverage --match-path "test/surface/v2/**" --report summary`)
+is 100% lines, statements, branches and functions on all five v2 contracts.
+
+Slither triage. Suppressed inline with the reason beside the code: the
+`_mint` reentrancy findings (both entrypoints are `nonReentrant`, the
+collection mints only for this sale) and the intentionally ignored return
+values in `CloneFactory._init` and `_checkReceiver`. Excluded in
+`slither.config.json` as by design: `timestamp` (the mint window),
+`missing-zero-check` (zero means "none" for minter, gate, referrer and
+successor), `low-level-calls` (the pull-payment transfer), and
+`unimplemented-functions` (a false positive on the overridden `owner()`).
+
+Aderyn (`aderyn . --path-includes src/surface/v2`) reports two "High"
+results, both reviewed: the reentrancy item is an `owner()` read before a
+write with no exploitable path, and "weak randomness" is the
+`block.prevrandao` seed the spec accepts. Its Low results are
+informational (`_mint` over `_safeMint` is deliberate: the sale checks the
+receiver).
+
+Halmos 0.3.3 cannot deploy contracts built on OZ's upgradeable
+`Initializable` (setUp fails with "Unsupported cheat code"), so the
+symbolic properties live in `test/surface/v2/Properties.t.sol` as fuzz
+tests until halmos supports them.
+
 ## Regenerating ABIs for the web app
 
 After any contract change:

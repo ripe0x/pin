@@ -78,6 +78,95 @@ jobs:
       - name: Run contract tests
         run: forge test
 
+  # Surface v2: the anvil end-to-end (deploy.sh, record from receipts, a
+  # cast-driven lifecycle, tamper and drift refusals) and the deep invariant
+  # profile. Local chain only; nothing touches a public network.
+  contracts-v2-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install contract dependencies
+        run: |
+          forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 --no-git
+          forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v5.1.0 --no-git
+          forge install foundry-rs/forge-std@v1.16.1 --no-git
+          forge install Vectorized/solady@v0.1.26 --no-git
+
+      - name: Anvil end-to-end
+        run: bash script/test/e2e-anvil.sh
+
+      - name: Deep invariants
+        env:
+          FOUNDRY_PROFILE: invariant
+        run: forge test --match-path "test/surface/v2/invariants/*"
+
+  # Surface v2 static analysis: fails on any medium-or-higher Slither result
+  # not suppressed inline with a reason (see contracts/slither.config.json).
+  contracts-v2-slither:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install contract dependencies
+        run: |
+          forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 --no-git
+          forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v5.1.0 --no-git
+          forge install foundry-rs/forge-std@v1.16.1 --no-git
+          forge install Vectorized/solady@v0.1.26 --no-git
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Slither
+        run: |
+          pip install slither-analyzer==0.11.6
+          slither . --config-file slither.config.json --fail-medium
+
+  # Surface v2 mutation testing (~15 minutes): every mutant in
+  # script/test/mutate.py must make a v2 test fail. Weekly and on demand.
+  contracts-v2-mutation:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install contract dependencies
+        run: |
+          forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 --no-git
+          forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v5.1.0 --no-git
+          forge install foundry-rs/forge-std@v1.16.1 --no-git
+          forge install Vectorized/solady@v0.1.26 --no-git
+
+      - name: Mutation run
+        run: python3 -I script/test/mutate.py .
+
   deployment-drift:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest

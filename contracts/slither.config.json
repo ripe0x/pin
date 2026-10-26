@@ -1,0 +1,5 @@
+{
+  "filter_paths": "lib/|test/|script/|src/(?!surface/v2/)",
+  "exclude_dependencies": true,
+  "detectors_to_exclude": "timestamp,low-level-calls,cyclomatic-complexity,missing-zero-check,unimplemented-functions,shadowing-local,naming-convention,solc-version,pragma"
+}
