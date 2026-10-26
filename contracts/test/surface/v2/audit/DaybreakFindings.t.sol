@@ -56,17 +56,29 @@ contract DaybreakFindingsTest is SurfaceV2Base {
 
     function test_finding1_createNonceIsPerCaller() public {
         address first = saleFactory.predictCreate(artist);
+        address attackersNext = saleFactory.predictCreate(attacker);
         vm.prank(attacker);
-        tokenFactory.create(
+        address attackersToken = tokenFactory.create(
             abi.encodeCall(Surface.initialize, ("N", "S", attacker, address(renderer), 0, 0, attacker, attacker))
         );
+        vm.prank(attacker);
+        Surface(attackersToken).setMinter(attackersNext);
+        vm.prank(attacker);
+        address attackersSale = saleFactory.create(
+            abi.encodeCall(
+                FixedPriceSale.initialize,
+                (attackersToken, PRICE, 0, 0, 0, 0, attacker, address(0), address(0))
+            )
+        );
+        assertEq(attackersSale, attackersNext);
+        assertEq(saleFactory.createNonce(attacker), 1);
+        assertEq(saleFactory.createNonce(artist), 0);
         assertEq(saleFactory.predictCreate(artist), first, "another caller's create does not move it");
         assertTrue(saleFactory.predictCreate(attacker) != first);
     }
 
-    function test_finding1_createAndDeterministicNeverCollide() public view {
-        // createDeterministic(salt) and the nth create of the same caller use
-        // different salt encodings.
+    function test_finding1_createAndDeterministicAddressesDifferForZeroSalt() public view {
+        // The two entrypoints use different salt encodings for this input.
         bytes32 salt = bytes32(uint256(0));
         assertTrue(saleFactory.predict(salt, artist) != saleFactory.predictCreate(artist));
     }

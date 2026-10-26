@@ -10,12 +10,10 @@ import {CloneFactory} from "../../../src/surface/v2/CloneFactory.sol";
 import {Launcher} from "../../../src/surface/v2/Launcher.sol";
 import {MockRenderer} from "../mocks/SurfaceMocks.sol";
 
-/// @notice Exercises DeploySurfaceV2.s.sol against every guard it enforces:
-///         the chain allowlist, the mainnet deployer, the mainnet default
-///         referrer, the DEPLOYER env check and the pause flag, then a full
-///         launch and mint through a fresh deploy. Every run asserts the
-///         tracked records are untouched: the script writes nothing (the
-///         record comes from broadcast receipts in script/deploy.sh).
+/// @notice Exercises runWith's chain, deployer, referrer, and pause behavior,
+///         then launches and mints through a fresh deploy. The local lifecycle
+///         test checks that tracked records are untouched; script/deploy.sh
+///         builds those records from broadcast receipts.
 ///
 ///         The mainnet-fork variant is gated like
 ///         test/surface/SurfaceMainnetDeployment.t.sol: set
@@ -79,30 +77,6 @@ contract DeploySurfaceV2Test is Test {
         assertEq(Launcher(d.launcherV2).owner(), signer);
         assertEq(Launcher(d.launcherV2).defaultReferrer(), referrer);
         assertGt(d.allowlistGate.code.length, 0);
-    }
-
-    /// @dev The only test that touches the process env, so no parallel test
-    ///      can observe it half-set.
-    function test_EnvConfig_DefaultsAndRun() public {
-        vm.chainId(31337);
-        vm.setEnv("DEPLOYER", "");
-        vm.setEnv("DEFAULT_REFERRER", "");
-        vm.setEnv("LAND_PAUSED", "");
-        DeploySurfaceV2.Config memory c = script.readConfig();
-        assertEq(c.expectedDeployer, address(0));
-        assertEq(c.defaultReferrer, address(0));
-        assertTrue(c.landPaused, "lands paused by default");
-
-        vm.setEnv("DEFAULT_REFERRER", vm.toString(referrer));
-        vm.setEnv("LAND_PAUSED", "false");
-        c = script.readConfig();
-        assertEq(c.defaultReferrer, referrer);
-        assertFalse(c.landPaused);
-
-        DeploySurfaceV2.Deployment memory d = script.run();
-        assertEq(Launcher(d.launcherV2).defaultReferrer(), referrer);
-        assertFalse(CloneFactory(d.surfaceFactoryV2).paused());
-        _assertRecordsUntouched();
     }
 
     function test_LandsPausedWhenAsked() public {

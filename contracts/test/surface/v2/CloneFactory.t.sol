@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.24;
 
+import {Errors} from "openzeppelin-contracts/contracts/utils/Errors.sol";
+
 import {SurfaceV2Base} from "./SurfaceV2Base.sol";
 import {Surface} from "../../../src/surface/v2/Surface.sol";
 import {CloneFactory} from "../../../src/surface/v2/CloneFactory.sol";
@@ -40,7 +42,7 @@ contract CloneFactoryTest is SurfaceV2Base {
     }
 
     function test_create_emptyInitDataReverts() public {
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(CloneFactory.NotInitializer.selector, bytes4(0)));
         tokenFactory.create("");
     }
 
@@ -67,7 +69,7 @@ contract CloneFactoryTest is SurfaceV2Base {
         assertEq(b, tokenFactory.predict(salt, stranger));
         // Reusing a salt as the same caller collides.
         vm.prank(stranger);
-        vm.expectRevert();
+        vm.expectRevert(Errors.FailedDeployment.selector);
         tokenFactory.createDeterministic(salt, _init());
     }
 

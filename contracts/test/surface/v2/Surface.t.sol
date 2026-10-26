@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.24;
 
-import {Vm} from "forge-std/Vm.sol";
 import {IERC721Errors} from "openzeppelin-contracts/contracts/interfaces/draft-IERC6093.sol";
 import {Initializable} from "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
@@ -47,20 +46,17 @@ contract SurfaceV2Test is SurfaceV2Base {
     }
 
     function test_initialize_emitsInitialStateEvents() public {
-        vm.recordLogs();
-        _init(artist, address(renderer), 250, stranger, minter);
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        bytes32[4] memory expected = [
-            ISurface.RendererSet.selector,
-            ISurface.RoyaltySet.selector,
-            ISurface.SupplyCapSet.selector,
-            ISurface.MinterSet.selector
-        ];
-        uint256 found;
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (found < 4 && logs[i].topics[0] == expected[found]) found++;
-        }
-        assertEq(found, 4, "RendererSet, RoyaltySet, SupplyCapSet, MinterSet in order");
+        address predicted = tokenFactory.predictCreate(address(this));
+        vm.expectEmit(predicted);
+        emit ISurface.RendererSet(address(renderer));
+        vm.expectEmit(predicted);
+        emit ISurface.RoyaltySet(250, stranger);
+        vm.expectEmit(predicted);
+        emit ISurface.SupplyCapSet(0);
+        vm.expectEmit(predicted);
+        emit ISurface.MinterSet(minter);
+        Surface created = _init(artist, address(renderer), 250, stranger, minter);
+        assertEq(address(created), predicted);
     }
 
     function test_initialize_rejectsZeroOwner() public {

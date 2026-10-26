@@ -92,11 +92,18 @@ jq '(.transactions[] | select(.transactionType == "CREATE") | .contractAddress) 
 record_only "$TMP/wrong-address.json" >"$TMP/record-only.log"
 cmp -s "$TMP/record.json" "$RECORD" || fail 'JSON address field affected the record'
 
-# A second complete local deployment has the same contract code and wiring.
+# A second complete local deployment exercises readConfig's explicit values.
 # Its gate receipt must still be rejected when spliced into the first run.
-DEFAULT_REFERRER= LAND_PAUSED=true DEPLOYER="$DEPLOYER" \
+DEFAULT_REFERRER="$COLLECTOR" LAND_PAUSED=false DEPLOYER="$DEPLOYER" \
   forge script script/DeploySurfaceV2.s.sol --tc DeploySurfaceV2 --rpc-url "$RPC" \
   --unlocked --sender "$DEPLOYER" --slow --broadcast >"$TMP/second-deploy.log"
+SECOND_BROADCAST=broadcast/DeploySurfaceV2.s.sol/31337/run-latest.json
+SECOND_LAUNCHER="$(jq -r '.transactions[] | select(.transactionType == "CREATE" and .contractName == "Launcher") | .contractAddress' "$SECOND_BROADCAST")"
+SECOND_TOKEN_FACTORY="$(jq -r '.transactions[] | select(.transactionType == "CREATE" and .contractName == "CloneFactory") | .contractAddress' "$SECOND_BROADCAST" | head -1)"
+SECOND_SALE_FACTORY="$(jq -r '.transactions[] | select(.transactionType == "CREATE" and .contractName == "CloneFactory") | .contractAddress' "$SECOND_BROADCAST" | tail -1)"
+eq "$(chain_call "$SECOND_LAUNCHER" 'defaultReferrer()(address)')" "$COLLECTOR" 'explicit default referrer'
+eq "$(chain_call "$SECOND_TOKEN_FACTORY" 'paused()(bool)')" false 'explicit token factory unpaused'
+eq "$(chain_call "$SECOND_SALE_FACTORY" 'paused()(bool)')" false 'explicit sale factory unpaused'
 SECOND_GATE_HASH="$(jq -r '.transactions[] | select(.transactionType == "CREATE" and .contractName == "AllowlistGate") | .hash' broadcast/DeploySurfaceV2.s.sol/31337/run-latest.json)"
 jq --arg hash "$SECOND_GATE_HASH" '.transactions[2].hash = $hash' "$TMP/first-broadcast.json" >"$TMP/second-gate.json"
 refuses 'second deployment gate hash' 'nonce' "$TMP/second-gate.json"

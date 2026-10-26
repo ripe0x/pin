@@ -13,7 +13,6 @@ import {FixedPriceSale} from "../../../../src/surface/v2/FixedPriceSale.sol";
 contract SymbolicSurfaceTest is Test {
     Surface internal token;
     address internal constant ARTIST = address(0xA11CE);
-    address internal constant COLLECTOR = address(0xC011EC7);
 
     function setUp() public {
         vm.etch(address(0x7101), type(Surface).runtimeCode);
@@ -33,9 +32,14 @@ contract SymbolicSurfaceTest is Test {
         assertEq(royalty, type(uint256).max / 2);
     }
 
-    function check_supplyCapFloor(uint256 cap) public {
-        token.mintTo(COLLECTOR, 2);
-        if (cap != 0 && cap < 2) {
+    function check_supplyCapFloor(uint256 minted, uint256 cap) public {
+        // Surface's own _mintedEver slot is 4 (forge inspect storage-layout).
+        // Store the symbolic lifetime count directly; minting a symbolic
+        // quantity would make Halmos unroll an unbounded ERC-721 loop.
+        vm.store(address(token), bytes32(uint256(4)), bytes32(minted));
+        (,,,,, uint256 mintedEver) = token.config();
+        assertEq(mintedEver, minted);
+        if (cap != 0 && cap < minted) {
             vm.prank(ARTIST);
             (bool ok,) = address(token).call(abi.encodeCall(Surface.setSupplyCap, (cap)));
             assertFalse(ok);
