@@ -25,6 +25,9 @@
 #                         refuse); every other guard still hard-fails. No
 #                         wallet flags, no --broadcast, no --verify. Nothing
 #                         is written.
+#   RECORD_ONLY=1         validate RECORD_BROADCAST_FILE against on-chain
+#                         receipts and update the record; never invokes forge.
+#   RECORD_BROADCAST_FILE  broadcast JSON to validate in RECORD_ONLY mode.
 #
 # The deploy record is written by this wrapper, never by the forge script.
 # After a real broadcast (or --resume) it takes only the creation tx hashes
@@ -72,6 +75,15 @@ ENV_FILE="script/env/${ENV_NAME}.env"
 [ -f "$ENV_FILE" ] || { echo "missing $ENV_FILE" >&2; exit 1; }
 
 DRY_RUN="${DRY_RUN:-0}"
+RECORD_ONLY="${RECORD_ONLY:-0}"
+[ "$RECORD_ONLY" = "0" ] || [ "$RECORD_ONLY" = "1" ] \
+  || { echo "refusing: RECORD_ONLY must be 0 or 1" >&2; exit 1; }
+if [ "$RECORD_ONLY" = "1" ]; then
+  [ "$DRY_RUN" != "1" ] && [ "$RESUME_FLAG" = "0" ] \
+    || { echo "refusing: RECORD_ONLY cannot be combined with DRY_RUN or --resume" >&2; exit 1; }
+  [ -n "${RECORD_BROADCAST_FILE:-}" ] \
+    || { echo "refusing: RECORD_ONLY requires RECORD_BROADCAST_FILE" >&2; exit 1; }
+fi
 # A caller-exported RPC_URL/FOUNDRY_PROFILE wins over the env file's default;
 # snapshot before sourcing, which would otherwise overwrite it.
 RPC_URL_OVERRIDE="${RPC_URL:-}"
@@ -117,6 +129,7 @@ echo "  rpc      $RPC_URL"
 echo "  profile  $FOUNDRY_PROFILE"
 echo "  dry run  $DRY_RUN"
 echo "  resume   $RESUME_FLAG"
+echo "  record   $RECORD_ONLY"
 
 # --- guards: identical code path for every target, switched only by the env
 #     file's values ------------------------------------------------------
@@ -154,7 +167,7 @@ if [ "${REQUIRE_MAIN_BRANCH:-0}" = "1" ]; then
   [ "$DRY_RUN" = "1" ] || echo "  ok: clean, exact, fetched main"
 fi
 
-if [ "$VERIFY" = "1" ] && [ "$DRY_RUN" != "1" ]; then
+if [ "$VERIFY" = "1" ] && [ "$DRY_RUN" != "1" ] && [ "$RECORD_ONLY" != "1" ]; then
   : "${ETHERSCAN_API_KEY:?VERIFY=1 for $ENV_NAME requires ETHERSCAN_API_KEY}"
   echo "  ok: ETHERSCAN_API_KEY set"
 fi
@@ -163,7 +176,7 @@ fi
 
 WALLET_ARGS=()
 SLOW_ARGS=()
-if [ "$DRY_RUN" != "1" ]; then
+if [ "$DRY_RUN" != "1" ] && [ "$RECORD_ONLY" != "1" ]; then
   case "$WALLET_MODE" in
     keystore)
       : "${DEPLOYER_ACCOUNT:?WALLET_MODE=keystore requires DEPLOYER_ACCOUNT}"
@@ -207,6 +220,25 @@ fi
 # unset entirely (verified against forge 1.8.1).
 export LAND_PAUSED="${LAND_PAUSED:-true}"
 BROADCAST_FILE="broadcast/DeploySurfaceV2.s.sol/${CHAIN_ID}/run-latest.json"
+if [ "$RECORD_ONLY" = "1" ]; then
+  BROADCAST_FILE="$RECORD_BROADCAST_FILE"
+fi
+
+# Forge --resume can send transactions before running the Solidity postflight.
+# Check the saved plan against today's config before allowing that send.
+if [ "$RESUME_FLAG" = "1" ]; then
+  [ -f "$BROADCAST_FILE" ] || { echo "refusing: no broadcast file to resume" >&2; exit 1; }
+  WANT_REFERRER="${DEFAULT_REFERRER:-0x0000000000000000000000000000000000000000}"
+  PLAN_REFERRER="$(jq -r '[.transactions[] | select(.transactionType == "CREATE" and .contractName == "Launcher")][0].arguments[2] // empty' "$BROADCAST_FILE")"
+  [ -n "$PLAN_REFERRER" ] && [ "$(lower "$PLAN_REFERRER")" = "$(lower "$WANT_REFERRER")" ] \
+    || { echo "refusing: DEFAULT_REFERRER differs from the saved broadcast plan" >&2; exit 1; }
+  PAUSE_CALLS="$(jq '[.transactions[] | select(.transactionType == "CALL" and .function == "setPaused(bool)" and .arguments == ["true"])] | length' "$BROADCAST_FILE")"
+  if [ "$LAND_PAUSED" = "true" ]; then
+    [ "$PAUSE_CALLS" = "2" ] || { echo "refusing: LAND_PAUSED differs from the saved broadcast plan" >&2; exit 1; }
+  else
+    [ "$PAUSE_CALLS" = "0" ] || { echo "refusing: LAND_PAUSED differs from the saved broadcast plan" >&2; exit 1; }
+  fi
+fi
 
 if [ "$DRY_RUN" = "1" ]; then
   echo "DRY_RUN=1: simulating only, nothing will be broadcast or written"
@@ -219,13 +251,15 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-FORGE_ARGS=(script script/DeploySurfaceV2.s.sol --tc DeploySurfaceV2 --rpc-url "$RPC_URL" "${WALLET_ARGS[@]}" "${SLOW_ARGS[@]}" --broadcast)
-[ "$RESUME_FLAG" = "1" ] && FORGE_ARGS+=(--resume)
-if [ "$VERIFY" = "1" ]; then
-  # forge reads ETHERSCAN_API_KEY from the environment; the key stays out of argv.
-  FORGE_ARGS+=(--verify)
+if [ "$RECORD_ONLY" != "1" ]; then
+  FORGE_ARGS=(script script/DeploySurfaceV2.s.sol --tc DeploySurfaceV2 --rpc-url "$RPC_URL" "${WALLET_ARGS[@]}" "${SLOW_ARGS[@]}" --broadcast)
+  [ "$RESUME_FLAG" = "1" ] && FORGE_ARGS+=(--resume)
+  if [ "$VERIFY" = "1" ]; then
+    # forge reads ETHERSCAN_API_KEY from the environment; the key stays out of argv.
+    FORGE_ARGS+=(--verify)
+  fi
+  forge "${FORGE_ARGS[@]}"
 fi
-forge "${FORGE_ARGS[@]}"
 
 # --- post-broadcast: build the record from on-chain receipts --------------
 
@@ -246,23 +280,40 @@ declare -A ADDR TX SEEN
 FACTORIES=()
 FIRST_BLOCK=""
 SIGNER=""
+FIRST_NONCE=""
+CREATE_INDEX=0
+EXPECTED_NAMES=(Surface FixedPriceSale AllowlistGate CloneFactory CloneFactory Launcher)
 while IFS=$'\t' read -r name tx; do
+  [ "$name" = "${EXPECTED_NAMES[$CREATE_INDEX]}" ] \
+    || refuse "CREATE $CREATE_INDEX is $name, expected ${EXPECTED_NAMES[$CREATE_INDEX]}"
   [[ "$tx" =~ ^0x[0-9a-fA-F]{64}$ ]] || refuse "malformed tx hash $tx for $name"
+  tx_fields="$(cast tx "$tx" --json --rpc-url "$RPC_URL" | jq -r '[.success, (.data.to // "null"), .data.nonce, .data.from] | join("|")')" \
+    || refuse "no on-chain transaction for $name tx $tx"
+  IFS='|' read -r tx_success tx_to nonce_hex tx_from <<< "$tx_fields"
+  [ "$tx_success" = "true" ] || refuse "$name transaction lookup failed"
+  [ "$tx_to" = "null" ] || refuse "$name tx $tx is not a CREATE"
+  nonce="$(cast to-dec "$nonce_hex")"
+  [ -n "$FIRST_NONCE" ] || FIRST_NONCE="$nonce"
+  [ "$nonce" = "$((FIRST_NONCE + CREATE_INDEX))" ] \
+    || refuse "$name tx $tx has nonce $nonce, expected $((FIRST_NONCE + CREATE_INDEX))"
   receipt="$(cast receipt "$tx" --json --rpc-url "$RPC_URL")" || refuse "no on-chain receipt for $name tx $tx"
-  status="$(jq -r '.status' <<< "$receipt")"
+  status="$(printf '%s\n' "$receipt" | jq -r '.status')"
   [ "$status" = "0x1" ] || [ "$status" = "1" ] || refuse "$name creation tx $tx has status $status"
-  addr="$(jq -r '.contractAddress // empty' <<< "$receipt")"
+  addr="$(printf '%s\n' "$receipt" | jq -r '.contractAddress // empty')"
   [ -n "$addr" ] || refuse "$name tx $tx created no contract"
   addr="$(cast to-check-sum-address "$addr")"
-  from="$(cast to-check-sum-address "$(jq -r '.from' <<< "$receipt")")"
+  from="$(cast to-check-sum-address "$(printf '%s\n' "$receipt" | jq -r '.from')")"
+  expect_tx_from="$(cast to-check-sum-address "$tx_from")"
+  [ "$from" = "$expect_tx_from" ] || refuse "$name transaction sender differs from receipt"
   [ -z "$SIGNER" ] && SIGNER="$from"
   [ "$from" = "$SIGNER" ] || refuse "$name was deployed by $from, the rest by $SIGNER"
   [ -z "${SEEN[$addr]:-}" ] || refuse "address $addr appears twice"
   SEEN[$addr]=1
   code="$(cast code "$addr" --rpc-url "$RPC_URL")"
   [ -n "$code" ] && [ "$code" != "0x" ] || refuse "$name at $addr has no code on chain"
-  dec_block="$(cast to-dec "$(jq -r '.blockNumber' <<< "$receipt")")"
+  dec_block="$(cast to-dec "$(printf '%s\n' "$receipt" | jq -r '.blockNumber')")"
   { [ -z "$FIRST_BLOCK" ] || [ "$dec_block" -lt "$FIRST_BLOCK" ]; } && FIRST_BLOCK="$dec_block"
+  CREATE_INDEX=$((CREATE_INDEX + 1))
   case "$name" in
     Surface) key=surfaceImplV2 ;;
     FixedPriceSale) key=saleImplV2 ;;
@@ -273,7 +324,7 @@ while IFS=$'\t' read -r name tx; do
   esac
   [ -z "${ADDR[$key]:-}" ] || refuse "$name appears twice in $BROADCAST_FILE"
   ADDR[$key]="$addr"; TX[$key]="$tx"
-done <<< "$CREATES"
+done < <(printf '%s\n' "$CREATES")
 [ "${#FACTORIES[@]}" = "2" ] || refuse "expected exactly 2 CloneFactory deployments"
 
 # The two factories share a contract name; tell them apart by what each one

@@ -78,6 +78,29 @@ jobs:
       - name: Run contract tests
         run: forge test
 
+  contracts-anvil-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install contract dependencies
+        run: |
+          forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 --no-git
+          forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v5.1.0 --no-git
+          forge install foundry-rs/forge-std@v1.16.1 --no-git
+          forge install Vectorized/solady@v0.1.26 --no-git
+
+      - name: Exercise local deployment lifecycle and receipt validation
+        run: bash script/test/e2e-anvil.sh
+
   deployment-drift:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
