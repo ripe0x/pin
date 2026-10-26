@@ -4,8 +4,8 @@ import { TokenCard } from "@/components/TokenCard"
 import { getCachedEnrichedPage } from "@/lib/artist-cache"
 import { getTokensByContractAndCreator } from "@/lib/contract-tokens"
 import { getLastSalePriceForToken, type LastSale } from "@/lib/last-sale"
-
-const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
+import { Artwork } from "@/components/media/Artwork"
+import { chooseDisplayMedia } from "@/lib/display-media"
 
 type Props = {
   tokens: DiscoveredToken[]
@@ -140,27 +140,14 @@ export function MoreFromContract({ tokens, lastSales, creatorDisplay }: Props) {
                 }
               >
                 <div className="relative aspect-square overflow-hidden bg-gray-100">
-                  {token.mediaHttpUrl &&
-                  VIDEO_EXTENSIONS.some((ext) =>
-                    token
-                      .mediaHttpUrl!.split("?")[0]
-                      .toLowerCase()
-                      .endsWith(ext),
-                  ) ? (
-                    <video
-                      src={token.mediaHttpUrl}
-                      muted
-                      playsInline
-                      preload="metadata"
-                      className="h-full w-full object-cover"
-                    />
-                  ) : token.mediaHttpUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={token.mediaHttpUrl}
+                  {token.mediaHttpUrl ? (
+                    <Artwork
+                      media={chooseDisplayMedia(
+                        { imageUrl: token.mediaHttpUrl, animationUrl: null },
+                        null,
+                        { contract: token.contract, tokenId: token.tokenId },
+                      )}
                       alt={title}
-                      loading="lazy"
-                      className="h-full w-full object-cover"
                     />
                   ) : null}
                 </div>
