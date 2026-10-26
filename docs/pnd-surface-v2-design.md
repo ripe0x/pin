@@ -145,19 +145,17 @@ A clone bound to one collection at `initialize`. Holds this sale's
 money and rules and nothing about the artifact.
 
 **Initialize** `(collection, price, mintStart, mintEnd, maxMints,
-walletCap, payoutRecipient, gate, referralShareBps)`. Authority: allowed
+walletCap, payoutRecipient, gate)`. Authority: allowed
 only if `ISurface(collection).minter() == address(this)` already (the
 launcher's path, the token granted it first) **or** `msg.sender ==
 ISurface(collection).owner()`. No "owner is zero" window. Rejects a zero
 collection, a codeless collection, a zero payout recipient, `mintEnd <=
-mintStart` when both set, referral above `MAX_REFERRAL_SHARE_BPS`
-(1000).
+mintStart` when both set.
 
 **Config**, every setter gated on `collection.owner()`:
 `setPrice`, `setMintWindow`, `setMaxMints`, `setWalletCap`,
 `setPayoutRecipient` (nonzero), `setGate` (zero = none; nonzero must have
-code), `setReferralShareBps` (capped), `close()` (one-way;
-`Closed()`).
+code), `close()` (one-way; `Closed()`).
 
 **Mint** `mint(address to, uint256 quantity, address referrer, bytes
 data) payable`, `nonReentrant`. One signature; no overload. Checks, in
@@ -176,9 +174,17 @@ order:
 8. `ISurface(collection).mintTo(to, quantity)`
 9. `totalMinted += quantity`; `mintedBy[to] += quantity` on every mint,
    capped or not
-10. settle: referral cut to `referrer` when nonzero, remainder to
-    `payoutRecipient`, both as pull balances; `Sold(payer, to, referrer,
-    quantity, paid, firstTokenId)` and `ReferralPaid` when nonzero.
+10. settle: `REFERRAL_SHARE_BPS` (a constant, 500 = 5%) of the payment to
+    `referrer` when nonzero, remainder to `payoutRecipient`, both as pull
+    balances; `Sold(payer, to, referrer, quantity, paid, firstTokenId)`
+    and `ReferralPaid` when nonzero.
+
+**Referral share.** Fixed at 5% by constant; no setter, no init param. It
+pays whoever hosts the mint. A mint with a zero referrer sends the whole
+payment to the payout recipient, and an artist's own site passes the
+artist's address as referrer, so the artist keeps 100% there. A collector
+minting straight from the contract can name themselves; that is the
+accepted property of every open referral scheme and is not gatekept.
 
 **Payouts.** Pull payment only. `withdraw(address account)` sends the
 owed balance to `account`, callable by anyone. `withdrawTo(address to)`
@@ -248,14 +254,13 @@ sale)`:
    token therefore accepts an optional `minter` in its initialize
    params; the launcher passes the predicted sale address there.
 4. `saleFactory.createDeterministic(salt, initialize(collection, s.price,
-   ..., s.payoutRecipient == 0 ? t.owner : s.payoutRecipient, s.gate,
-   s.referralShareBps))`. The sale's init authority check passes because
+   ..., s.payoutRecipient == 0 ? t.owner : s.payoutRecipient, s.gate))`. The sale's init authority check passes because
    the token already names it.
 5. Emit `Launched(address indexed owner, address indexed collection,
    address indexed sale)`.
 
-The launcher holds every product default: the referral share, the
-payout fallback, "one sale per collection". Changing a default is a new
+The launcher holds every product default: the payout and royalty
+fallbacks, "one sale per collection". Changing a default is a new
 launcher.
 
 ## 4. Compositions
@@ -285,7 +290,8 @@ v1 `SurfaceConfig` struct; `firstMintIndex` in `Minted`;
 `totalMintedByThisMinter`; the one-argument `mint` overload; the inline
 Merkle allowlist in the sale (now a gate); `createSurface`,
 `createSurfaceCustom` and `allSurfaces`; `IMinter`'s strategy-era
-`Underpayment` error and NatSpec; `DefaultRenderer`, `RenderAssets`,
+`Underpayment` error and NatSpec; `referralShareBps`, `setReferralShareBps`,
+`MAX_REFERRAL_SHARE_BPS` and `ReferralShareSet`; `DefaultRenderer`, `RenderAssets`,
 `ScriptyRenderer`, the vendored scripty interfaces, `ExampleScriptyWork`,
 `CodeTypes` and `MetadataJson` from this system (they may return later
 as a separate optional package); the renderer and v1-minter compat test
@@ -300,8 +306,8 @@ deterministic clones; `Launcher`.
 **Kept:** everything that passed the section 2 test: ids, seed, cap,
 renderer pointer, royalty, locks, seal, `notifyMetadataUpdate`,
 `rescueStrayETH`, burn, `totalSupply`, the self-custody guard; in the
-sale: price, window, ceiling, wallet cap, pull payouts, stored payout,
-referral share.
+sale: price, window, ceiling, wallet cap, pull payouts, stored payout, the
+referral share (now a fixed 5% constant instead of a settable field).
 
 ## 6. Tests
 
@@ -316,8 +322,9 @@ Per primitive, in `contracts/test/surface/v2/`:
 - `FixedPriceSale.t.sol`: init authority (both paths, and the rejection
   when neither holds), the ten checks in order, exact payment, wallet
   cap counted on every mint, gate wiring with a mock gate, receiver
-  check, `close`, pull payment, `withdrawTo`, referral math, config
-  setters under borrowed authority.
+  check, `close`, pull payment, `withdrawTo`, the fixed 5% referral
+  math with zero, self and third-party referrers, config setters under
+  borrowed authority.
 - `FixedPriceSaleInvariants.t.sol`: value conservation.
 - `AllowlistGate.t.sol`: root per collection, borrowed authority, leaf
   format, empty data.
@@ -350,19 +357,24 @@ never from the simulation. The record keys become `surfaceImplV2`,
   identify canonical sales by `version()`.
 - Web: create flow calls `Launcher.launch`; settings panel reads `locks()`
   and one minter; sale panel adds `close`, gate and wallet cap; mint
-  button uses the one `mint` signature; referral copy driven by the live
-  share.
+  button uses the one `mint` signature; referral copy states the fixed
+  5% and the self-host route-around.
 - Docs: regenerate the reference from the new ABIs; retire the v1-model
   wording in the getting-started guide and glossary.
 
-## 9. Open decisions
+## 9. Decisions recorded and still open
 
-1. **Referral share default in the launcher.** Zero or 1000 bps. One
-   number; the sale supports either.
-2. **External audit gate** for this v2 before mainnet, or an explicit
-   waiver as v1 had.
-3. **Deprecate the v1 factory for new deploys** once this v2 is live on
-   mainnet. v1 collections are unaffected.
+**Decided 2026-10-26:** the referral share is a fixed 5% constant in the
+sale, not a setting. Artists route around it on their own site by passing
+their own address as referrer.
+
+**Open:**
+
+1. **External audit** for this v2 before mainnet, to be scoped after the
+   implementation lands (token and sale are the money-relevant surface).
+2. **Deprecate the v1 factory for new deploys** once this v2 is live on
+   mainnet, naming the launcher as successor. v1 collections are
+   unaffected.
 
 ## 10. Non-goals
 
