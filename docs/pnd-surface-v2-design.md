@@ -1,6 +1,7 @@
 # Surface v2: primitive-first design
 
-> **Status: design agreed 2026-10-26, pre-implementation.** This supersedes
+> **Status: design agreed 2026-10-26, revised the same day (section 9,
+> "Revisions"), implementation in progress.** This supersedes
 > `docs/pnd-surface-v2-plan.md` (the August "path 1" strip plan) and the
 > v2 contracts currently in `contracts/src/surface/v2/`, which are deployed
 > on Sepolia only. Nothing on mainnet changes: the v1 sources, Homage, and
@@ -65,6 +66,8 @@ attribution no longer appears anywhere in Surface.
 OpenZeppelin `ERC721Upgradeable` (initializer pattern only; clones are
 immutable) plus plain `OwnableUpgradeable`. No two-step ownership, no
 admins, no reentrancy guard (the mint path runs no external code).
+Renouncing ownership is the only permanence mechanism: every setter is
+owner-only, so a renounced token can never change again.
 
 **State**
 
@@ -72,16 +75,19 @@ admins, no reentrancy guard (the mint path runs no external code).
 - `minter` (address, one slot; zero = no one can mint)
 - `supplyCap` (uint256; 0 = open)
 - `royaltyBps` (uint16, max 5000), `royaltyReceiver` (address, nonzero)
+- `_name`, `_symbol` (the token holds its own copy so `setName` can
+  change them; renderers read `name()` from the token, the one place it
+  lives)
 - `_mintedEver`, `_burnedCount`
 - `_seed[tokenId]` (bytes32), the only per-token storage
-- `_locks` (uint8 bitmask: RENDERER = 1, MINTER = 2, SUPPLY = 4,
-  ROYALTY = 8)
 
 **Initialize** `(name, symbol, owner, renderer, supplyCap, royaltyBps,
-royaltyReceiver)`. Reverts on zero owner, zero or codeless renderer, zero
-receiver, royalty above cap. Emits `RendererSet`, `RoyaltySet`,
-`SupplyCapSet` so an indexer learns initial state from logs. The minter
-is set afterwards by the launcher or the owner.
+royaltyReceiver, minter)`. Reverts on zero owner, zero or codeless
+renderer, zero receiver, royalty above cap, zero minter. The minter is
+required but not checked for code: the launcher passes the sale's
+predicted address before the sale exists. Emits `RendererSet`,
+`RoyaltySet`, `SupplyCapSet` and `MinterSet` so an indexer learns
+initial state from logs.
 
 **Mint and burn**
 
@@ -96,48 +102,47 @@ is set afterwards by the launcher or the owner.
   never free cap. The seed stays readable.
 - `totalSupply()` = minted ever minus burned.
 
-**Owner setters, each refused once its lock bit is set**
+**Owner setters** (all refused once ownership is renounced)
 
 - `setRenderer(address)` (nonzero, has code; emits `RendererSet`,
   `BatchMetadataUpdate(0, max)`, `ContractURIUpdated`)
 - `setMinter(address)` (zero allowed; emits `MinterSet`)
 - `setSupplyCap(uint256)` (0 = open; never below `_mintedEver`)
 - `setRoyalty(uint16 bps, address receiver)` (receiver nonzero)
+- `setName(string name, string symbol)` (emits `NameSet`,
+  `BatchMetadataUpdate(0, max)`, `ContractURIUpdated`)
 
 **Permanence**
 
-- `lock(uint8 mask)`: one-way OR into `_locks`. Emits `Locked(mask)`.
-- `seal()`: `lock(ALL)` then `_transferOwnership(address(0))`. Emits
-  `Sealed()`.
-- `renounceOwnership()` reverts `UseSeal()`. Owner-is-zero therefore
-  always means sealed.
-- Reads: `locks() returns (uint8)`, `sealed() returns (bool)`,
-  `version() returns (uint256)` = 2.
+- `renounceOwnership()` works normally (OpenZeppelin). After it, no
+  setter can succeed; the minter, cap, renderer, royalty and name are
+  fixed for good. There are no lock bits and no `seal`.
+- `version() returns (uint256)` = 2.
 
 **Standard surface**
 
 - `tokenURI(id)` → `IRenderer(renderer).tokenURI(address(this), id)`
+  (reverts for a token that does not exist)
 - `contractURI()` → `IRenderer(renderer).contractURI(address(this))`
 - `royaltyInfo(id, salePrice)` → stored receiver, `salePrice * bps /
   10_000`
 - `supportsInterface`: ERC-721, ERC-721 Metadata, ERC-2981, ERC-4906
 - `notifyMetadataUpdate(from, to)`: callable by the renderer or the
   owner; emits `BatchMetadataUpdate`.
-- `rescueStrayETH(to)`: owner-only sweep of the full balance. No
-  function of the token is payable.
+- No function of the token is payable and there is no ETH sweep.
 - `_update` rejects `to == address(this)` (`SelfCustodyRejected`).
 
 **Reads for renderers** (the stable surface): `tokenSeed(id)` (reverts
 `NeverMinted` out of range), `config()` returning
-`(renderer, minter, supplyCap, royaltyBps, royaltyReceiver, locks,
-minted)`, `renderer()`, `name()`. No `idMode` shim.
+`(renderer, minter, supplyCap, royaltyBps, royaltyReceiver, minted)`,
+`renderer()`, `name()`. No `idMode` shim.
 
 **Invariants**
 
 - Token id equals mint order; ids are never reused.
 - `_mintedEver` never exceeds a set cap; every mint path checks it.
 - The token never holds ETH and the mint path makes no external call.
-- Lock bits only ever turn on. `owner() == 0` implies `locks() == ALL`.
+- `owner() == 0` implies every setter reverts and config never changes.
 
 ### 3.2 FixedPriceSale (minter)
 
@@ -145,21 +150,32 @@ A clone bound to one collection at `initialize`. Holds this sale's
 money and rules and nothing about the artifact.
 
 **Initialize** `(collection, price, mintStart, mintEnd, maxMints,
-walletCap, payoutRecipient, gate)`. Authority: allowed
+walletCap, payoutRecipient, gate, defaultReferrer)`. Authority: allowed
 only if `ISurface(collection).minter() == address(this)` already (the
 launcher's path, the token granted it first) **or** `msg.sender ==
 ISurface(collection).owner()`. No "owner is zero" window. Rejects a zero
 collection, a codeless collection, a zero payout recipient, `mintEnd <=
-mintStart` when both set.
+mintStart` when both set, a nonzero codeless gate. `defaultReferrer` may
+be zero and has no setter: it is fixed for the life of the sale.
 
 **Config**, every setter gated on `collection.owner()`:
 `setPrice`, `setMintWindow`, `setMaxMints`, `setWalletCap`,
 `setPayoutRecipient` (nonzero), `setGate` (zero = none; nonzero must have
-code), `close()` (one-way; `Closed()`).
+code), `close()` (one-way; `Closed()`). Before the collection's owner
+renounces, the sale is fully configurable; after, it is frozen, and
+payouts keep flowing.
 
-**Mint** `mint(address to, uint256 quantity, address referrer, bytes
-data) payable`, `nonReentrant`. One signature; no overload. Checks, in
-order:
+**Mint.** Two entrypoints, distinct names, no overload, both
+`payable` and `nonReentrant`, one shared body:
+
+- `mint(uint256 quantity)`: mints to `msg.sender`, referrer =
+  `defaultReferrer` (PND's address on a launcher-made sale), empty gate
+  data. The simple path.
+- `mintWithReferral(address to, uint256 quantity, address referrer,
+  bytes data)`: the full path. An artist's own site passes the artist's
+  address (or zero) as referrer and keeps 100%.
+
+Checks, in order:
 
 1. not closed
 2. inside the window (`mintStart` 0 = open now, `mintEnd` 0 = open
@@ -177,20 +193,21 @@ order:
 10. settle: `REFERRAL_SHARE_BPS` (a constant, 500 = 5%) of the payment to
     `referrer` when nonzero, remainder to `payoutRecipient`, both as pull
     balances; `Sold(payer, to, referrer, quantity, paid, firstTokenId)`
-    and `ReferralPaid` when nonzero.
+    and `ReferralPaid` when the referral amount is nonzero.
 
 **Referral share.** Fixed at 5% by constant; no setter, no init param. It
-pays whoever hosts the mint. A mint with a zero referrer sends the whole
-payment to the payout recipient, and an artist's own site passes the
-artist's address as referrer, so the artist keeps 100% there. A collector
-minting straight from the contract can name themselves; that is the
-accepted property of every open referral scheme and is not gatekept.
+pays whoever hosts the mint. The collector's price is the same on every
+path; only the split changes. A zero referrer sends the whole payment to
+the payout recipient. A collector minting straight from the contract can
+name themselves; that is the accepted property of every open referral
+scheme and is not gatekept. It is a host reward, not a protocol fee:
+every party can route around it.
 
 **Payouts.** Pull payment only. `withdraw(address account)` sends the
 owed balance to `account`, callable by anyone. `withdrawTo(address to)`
 sends the caller's own balance to `to`. `pendingWithdrawal(account)`.
-`rescueStrayETH(to)` sweeps only the balance above the sum of pending
-balances.
+No ETH sweep: every wei the sale holds arrives through a mint and is
+owed to someone.
 
 **Identification.** `version() returns (uint256)` = 2 and
 `supportsInterface(type(IMinter).interfaceId)`, so a client that reads a
@@ -200,7 +217,8 @@ collection's `minter()` can tell a canonical sale from a bespoke minter.
 `mintedBy`. No alias getters.
 
 **Invariant.** Sum of pending balances equals ETH paid in minus ETH
-withdrawn; no caller can withdraw more than it is owed.
+withdrawn, and equals the sale's balance; no caller can withdraw more
+than it is owed.
 
 ### 3.3 IGate and AllowlistGate
 
@@ -238,9 +256,12 @@ implementation, sale implementation). Immutables: `implementation`,
 
 ### 3.5 Launcher
 
-Immutable, references the token factory and the sale factory. Replaceable
-without touching anything deployed; a bespoke project calls the factories
-directly.
+References the token factory and the sale factory (immutables).
+Replaceable without touching anything deployed; a bespoke project calls
+the factories directly. Plain `Ownable`; the owner can change one value,
+`defaultReferrer` (PND's referral address, `setDefaultReferrer`, emits
+`DefaultReferrerSet`). Each sale copies it at launch and keeps that copy
+forever, so a change affects only later launches.
 
 `launch(TokenParams t, SaleParams s) returns (address collection, address
 sale)`:
@@ -249,19 +270,18 @@ sale)`:
    saleFactory.predict(salt, address(this))`.
 2. `collection = tokenFactory.create(initialize(t.name, t.symbol,
    t.owner, t.renderer, t.supplyCap, t.royaltyBps, t.royaltyReceiver ==
-   0 ? t.owner : t.royaltyReceiver))`.
-3. The launcher is not the owner, so it cannot call `setMinter`. The
-   token therefore accepts an optional `minter` in its initialize
-   params; the launcher passes the predicted sale address there.
-4. `saleFactory.createDeterministic(salt, initialize(collection, s.price,
-   ..., s.payoutRecipient == 0 ? t.owner : s.payoutRecipient, s.gate))`. The sale's init authority check passes because
+   0 ? t.owner : t.royaltyReceiver, sale))`. The launcher is not the
+   owner, so the predicted sale is passed as the token's initial minter.
+3. `saleFactory.createDeterministic(salt, initialize(collection, s.price,
+   ..., s.payoutRecipient == 0 ? t.owner : s.payoutRecipient, s.gate,
+   defaultReferrer))`. The sale's init authority check passes because
    the token already names it.
-5. Emit `Launched(address indexed owner, address indexed collection,
+4. Emit `Launched(address indexed owner, address indexed collection,
    address indexed sale)`.
 
 The launcher holds every product default: the payout and royalty
-fallbacks, "one sale per collection". Changing a default is a new
-launcher.
+fallbacks (the owner), the default referrer, "one sale per collection".
+Changing a structural default is a new launcher.
 
 ## 4. Compositions
 
@@ -272,6 +292,7 @@ launcher.
 | Allowlist phase then public | `setGate(AllowlistGate)` and `setRoot`; later `setGate(0)` |
 | Bespoke economics (Homage shape) | `tokenFactory.create` with `minter` = the bespoke minter; no launcher |
 | Airdrop or artist proofs | `setMinter(ownerWallet)`, `mintTo`, `setMinter(sale)` |
+| Make it permanent | `renounceOwnership()` (the studio requires a mint end or a closed sale first) |
 | Two concurrent minters | a small router contract that is the minter and fans `mintTo` out to its own caller list |
 | Collection cover and description | the renderer's `contractURI` |
 | Co-creator credit | the Catalog, not Surface |
@@ -287,7 +308,11 @@ separate lock functions, events and reads; the zero-receiver royalty
 sentinel and its lock-time snapshot; the `idMode` shim and the borrowed
 v1 `SurfaceConfig` struct; `firstMintIndex` in `Minted`;
 `SurfaceConfigured`; the reentrancy base on the token; `saleCap` and
-`totalMintedByThisMinter`; the one-argument `mint` overload; the inline
+`totalMintedByThisMinter`; the one-argument `mint` overload (replaced by
+the distinctly named `mint(quantity)` / `mintWithReferral` pair);
+`seal`, `Sealed`, `UseSeal`, the lock bitmask, `lock`, `locks` and
+`Locked` (renounce is the only lock); `rescueStrayETH` on both token and
+sale; the inline
 Merkle allowlist in the sale (now a gate); `createSurface`,
 `createSurfaceCustom` and `allSurfaces`; `IMinter`'s strategy-era
 `Underpayment` error and NatSpec; `referralShareBps`, `setReferralShareBps`,
@@ -298,14 +323,15 @@ as a separate optional package); the renderer and v1-minter compat test
 suites.
 
 **Added:** `closed`; the ERC-721 receiver check in the sale;
-`withdrawTo`; `version` and ERC-165 on the sale; `renounceOwnership`
-reverting; `RendererSet`, `RoyaltySet`, `SupplyCapSet` at initialize;
-`Sealed`; `IGate` and `AllowlistGate`; `CloneFactory` with
-deterministic clones; `Launcher`.
+`withdrawTo`; `version` and ERC-165 on the sale; `RendererSet`,
+`RoyaltySet`, `SupplyCapSet`, `MinterSet` at initialize; the required
+initial minter; `setName`/`NameSet`; the sale's `defaultReferrer` and
+`mintWithReferral`; `IGate` and `AllowlistGate`; `CloneFactory` with
+deterministic clones; `Launcher` with a settable default referrer.
 
 **Kept:** everything that passed the section 2 test: ids, seed, cap,
-renderer pointer, royalty, locks, seal, `notifyMetadataUpdate`,
-`rescueStrayETH`, burn, `totalSupply`, the self-custody guard; in the
+renderer pointer, royalty, `notifyMetadataUpdate`, burn, `totalSupply`,
+the self-custody guard; in the
 sale: price, window, ceiling, wallet cap, pull payouts, stored payout, the
 referral share (now a fixed 5% constant instead of a settable field).
 
@@ -313,15 +339,16 @@ referral share (now a fixed 5% constant instead of a settable field).
 
 Per primitive, in `contracts/test/surface/v2/`:
 
-- `Surface.t.sol`: initialize validation, mint/burn/cap, each setter and
-  its lock bit, `seal`, `renounceOwnership` reverts, royalty, metadata
-  delegation, self-custody guard, `rescueStrayETH`.
+- `Surface.t.sol`: initialize validation, mint/burn/cap, each setter,
+  `setName`, `renounceOwnership` freezing every setter, royalty, metadata
+  delegation, self-custody guard.
 - `SurfaceInvariants.t.sol`: ids monotonic and never reused, cap never
-  exceeded, lock bits only turn on, `owner() == 0` implies all locked,
-  seed immutable once stored.
+  exceeded, `owner() == 0` implies config never changes again, seed
+  immutable once stored.
 - `FixedPriceSale.t.sol`: init authority (both paths, and the rejection
-  when neither holds), the ten checks in order, exact payment, wallet
-  cap counted on every mint, gate wiring with a mock gate, receiver
+  when neither holds), the ten checks in order on both entrypoints, exact
+  payment, wallet cap counted on every mint, `mint` paying the default
+  referrer, gate wiring with a mock gate, receiver
   check, `close`, pull payment, `withdrawTo`, the fixed 5% referral
   math with zero, self and third-party referrers, config setters under
   borrowed authority.
@@ -331,8 +358,8 @@ Per primitive, in `contracts/test/surface/v2/`:
 - `CloneFactory.t.sol`: create, deterministic create and predict,
   `Created` event, pause, deprecate.
 - `Launcher.t.sol`: the full launch, deterministic address matches,
-  defaults applied, one `Launched` event, a bespoke-path launch without
-  the launcher.
+  defaults applied, one `Launched` event, default referrer set and
+  changed, a bespoke-path launch without the launcher.
 - `SurfaceSize.t.sol`: EIP-170 headroom for every implementation.
 - `Deploy.t.sol`: the deploy script against every environment guard.
 
@@ -348,17 +375,22 @@ implementation, sale implementation, `AllowlistGate`, token
 The deploy record is written from broadcast receipts after a code check,
 never from the simulation. The record keys become `surfaceImplV2`,
 `saleImplV2`, `allowlistGate`, `surfaceFactoryV2`, `saleFactoryV2`,
-`launcherV2`, plus deploy block and tx hashes.
+`launcherV2`, plus deploy block and tx hashes. The launcher's owner is
+the deployer and its initial default referrer comes from the env file
+(`DEFAULT_REFERRER`, which should be a Safe or splitter, not a personal
+wallet). The Catalog is no longer an input.
 
 ## 8. Follow-up work this unblocks (not part of the contract change)
 
 - Indexer: bind on the two `Created` events and `Launched`; drop the
   `SurfaceCreated` v2 branch; record `minter()` from `MinterSet`;
   identify canonical sales by `version()`.
-- Web: create flow calls `Launcher.launch`; settings panel reads `locks()`
-  and one minter; sale panel adds `close`, gate and wallet cap; mint
-  button uses the one `mint` signature; referral copy states the fixed
-  5% and the self-host route-around.
+- Web: create flow calls `Launcher.launch`; settings panel reads one
+  minter and offers `setName` and renounce (renounce requires a mint end
+  or a closed sale first); sale panel adds `close`, gate and wallet cap;
+  pnd.fyi's mint button uses `mint(quantity)`, artist sites use
+  `mintWithReferral`; referral copy states the fixed 5%, that it goes to
+  PND on the simple path, and the self-host route-around.
 - Docs: regenerate the reference from the new ABIs; retire the v1-model
   wording in the getting-started guide and glossary.
 
@@ -367,6 +399,25 @@ never from the simulation. The record keys become `surfaceImplV2`,
 **Decided 2026-10-26:** the referral share is a fixed 5% constant in the
 sale, not a setting. Artists route around it on their own site by passing
 their own address as referrer.
+
+**Revisions 2026-10-26 (same day, before implementation):**
+
+- `seal` and the lock bitmask are gone. Renouncing ownership is the only
+  lock; sealing used to freeze the sale's borrowed authority while the
+  artist still expected control, and partial locks promised little that
+  renounce plus the cap did not.
+- The token's initial minter is a required initialize param (3.1 and 3.5
+  disagreed); initialize emits `MinterSet`.
+- `setName` added; the name lives only in the token and renderers read it.
+- `sealed()` was never buildable: `sealed` is a reserved word in Solidity.
+- The sale has two mint entrypoints with distinct names: `mint(quantity)`
+  pays the 5% to the sale's fixed `defaultReferrer` (PND on launcher
+  sales), `mintWithReferral` takes any referrer.
+- The launcher's default referrer is owner-settable; each sale copies it
+  at launch and never changes it.
+- `rescueStrayETH` removed from token and sale.
+- Royalty receiver and payout recipient default to the owner when left
+  zero at launch.
 
 **Open:**
 
