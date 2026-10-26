@@ -156,7 +156,11 @@ launcher's path, the token granted it first) **or** `msg.sender ==
 ISurface(collection).owner()`. No "owner is zero" window. Rejects a zero
 collection, a codeless collection, a zero payout recipient, `mintEnd <=
 mintStart` when both set, a nonzero codeless gate. `defaultReferrer` may
-be zero and has no setter: it is fixed for the life of the sale.
+be zero and has no setter: it is fixed for the life of the sale. Through a
+CloneFactory the initialize caller is the factory, so the owner path never
+applies there: an owner deploying a sale through the factory first grants
+the address it will land at (`predict` or `predictCreate`, both namespaced
+to the owner, so nobody else can deploy there) with `setMinter`.
 
 **Config**, every setter gated on `collection.owner()`:
 `setPrice`, `setMintWindow`, `setMaxMints`, `setWalletCap`,
@@ -217,8 +221,9 @@ collection's `minter()` can tell a canonical sale from a bespoke minter.
 `mintedBy`. No alias getters.
 
 **Invariant.** Sum of pending balances equals ETH paid in minus ETH
-withdrawn, and equals the sale's balance; no caller can withdraw more
-than it is owed.
+withdrawn, and equals the sale's balance except for ETH force-sent to it
+(selfdestruct), which is owed to nobody and stays stuck; no caller can
+withdraw more than it is owed.
 
 ### 3.3 IGate and AllowlistGate
 
@@ -235,21 +240,29 @@ decodes `data` as `bytes32[]` and verifies the OpenZeppelin
 standard-merkle-tree leaf `keccak256(bytes.concat(keccak256(abi.encode(to))))`.
 Empty `data` fails cleanly. Gates are views; a gate that needs state
 written per mint does not fit this interface, which is why the wallet
-cap lives in the sale.
+cap lives in the sale. A gate is owner-chosen code: one that always
+rejects blocks the sale until the owner calls `setGate(0)`, and for good if
+the owner renounces with it installed.
 
 ### 3.4 CloneFactory
 
 One small contract, deployed once per implementation (token
 implementation, sale implementation). Immutables: `implementation`,
-`deployer`.
+`initSelector` (the implementation's initializer), `deployer`.
 
 - `create(bytes initData) returns (address instance)` and
   `createDeterministic(bytes32 salt, bytes initData)`: clone, call
   `initialize` with `initData`, record `isInstance[instance] = true`,
   emit `Created(address indexed implementation, address indexed
-  instance, address indexed caller)`.
+  instance, address indexed caller)`. `initData` must start with
+  `initSelector` (`NotInitializer` otherwise), so an instance is recorded
+  only once initialized.
+- Every clone is CREATE2 with a caller-namespaced salt: `create` uses the
+  caller's own `createNonce`, never a shared CREATE nonce, so no caller can
+  take an address another caller predicted and authorized.
 - `predict(bytes32 salt, address caller) view` for the deterministic
-  path (salt is namespaced by caller).
+  path and `predictCreate(address caller) view` for the caller's next
+  `create`.
 - `setPaused(bool)` and one-way `deprecate(address successor)`,
   deployer-only. Neither touches an existing instance.
 - No array of instances. Discovery is the event plus `isInstance`.
@@ -382,7 +395,9 @@ wallet). The Catalog is no longer an input.
 
 ## 8. Follow-up work this unblocks (not part of the contract change)
 
-- Indexer: bind on the two `Created` events and `Launched`; drop the
+- Indexer: bind on the two `Created` events and `Launched` (anyone can
+  launch naming any `owner`, so `Launched.owner` is not that address's
+  consent; treat it like a v1 roster listing until the owner acts); drop the
   `SurfaceCreated` v2 branch; record `minter()` from `MinterSet`;
   identify canonical sales by `version()`.
 - Web: create flow calls `Launcher.launch`; settings panel reads one
@@ -418,6 +433,16 @@ their own address as referrer.
 - `rescueStrayETH` removed from token and sale.
 - Royalty receiver and payout recipient default to the owner when left
   zero at launch.
+
+**Audit 2026-10-26 (Codex Daybreak), all fixed:** a sale address an owner
+preauthorized could be taken through the factory's shared CREATE nonce
+(now caller-namespaced CREATE2); the factory recorded clones called with a
+non-initializer (now `initSelector`-pinned); the deploy record trusted the
+broadcast file's address and receipt pairing and skipped the postflight on
+`--resume` (now rebuilt from fresh on-chain receipts with every postflight
+value re-asserted); `royaltyInfo` overflowed at extreme prices (now
+`mulDiv`); the wrapper needed bash 4 only after broadcasting (now checked
+first).
 
 **Open:**
 

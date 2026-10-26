@@ -9,8 +9,15 @@ Plumbing, deployed once per implementation: the token factory
 and the sale factory (`<SALE_FACTORY_V2_ADDRESS>`) clones
 [FixedPriceSale](/docs/surface/contracts/fixed-price-sale). Each call clones the
 implementation as an EIP-1167 proxy, calls it with the caller's encoded
-`initialize` in the same transaction, and records the instance. An init that
-reverts reverts the whole call, so no half-initialized instance is recorded.
+`initialize` in the same transaction, and records the instance. `initData`
+must call the implementation's initializer (`initSelector`), which either
+initializes the clone or reverts the whole call, so only initialized
+instances are recorded.
+
+Every clone is CREATE2 with a salt namespaced by the caller, including
+`create`, which uses the caller's own `createNonce`. No caller can deploy at
+an address another caller predicted, so an owner can safely grant a sale's
+predicted address as minter before creating the sale.
 
 Discovery is the `Created` event plus `isInstance`; there is no list. The
 deployer can pause new instances or deprecate the factory for good, and
@@ -26,11 +33,12 @@ factory directly.
 function create(bytes initData) external returns (address instance)
 ```
 
-**Access:** permissionless (reverts `FactoryPaused` or `FactoryDeprecated`)
+**Access:** permissionless (reverts `FactoryPaused`, `FactoryDeprecated` or `NotInitializer`)
 
-Clones the implementation, calls it with `initData` (an encoded `initialize`
-call), and records it. The clone's `initialize` sees this factory as
-`msg.sender`. Emits `Created`.
+Clones the implementation at `predictCreate(msg.sender)`, calls it with
+`initData` (an encoded `initialize` call), records it, and bumps the caller's
+`createNonce`. The clone's `initialize` sees this factory as `msg.sender`.
+Emits `Created`.
 
 ### createDeterministic
 
@@ -38,7 +46,7 @@ call), and records it. The clone's `initialize` sees this factory as
 function createDeterministic(bytes32 salt, bytes initData) external returns (address instance)
 ```
 
-**Access:** permissionless (reverts `FactoryPaused` or `FactoryDeprecated`)
+**Access:** permissionless (reverts `FactoryPaused`, `FactoryDeprecated` or `NotInitializer`)
 
 Same as `create`, at the CREATE2 address `predict(salt, msg.sender)` returns.
 The salt is namespaced by the caller, so nobody can take another caller's
@@ -67,6 +75,14 @@ Unpausing does not revive it. Emits `Deprecated`.
 
 ## Read functions
 
+### createNonce
+
+```solidity
+function createNonce(address) external view returns (uint256)
+```
+
+How many `create` calls a caller has made; part of its next `create` salt.
+
 ### deployer
 
 ```solidity
@@ -92,6 +108,14 @@ function implementation() external view returns (address)
 
 The contract every instance clones.
 
+### initSelector
+
+```solidity
+function initSelector() external view returns (bytes4)
+```
+
+The implementation's initializer selector: the only call `initData` may make.
+
 ### isInstance
 
 ```solidity
@@ -115,6 +139,14 @@ function predict(bytes32 salt, address caller) external view returns (address)
 ```
 
 The address `createDeterministic(salt, ...)` returns when called by `caller`.
+
+### predictCreate
+
+```solidity
+function predictCreate(address caller) external view returns (address)
+```
+
+The address the next `create` by `caller` returns.
 
 ### successor
 
@@ -190,3 +222,8 @@ The constructor was given an implementation without code.
 **`NotDeployer()`**
 
 `setPaused` or `deprecate` from someone other than the deployer.
+
+**`NotInitializer(bytes4 selector)`**
+
+`initData` does not start with `initSelector`, or the constructor was given a
+zero selector.

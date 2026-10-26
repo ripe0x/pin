@@ -36,11 +36,11 @@ contract SurfaceV2SizeTest is Test {
     }
 
     function test_cloneFactory() public {
-        _check("CloneFactory", address(new CloneFactory(address(new Surface()))));
+        _check("CloneFactory", address(new CloneFactory(address(new Surface()), Surface.initialize.selector)));
     }
 
     function test_launcher() public {
-        CloneFactory f = new CloneFactory(address(new Surface()));
+        CloneFactory f = new CloneFactory(address(new Surface()), Surface.initialize.selector);
         _check("Launcher", address(new Launcher(f, f, address(0), address(this))));
     }
 }

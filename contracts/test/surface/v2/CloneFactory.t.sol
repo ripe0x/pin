@@ -19,7 +19,7 @@ contract CloneFactoryTest is SurfaceV2Base {
         assertFalse(tokenFactory.paused());
         assertFalse(tokenFactory.deprecated());
         vm.expectRevert(abi.encodeWithSelector(CloneFactory.NotAContract.selector, stranger));
-        new CloneFactory(stranger);
+        new CloneFactory(stranger, Surface.initialize.selector);
     }
 
     function test_create() public {

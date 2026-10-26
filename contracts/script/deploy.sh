@@ -26,11 +26,13 @@
 #                         wallet flags, no --broadcast, no --verify. Nothing
 #                         is written.
 #
-# The deploy record is written by this wrapper, never by the forge script:
-# after a real broadcast it reads the broadcast receipts, checks each
-# receipt succeeded and each address has code on chain, and only then merges
-# the addresses, deploy block and tx hashes into the record. A simulation
-# has no receipts, so it can never produce a record.
+# The deploy record is written by this wrapper, never by the forge script.
+# After a real broadcast (or --resume) it takes only the creation tx hashes
+# from the broadcast file, re-fetches every receipt from the chain, requires
+# exactly the six expected contracts from one signer, re-asserts every value
+# the script's postflight checks (a resume skips that simulation), and only
+# then merges the addresses, first deploy block and tx hashes into the
+# record. A simulation has no receipts, so it can never produce a record.
 #   --resume              passthrough to `forge script --resume`, for
 #                         recovering a broadcast that stopped part way
 #                         (an EIP-7702 delegated signer allows only one
@@ -38,6 +40,16 @@
 #                         avoid this, but a dropped RPC connection mid-run can
 #                         still leave a broadcast half-sent).
 set -euo pipefail
+
+# The record step below uses associative arrays (bash 4+). Refuse here, before
+# anything broadcasts, rather than after (macOS ships bash 3.2 as /bin/bash).
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+  echo "refusing: bash ${BASH_VERSION:-unknown} is too old; run with bash 4 or newer (e.g. brew install bash)" >&2
+  exit 1
+fi
+for tool in forge cast jq; do
+  command -v "$tool" >/dev/null || { echo "refusing: $tool is not on PATH" >&2; exit 1; }
+done
 
 ENV_NAME="${1:-}"
 case "$ENV_NAME" in
@@ -215,66 +227,102 @@ if [ "$VERIFY" = "1" ]; then
 fi
 forge "${FORGE_ARGS[@]}"
 
-# --- post-broadcast: build the record from the broadcast receipts ---------
+# --- post-broadcast: build the record from on-chain receipts --------------
 
 [ -f "$BROADCAST_FILE" ] || { echo "no broadcast file at $BROADCAST_FILE" >&2; exit 1; }
 
-# CREATE transactions in deploy order, joined to their receipts:
-# "<contractName> <address> <txHash> <blockNumber> <status>" per line.
-CREATES="$(jq -r '
-  (.receipts | map({key: .transactionHash, value: .}) | from_entries) as $r
-  | .transactions[]
-  | select(.transactionType == "CREATE")
-  | [.contractName, .contractAddress, .hash, $r[.hash].blockNumber, $r[.hash].status]
-  | @tsv' "$BROADCAST_FILE")"
+refuse() { echo "refusing to record: $1" >&2; exit 1; }
+ZERO_ADDRESS=0x0000000000000000000000000000000000000000
+MAINNET_DEPLOYER=0xCB43078C32423F5348Cab5885911C3B5faE217F9
+call() { cast call "$1" "$2" --rpc-url "$RPC_URL"; }
 
-declare -A ADDR TX
+# Only the contract name and tx hash are taken from the broadcast file; the
+# address, status, block and sender all come from a fresh on-chain receipt.
+CREATES="$(jq -r '.transactions[] | select(.transactionType == "CREATE") | [.contractName, .hash] | @tsv' "$BROADCAST_FILE")"
+[ "$(printf '%s\n' "$CREATES" | grep -c .)" = "6" ] \
+  || refuse "expected exactly 6 CREATE transactions in $BROADCAST_FILE"
+
+declare -A ADDR TX SEEN
 FACTORIES=()
 FIRST_BLOCK=""
-while IFS=$'\t' read -r name addr tx block status; do
-  [ -n "$name" ] || continue
-  [ "$status" = "0x1" ] || { echo "refusing to record: $name creation tx $tx has status $status" >&2; exit 1; }
+SIGNER=""
+while IFS=$'\t' read -r name tx; do
+  [[ "$tx" =~ ^0x[0-9a-fA-F]{64}$ ]] || refuse "malformed tx hash $tx for $name"
+  receipt="$(cast receipt "$tx" --json --rpc-url "$RPC_URL")" || refuse "no on-chain receipt for $name tx $tx"
+  status="$(jq -r '.status' <<< "$receipt")"
+  [ "$status" = "0x1" ] || [ "$status" = "1" ] || refuse "$name creation tx $tx has status $status"
+  addr="$(jq -r '.contractAddress // empty' <<< "$receipt")"
+  [ -n "$addr" ] || refuse "$name tx $tx created no contract"
   addr="$(cast to-check-sum-address "$addr")"
+  from="$(cast to-check-sum-address "$(jq -r '.from' <<< "$receipt")")"
+  [ -z "$SIGNER" ] && SIGNER="$from"
+  [ "$from" = "$SIGNER" ] || refuse "$name was deployed by $from, the rest by $SIGNER"
+  [ -z "${SEEN[$addr]:-}" ] || refuse "address $addr appears twice"
+  SEEN[$addr]=1
   code="$(cast code "$addr" --rpc-url "$RPC_URL")"
-  [ "$code" != "0x" ] && [ -n "$code" ] || { echo "refusing to record: $name at $addr has no code on chain" >&2; exit 1; }
-  dec_block="$(cast to-dec "$block")"
+  [ -n "$code" ] && [ "$code" != "0x" ] || refuse "$name at $addr has no code on chain"
+  dec_block="$(cast to-dec "$(jq -r '.blockNumber' <<< "$receipt")")"
   { [ -z "$FIRST_BLOCK" ] || [ "$dec_block" -lt "$FIRST_BLOCK" ]; } && FIRST_BLOCK="$dec_block"
   case "$name" in
-    Surface) ADDR[surfaceImplV2]="$addr"; TX[surfaceImplV2]="$tx" ;;
-    FixedPriceSale) ADDR[saleImplV2]="$addr"; TX[saleImplV2]="$tx" ;;
-    AllowlistGate) ADDR[allowlistGate]="$addr"; TX[allowlistGate]="$tx" ;;
-    CloneFactory) FACTORIES+=("$addr $tx") ;;
-    Launcher) ADDR[launcherV2]="$addr"; TX[launcherV2]="$tx" ;;
-    *) echo "refusing to record: unexpected contract $name in $BROADCAST_FILE" >&2; exit 1 ;;
+    Surface) key=surfaceImplV2 ;;
+    FixedPriceSale) key=saleImplV2 ;;
+    AllowlistGate) key=allowlistGate ;;
+    Launcher) key=launcherV2 ;;
+    CloneFactory) FACTORIES+=("$addr $tx"); continue ;;
+    *) refuse "unexpected contract $name in $BROADCAST_FILE" ;;
   esac
+  [ -z "${ADDR[$key]:-}" ] || refuse "$name appears twice in $BROADCAST_FILE"
+  ADDR[$key]="$addr"; TX[$key]="$tx"
 done <<< "$CREATES"
+[ "${#FACTORIES[@]}" = "2" ] || refuse "expected exactly 2 CloneFactory deployments"
 
 # The two factories share a contract name; tell them apart by what each one
 # clones, read back on chain.
 for entry in "${FACTORIES[@]}"; do
   read -r addr tx <<< "$entry"
-  impl="$(cast call "$addr" 'implementation()(address)' --rpc-url "$RPC_URL")"
-  if [ "$(lower "$impl")" = "$(lower "${ADDR[surfaceImplV2]:-}")" ]; then
-    ADDR[surfaceFactoryV2]="$addr"; TX[surfaceFactoryV2]="$tx"
-  elif [ "$(lower "$impl")" = "$(lower "${ADDR[saleImplV2]:-}")" ]; then
-    ADDR[saleFactoryV2]="$addr"; TX[saleFactoryV2]="$tx"
-  else
-    echo "refusing to record: CloneFactory $addr clones unknown implementation $impl" >&2; exit 1
+  impl="$(cast to-check-sum-address "$(call "$addr" 'implementation()(address)')")"
+  if [ "$impl" = "${ADDR[surfaceImplV2]:-}" ]; then key=surfaceFactoryV2
+  elif [ "$impl" = "${ADDR[saleImplV2]:-}" ]; then key=saleFactoryV2
+  else refuse "CloneFactory $addr clones unknown implementation $impl"
   fi
+  [ -z "${ADDR[$key]:-}" ] || refuse "two factories clone $impl"
+  ADDR[$key]="$addr"; TX[$key]="$tx"
 done
 
 KEYS=(surfaceImplV2 saleImplV2 allowlistGate surfaceFactoryV2 saleFactoryV2 launcherV2)
 for key in "${KEYS[@]}"; do
-  [ -n "${ADDR[$key]:-}" ] || { echo "refusing to record: no $key in $BROADCAST_FILE" >&2; exit 1; }
+  [ -n "${ADDR[$key]:-}" ] || refuse "no $key in $BROADCAST_FILE"
 done
 
-# The launcher must point at exactly the factories this broadcast deployed.
-for pair in "tokenFactory:surfaceFactoryV2" "saleFactory:saleFactoryV2"; do
-  fn="${pair%%:*}"; key="${pair#*:}"
-  got="$(cast call "${ADDR[launcherV2]}" "${fn}()(address)" --rpc-url "$RPC_URL")"
-  [ "$(lower "$got")" = "$(lower "${ADDR[$key]}")" ] \
-    || { echo "refusing to record: launcher $fn() is $got, expected ${ADDR[$key]}" >&2; exit 1; }
+# --- re-assert the script's postflight on chain --------------------------
+# A --resume does not re-simulate the Solidity script, so every value its
+# postflight checks is checked again here before anything is written.
+
+expect() { # <label> <actual> <expected>
+  [ "$(lower "$2")" = "$(lower "$3")" ] || refuse "$1 is $2, expected $3"
+}
+[ "$ENV_NAME" != "mainnet" ] || expect "mainnet signer" "$SIGNER" "$MAINNET_DEPLOYER"
+[ -z "${DEPLOYER:-}" ] || expect "signer" "$SIGNER" "$DEPLOYER"
+WANT_REFERRER="${DEFAULT_REFERRER:-}"
+[ -n "$WANT_REFERRER" ] || WANT_REFERRER="$ZERO_ADDRESS"
+[ "$ENV_NAME" != "mainnet" ] || [ "$WANT_REFERRER" != "$ZERO_ADDRESS" ] || refuse "mainnet requires DEFAULT_REFERRER"
+
+expect "surfaceImplV2.version()" "$(call "${ADDR[surfaceImplV2]}" 'version()(uint256)')" 2
+expect "saleImplV2.version()" "$(call "${ADDR[saleImplV2]}" 'version()(uint256)')" 2
+SURFACE_INIT="$(cast sig 'initialize(string,string,address,address,uint256,uint16,address,address)')"
+SALE_INIT="$(cast sig 'initialize(address,uint256,uint64,uint64,uint256,uint256,address,address,address)')"
+for pair in "surfaceFactoryV2:$SURFACE_INIT" "saleFactoryV2:$SALE_INIT"; do
+  key="${pair%%:*}"; sel="${pair#*:}"
+  expect "$key.initSelector()" "$(call "${ADDR[$key]}" 'initSelector()(bytes4)')" "$sel"
+  expect "$key.deployer()" "$(call "${ADDR[$key]}" 'deployer()(address)')" "$SIGNER"
+  expect "$key.paused()" "$(call "${ADDR[$key]}" 'paused()(bool)')" "$LAND_PAUSED"
+  expect "$key.deprecated()" "$(call "${ADDR[$key]}" 'deprecated()(bool)')" false
 done
+expect "launcherV2.tokenFactory()" "$(call "${ADDR[launcherV2]}" 'tokenFactory()(address)')" "${ADDR[surfaceFactoryV2]}"
+expect "launcherV2.saleFactory()" "$(call "${ADDR[launcherV2]}" 'saleFactory()(address)')" "${ADDR[saleFactoryV2]}"
+expect "launcherV2.owner()" "$(call "${ADDR[launcherV2]}" 'owner()(address)')" "$SIGNER"
+expect "launcherV2.defaultReferrer()" "$(call "${ADDR[launcherV2]}" 'defaultReferrer()(address)')" "$WANT_REFERRER"
+echo "  ok: on-chain wiring matches the deploy config (signer $SIGNER)"
 
 UPDATE='.chainId = ($chainId | tonumber) | .factoryDeployBlock = ($block | tonumber) | .txHashes = {}'
 JQ_ARGS=(--arg chainId "$CHAIN_ID" --arg block "$FIRST_BLOCK")
@@ -287,14 +335,6 @@ TMP_RECORD="$(mktemp)"
 jq "${JQ_ARGS[@]}" "$UPDATE" "$RECORD_FILE" > "$TMP_RECORD"
 mv "$TMP_RECORD" "$RECORD_FILE"
 echo "  ok: recorded ${#KEYS[@]} contracts from receipts, first block $FIRST_BLOCK"
-
-echo "Readback:"
-for key in surfaceFactoryV2 saleFactoryV2; do
-  cast call "${ADDR[$key]}" 'implementation()(address)' --rpc-url "$RPC_URL" | sed "s/^/  $key.implementation  /"
-  cast call "${ADDR[$key]}" 'paused()(bool)' --rpc-url "$RPC_URL" | sed "s/^/  $key.paused          /"
-done
-cast call "${ADDR[launcherV2]}" 'owner()(address)' --rpc-url "$RPC_URL" | sed 's/^/  launcherV2.owner            /'
-cast call "${ADDR[launcherV2]}" 'defaultReferrer()(address)' --rpc-url "$RPC_URL" | sed 's/^/  launcherV2.defaultReferrer  /'
 
 case "$ENV_NAME" in
   mainnet) echo "  explorer  https://evm.now/address/${ADDR[launcherV2]}?chainId=1" ;;

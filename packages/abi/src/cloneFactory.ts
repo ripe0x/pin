@@ -8,6 +8,11 @@ export const cloneFactoryAbi = [
         "name": "implementation_",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "initSelector_",
+        "type": "bytes4",
+        "internalType": "bytes4"
       }
     ],
     "stateMutability": "nonpayable"
@@ -54,6 +59,25 @@ export const cloneFactoryAbi = [
       }
     ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createNonce",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -109,6 +133,19 @@ export const cloneFactoryAbi = [
   },
   {
     "type": "function",
+    "name": "initSelector",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes4",
+        "internalType": "bytes4"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isInstance",
     "inputs": [
       {
@@ -148,6 +185,25 @@ export const cloneFactoryAbi = [
         "type": "bytes32",
         "internalType": "bytes32"
       },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "predictCreate",
+    "inputs": [
       {
         "name": "caller",
         "type": "address",
@@ -307,5 +363,16 @@ export const cloneFactoryAbi = [
     "type": "error",
     "name": "NotDeployer",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotInitializer",
+    "inputs": [
+      {
+        "name": "selector",
+        "type": "bytes4",
+        "internalType": "bytes4"
+      }
+    ]
   }
 ] as const;

@@ -94,8 +94,8 @@ contract DeploySurfaceV2 is Script {
         Surface surfaceImpl = new Surface();
         FixedPriceSale saleImpl = new FixedPriceSale();
         AllowlistGate gate = new AllowlistGate();
-        CloneFactory surfaceFactory = new CloneFactory(address(surfaceImpl));
-        CloneFactory saleFactory = new CloneFactory(address(saleImpl));
+        CloneFactory surfaceFactory = new CloneFactory(address(surfaceImpl), Surface.initialize.selector);
+        CloneFactory saleFactory = new CloneFactory(address(saleImpl), FixedPriceSale.initialize.selector);
         // The factory's deployer is msg.sender at its construction: the only
         // value that reflects the broadcasting signer from inside a script.
         Launcher launcher = new Launcher(surfaceFactory, saleFactory, defaultReferrer, surfaceFactory.deployer());
@@ -148,6 +148,8 @@ contract DeploySurfaceV2 is Script {
 
         require(surfaceFactory.implementation() == d.surfaceImplV2, "surface factory implementation mismatch");
         require(saleFactory.implementation() == d.saleImplV2, "sale factory implementation mismatch");
+        require(surfaceFactory.initSelector() == Surface.initialize.selector, "surface factory initializer mismatch");
+        require(saleFactory.initSelector() == FixedPriceSale.initialize.selector, "sale factory initializer mismatch");
         require(saleFactory.deployer() == signer, "sale factory deployer mismatch");
         require(surfaceFactory.paused() == landPaused && saleFactory.paused() == landPaused, "pause state mismatch");
         require(!surfaceFactory.deprecated() && !saleFactory.deprecated(), "factory unexpectedly deprecated");

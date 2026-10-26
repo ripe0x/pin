@@ -109,8 +109,8 @@ Every state-changing function in the Surface contracts and who may call it. Gene
 
 | Function | Access |
 | --- | --- |
-| [`create`](/docs/surface/contracts/clone-factory#create) | permissionless (reverts `FactoryPaused` or `FactoryDeprecated`) |
-| [`createDeterministic`](/docs/surface/contracts/clone-factory#createdeterministic) | permissionless (reverts `FactoryPaused` or `FactoryDeprecated`) |
+| [`create`](/docs/surface/contracts/clone-factory#create) | permissionless (reverts `FactoryPaused`, `FactoryDeprecated` or `NotInitializer`) |
+| [`createDeterministic`](/docs/surface/contracts/clone-factory#createdeterministic) | permissionless (reverts `FactoryPaused`, `FactoryDeprecated` or `NotInitializer`) |
 | [`setPaused`](/docs/surface/contracts/clone-factory#setpaused) | deployer-only (`NotDeployer`) |
 | [`deprecate`](/docs/surface/contracts/clone-factory#deprecate) | deployer-only (`NotDeployer`); one-way (`AlreadyDeprecated`) |
 

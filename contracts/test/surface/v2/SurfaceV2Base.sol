@@ -70,8 +70,8 @@ abstract contract SurfaceV2Base is Test {
     function setUp() public virtual {
         surfaceImpl = new Surface();
         saleImpl = new FixedPriceSale();
-        tokenFactory = new CloneFactory(address(surfaceImpl));
-        saleFactory = new CloneFactory(address(saleImpl));
+        tokenFactory = new CloneFactory(address(surfaceImpl), Surface.initialize.selector);
+        saleFactory = new CloneFactory(address(saleImpl), FixedPriceSale.initialize.selector);
         launcher = new Launcher(tokenFactory, saleFactory, pnd, launcherOwner);
         allowlist = new AllowlistGate();
         renderer = new MockRenderer();

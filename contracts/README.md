@@ -171,18 +171,30 @@ The mainnet deployer is EIP-7702 delegated and accepts only one in-flight
 transaction; `deploy.sh` always broadcasts with `--slow` regardless of
 target, so a multi-transaction deploy never lands a gapped nonce.
 
-The forge script writes nothing. After a real broadcast, `deploy.sh` reads
-`broadcast/DeploySurfaceV2.s.sol/<chainId>/run-latest.json`, requires every
-creation receipt to have succeeded and every address to have code on chain
-(`cast code`), tells the two factories apart by their on-chain
-`implementation()`, checks the launcher points at both, and only then merges
-the record into the repo's existing per-chain file:
+`deploy.sh` needs bash 4 or newer (macOS `/bin/bash` is 3.2; use
+`brew install bash`) plus `forge`, `cast` and `jq`, and refuses to start
+without them, before anything broadcasts.
+
+The forge script writes nothing. After a real broadcast or `--resume`,
+`deploy.sh` takes only the contract names and creation tx hashes from
+`broadcast/DeploySurfaceV2.s.sol/<chainId>/run-latest.json` and re-fetches
+every receipt from the chain. It requires exactly six creations (one each of
+the impls, gate and launcher, two factories), all successful, all from one
+signer, at six distinct addresses with code; tells the factories apart by
+their on-chain `implementation()`; and re-asserts every postflight value the
+script checks, since a resume does not re-simulate it: implementation
+versions, each factory's `initSelector`, deployer, pause state (matching
+`LAND_PAUSED`) and deprecation, the launcher's factories, owner (the signer)
+and `defaultReferrer` (matching `DEFAULT_REFERRER`), the signer against
+`DEPLOYER`, and on mainnet the ripe0x deployer and a nonzero referrer. Only
+then does it merge the record into the repo's existing per-chain file:
 `deployments.mainnet.json` and `deployments.sepolia.json` (read by
 [`packages/addresses/src/index.ts`](../packages/addresses/src/index.ts) and
 `scripts/generate-docs.ts`) gain `surfaceImplV2`, `saleImplV2`,
 `allowlistGate`, `surfaceFactoryV2`, `saleFactoryV2`, `launcherV2`,
 `factoryDeployBlock` (the first deploy block) and `txHashes`, merged key by
-key so the v1 keys are untouched. `deployments.anvil.json` is the local-chain
+key so the v1 keys are untouched (Sepolia's top-level `deployer` and
+`deployedAt` describe the v1 rehearsal and are never rewritten). `deployments.anvil.json` is the local-chain
 equivalent and is gitignored. A simulation has no receipts, so it can never
 produce a record.
 

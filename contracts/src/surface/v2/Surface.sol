@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ERC721Upgradeable} from "openzeppelin-contracts-upgradeable/contracts/token/ERC721/ERC721Upgradeable.sol";
 import {OwnableUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import {Math} from "openzeppelin-contracts/contracts/utils/math/Math.sol";
 
 import {ISurface} from "./interfaces/ISurface.sol";
 import {IRenderer} from "../interfaces/IRenderer.sol";
@@ -229,9 +230,10 @@ contract Surface is ERC721Upgradeable, OwnableUpgradeable, ISurface {
         return IRenderer(renderer).contractURI(address(this));
     }
 
-    /// @notice EIP-2981. The same receiver and rate for every token.
+    /// @notice EIP-2981. The same receiver and rate for every token. mulDiv
+    ///         so any salePrice answers instead of overflowing.
     function royaltyInfo(uint256, uint256 salePrice) external view returns (address, uint256) {
-        return (royaltyReceiver, (salePrice * royaltyBps) / BPS);
+        return (royaltyReceiver, Math.mulDiv(salePrice, royaltyBps, BPS));
     }
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {

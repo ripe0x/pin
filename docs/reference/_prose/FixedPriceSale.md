@@ -136,8 +136,9 @@ Binds the sale to a collection with its price, window, ceiling, wallet cap,
 payout recipient, gate and default referrer. Reverts `CollectionRequired`,
 `NotAContract` (collection or gate without code), `PayoutRecipientRequired`
 and `BadMintWindow`. Through the factory the caller is the factory, so only
-the first authority path applies: grant the predicted address as minter first,
-as the launcher does. Emits `MintWindowSet`, `PayoutRecipientSet` and
+the first authority path applies: grant the predicted address
+(`predictCreate` or `predict` on the sale factory, both namespaced to the
+caller) as minter first, as the launcher does. Emits `MintWindowSet`, `PayoutRecipientSet` and
 `GateSet`.
 
 ## function REFERRAL_SHARE_BPS

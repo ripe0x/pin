@@ -214,6 +214,9 @@ An `onlyOwnerOrAdmin` function was called by neither the owner nor an admin; a p
 **`NothingToWithdraw`** · [FixedPriceSale](/docs/surface/contracts/fixed-price-sale#errors)\
 The account has no owed balance.
 
+**`NotInitializer`** · [CloneFactory](/docs/surface/contracts/clone-factory#errors)\
+`initData` does not start with `initSelector`, or the constructor was given a zero selector.
+
 **`NotInitializing`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
 OpenZeppelin Initializable error: an `onlyInitializing` step ran outside an active initialization.
 
