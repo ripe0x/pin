@@ -33,6 +33,11 @@
 # the script's postflight checks (a resume skips that simulation), and only
 # then merges the addresses, first deploy block and tx hashes into the
 # record. A simulation has no receipts, so it can never produce a record.
+#   RECORD_ONLY=1         skip the broadcast entirely and rebuild the record
+#                         from the existing broadcast file, with every
+#                         on-chain check below (for a wrapper that stopped
+#                         after forge finished). Never sends a transaction;
+#                         refused together with DRY_RUN.
 #   --resume              passthrough to `forge script --resume`, for
 #                         recovering a broadcast that stopped part way
 #                         (an EIP-7702 delegated signer allows only one
@@ -72,6 +77,11 @@ ENV_FILE="script/env/${ENV_NAME}.env"
 [ -f "$ENV_FILE" ] || { echo "missing $ENV_FILE" >&2; exit 1; }
 
 DRY_RUN="${DRY_RUN:-0}"
+RECORD_ONLY="${RECORD_ONLY:-0}"
+if [ "$DRY_RUN" = "1" ] && [ "$RECORD_ONLY" = "1" ]; then
+  echo "refusing: DRY_RUN and RECORD_ONLY are mutually exclusive" >&2
+  exit 1
+fi
 # A caller-exported RPC_URL/FOUNDRY_PROFILE wins over the env file's default;
 # snapshot before sourcing, which would otherwise overwrite it.
 RPC_URL_OVERRIDE="${RPC_URL:-}"
@@ -154,7 +164,7 @@ if [ "${REQUIRE_MAIN_BRANCH:-0}" = "1" ]; then
   [ "$DRY_RUN" = "1" ] || echo "  ok: clean, exact, fetched main"
 fi
 
-if [ "$VERIFY" = "1" ] && [ "$DRY_RUN" != "1" ]; then
+if [ "$VERIFY" = "1" ] && [ "$DRY_RUN" != "1" ] && [ "$RECORD_ONLY" != "1" ]; then
   : "${ETHERSCAN_API_KEY:?VERIFY=1 for $ENV_NAME requires ETHERSCAN_API_KEY}"
   echo "  ok: ETHERSCAN_API_KEY set"
 fi
@@ -163,7 +173,8 @@ fi
 
 WALLET_ARGS=()
 SLOW_ARGS=()
-if [ "$DRY_RUN" != "1" ]; then
+# RECORD_ONLY sends nothing, so it needs no wallet.
+if [ "$DRY_RUN" != "1" ] && [ "$RECORD_ONLY" != "1" ]; then
   case "$WALLET_MODE" in
     keystore)
       : "${DEPLOYER_ACCOUNT:?WALLET_MODE=keystore requires DEPLOYER_ACCOUNT}"
@@ -225,7 +236,11 @@ if [ "$VERIFY" = "1" ]; then
   # forge reads ETHERSCAN_API_KEY from the environment; the key stays out of argv.
   FORGE_ARGS+=(--verify)
 fi
-forge "${FORGE_ARGS[@]}"
+if [ "$RECORD_ONLY" = "1" ]; then
+  echo "RECORD_ONLY=1: no broadcast; rebuilding the record from $BROADCAST_FILE"
+else
+  forge "${FORGE_ARGS[@]}"
+fi
 
 # --- post-broadcast: build the record from on-chain receipts --------------
 
