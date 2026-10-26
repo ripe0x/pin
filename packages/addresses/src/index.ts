@@ -193,20 +193,49 @@ export const SURFACE_FACTORY: Record<number, Address> = {
   [SEPOLIA_CHAIN_ID]: "0xAB8F7b96e6c8f850B6089447F903dbC4aE6e4ac0",
 }
 
-// SurfaceFactoryV2: art-only core beside v1 (sequential ids only; see
-// docs/pnd-surface-v2-plan.md). Values come from
-// contracts/deployments.<network>.json. Sepolia deployed 2026-09-14 at
-// block 11704552; mainnet is undeployed (zero address). For local Anvil
-// dev, set NEXT_PUBLIC_SURFACE_FACTORY_V2 instead of editing this file.
+// SUPERSEDED — SurfaceFactoryV2 from the first v2 (docs/pnd-surface-v2-plan.md),
+// deployed to Sepolia only (2026-09-14, block 11704552). Its sources were
+// removed and it is no longer in contracts/deployments.sepolia.json's live
+// keys; the web app still reads it until it moves to the primitives below
+// (docs/pnd-surface-v2-design.md section 8). For local Anvil dev, set
+// NEXT_PUBLIC_SURFACE_FACTORY_V2 instead of editing this file.
 export const SURFACE_FACTORY_V2: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
   [SEPOLIA_CHAIN_ID]: "0x48Fa2D562650F962acad67C5dE9C7a1ED6ed61DE",
 }
 
+// Surface v2 primitives (docs/pnd-surface-v2-design.md). Values come from
+// contracts/deployments.<network>.json, which script/deploy.sh fills from
+// the broadcast receipts (keys surfaceImplV2, saleImplV2, allowlistGate,
+// surfaceFactoryV2, saleFactoryV2, launcherV2). Not yet deployed anywhere
+// (zero address). Artists normally call LAUNCHER_V2; a bespoke project calls
+// the two factories directly. Collections and sales are EIP-1167 clones of
+// the two implementations.
+export const SURFACE_IMPLEMENTATION_V2: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+export const SALE_IMPLEMENTATION_V2: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+export const ALLOWLIST_GATE: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+// The token CloneFactory (record key surfaceFactoryV2). Named apart from the
+// superseded SURFACE_FACTORY_V2 above, which the web app still reads.
+export const SURFACE_TOKEN_FACTORY_V2: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+export const SALE_FACTORY_V2: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+export const LAUNCHER_V2: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
 // RenderAssets — renderer-land registry of static display assets (cover +
-// per-token captures), written under each collection's own owner/admin
-// authority. NOT yet deployed to mainnet — paste the address here after
-// deploy.
+// per-token captures). Its source was removed from the repo with the v2
+// redesign (docs/pnd-surface-v2-design.md section 5); kept for the existing
+// Sepolia deploy the web app reads. Never deployed to mainnet.
 export const RENDER_ASSETS: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
   [SEPOLIA_CHAIN_ID]: "0xB9B5B2A6763901430B85ca00480E15Ed50065e60",
@@ -215,8 +244,8 @@ export const RENDER_ASSETS: Record<number, Address> = {
 // DefaultRenderer — the stock data-URI renderer (reads RenderAssets). The
 // factory ships with no default renderer; a collection opts in by passing
 // this address as cfg.renderer at create (or via setRenderer later).
-// NOT yet deployed to mainnet — paste the address here after running
-// DeployRenderModules.s.sol.
+// Its source and DeployRenderModules.s.sol were removed from the repo with the
+// v2 redesign; kept for the existing Sepolia deploy. Never deployed to mainnet.
 export const DEFAULT_RENDERER: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
   [SEPOLIA_CHAIN_ID]: "0x29Ed24f394a794415A5545481842f0bb37a3bB93",

@@ -61,69 +61,64 @@ Every state-changing function in the Surface contracts and who may call it. Gene
 | [`rescueStrayETH`](/docs/surface/contracts/fixed-price-minter#rescuestrayeth) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
 | [`initialize`](/docs/surface/contracts/fixed-price-minter#initialize) | deployer one-shot (`initializer`, else `InvalidInitialization`) |
 
-## RenderAssets
-
-| Function | Access |
-| --- | --- |
-| [`setCover`](/docs/surface/contracts/render-assets#setcover) | collection owner or admin (`onlySurfaceAdmin`, else `NotSurfaceAdmin`) |
-| [`setCapturer`](/docs/surface/contracts/render-assets#setcapturer) | collection owner or admin (`onlySurfaceAdmin`, else `NotSurfaceAdmin`) |
-| [`setCaptureTemplate`](/docs/surface/contracts/render-assets#setcapturetemplate) | collection owner, admin, or granted capturer (else `NotCaptureAuthorized`) |
-| [`setCaptures`](/docs/surface/contracts/render-assets#setcaptures) | collection owner, admin, or granted capturer (else `NotCaptureAuthorized`) |
-
 ## SurfaceV2
 
 | Function | Access |
 | --- | --- |
-| [`mintTo`](/docs/surface/contracts/surface-v2#mintto) | minter-only (`msg.sender` must be an authorized minter, else `NotMinter`) |
-| [`mintToSeeded`](/docs/surface/contracts/surface-v2#minttoseeded) | minter-only (`msg.sender` must be an authorized minter, else `NotMinter`) |
-| [`burn`](/docs/surface/contracts/surface-v2#burn) | owner-or-approved (else `NotAuthorized`) |
-| [`setRenderer`](/docs/surface/contracts/surface-v2#setrenderer) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setRoyalty`](/docs/surface/contracts/surface-v2#setroyalty) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`lockRoyalty`](/docs/surface/contracts/surface-v2#lockroyalty) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setSupplyCap`](/docs/surface/contracts/surface-v2#setsupplycap) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setCreators`](/docs/surface/contracts/surface-v2#setcreators) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setMinter`](/docs/surface/contracts/surface-v2#setminter) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setPrimaryMinter`](/docs/surface/contracts/surface-v2#setprimaryminter) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`lockRenderer`](/docs/surface/contracts/surface-v2#lockrenderer) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`lockSupply`](/docs/surface/contracts/surface-v2#locksupply) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`lockMinter`](/docs/surface/contracts/surface-v2#lockminter) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`seal`](/docs/surface/contracts/surface-v2#seal) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
-| [`addAdmin`](/docs/surface/contracts/surface-v2#addadmin) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
-| [`removeAdmin`](/docs/surface/contracts/surface-v2#removeadmin) | owner, or the admin itself (else `NotAuthorized`) |
-| [`notifyMetadataUpdate`](/docs/surface/contracts/surface-v2#notifymetadataupdate) | the current renderer, or owner/admin (else `NotAuthorized`) |
-| [`rescueStrayETH`](/docs/surface/contracts/surface-v2#rescuestrayeth) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`mintTo`](/docs/surface/contracts/surface-v2#mintto) | minter-only (`msg.sender == minter`, else `NotMinter`) |
+| [`burn`](/docs/surface/contracts/surface-v2#burn) | permissionless (holder or approved, else `ERC721InsufficientApproval`) |
+| [`setMinter`](/docs/surface/contracts/surface-v2#setminter) | owner-only (`OwnableUnauthorizedAccount`) |
+| [`setRenderer`](/docs/surface/contracts/surface-v2#setrenderer) | owner-only (`OwnableUnauthorizedAccount`) |
+| [`setSupplyCap`](/docs/surface/contracts/surface-v2#setsupplycap) | owner-only (`OwnableUnauthorizedAccount`) |
+| [`setRoyalty`](/docs/surface/contracts/surface-v2#setroyalty) | owner-only (`OwnableUnauthorizedAccount`) |
+| [`setName`](/docs/surface/contracts/surface-v2#setname) | owner-only (`OwnableUnauthorizedAccount`) |
+| [`notifyMetadataUpdate`](/docs/surface/contracts/surface-v2#notifymetadataupdate) | owner-only or the renderer (`NotAuthorized`) |
 | [`initialize`](/docs/surface/contracts/surface-v2#initialize) | deployer one-shot (`initializer`, else `InvalidInitialization`) |
-| [`transferOwnership`](/docs/surface/contracts/surface-v2#transferownership) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
-| [`acceptOwnership`](/docs/surface/contracts/surface-v2#acceptownership) | pending-owner-only (else `OwnableUnauthorizedAccount`) |
-| [`renounceOwnership`](/docs/surface/contracts/surface-v2#renounceownership) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
-| [`approve`](/docs/surface/contracts/surface-v2#approve) | owner-or-operator-only (standard ERC721 approval authority, else an `ERC721` revert) |
-| [`setApprovalForAll`](/docs/surface/contracts/surface-v2#setapprovalforall) | permissionless (the caller sets its own operator approval) |
+| [`renounceOwnership`](/docs/surface/contracts/surface-v2#renounceownership) | owner-only (`OwnableUnauthorizedAccount`) |
+| [`transferOwnership`](/docs/surface/contracts/surface-v2#transferownership) | owner-only (`OwnableUnauthorizedAccount`) |
+| [`approve`](/docs/surface/contracts/surface-v2#approve) | permissionless (holder or operator, standard ERC721) |
+| [`setApprovalForAll`](/docs/surface/contracts/surface-v2#setapprovalforall) | permissionless (standard ERC721) |
 | [`transferFrom`](/docs/surface/contracts/surface-v2#transferfrom) | owner-or-approved-only (standard ERC721 transfer authority, else `ERC721InsufficientApproval`) |
 | [`safeTransferFrom(address, address, uint256)`](/docs/surface/contracts/surface-v2#safetransferfromaddress-address-uint256) | owner-or-approved-only (standard ERC721 transfer authority, else `ERC721InsufficientApproval`) |
 | [`safeTransferFrom(address, address, uint256, bytes)`](/docs/surface/contracts/surface-v2#safetransferfromaddress-address-uint256-bytes) | owner-or-approved-only (standard ERC721 transfer authority, else `ERC721InsufficientApproval`) |
 
-## SurfaceFactoryV2
+## FixedPriceSale
 
 | Function | Access |
 | --- | --- |
-| [`createSurface`](/docs/surface/contracts/factory-v2#createsurface) | permissionless (anyone may deploy; control belongs to the `owner` argument) |
-| [`createSurfaceCustom`](/docs/surface/contracts/factory-v2#createsurfacecustom) | permissionless (control belongs to the `owner` argument) |
-| [`deprecate`](/docs/surface/contracts/factory-v2#deprecate) | deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`) |
-| [`setPaused`](/docs/surface/contracts/factory-v2#setpaused) | deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`) |
+| [`mint`](/docs/surface/contracts/fixed-price-sale#mint) | permissionless (the mint checks above) |
+| [`mintWithReferral`](/docs/surface/contracts/fixed-price-sale#mintwithreferral) | permissionless (the mint checks above) |
+| [`withdraw`](/docs/surface/contracts/fixed-price-sale#withdraw) | permissionless (funds go only to `account`) |
+| [`withdrawTo`](/docs/surface/contracts/fixed-price-sale#withdrawto) | permissionless (the caller's own balance only) |
+| [`setPrice`](/docs/surface/contracts/fixed-price-sale#setprice) | owner-only (the collection's owner, borrowed; `NotAuthorized`) |
+| [`setMintWindow`](/docs/surface/contracts/fixed-price-sale#setmintwindow) | owner-only (the collection's owner, borrowed; `NotAuthorized`) |
+| [`setMaxMints`](/docs/surface/contracts/fixed-price-sale#setmaxmints) | owner-only (the collection's owner, borrowed; `NotAuthorized`) |
+| [`setWalletCap`](/docs/surface/contracts/fixed-price-sale#setwalletcap) | owner-only (the collection's owner, borrowed; `NotAuthorized`) |
+| [`setPayoutRecipient`](/docs/surface/contracts/fixed-price-sale#setpayoutrecipient) | owner-only (the collection's owner, borrowed; `NotAuthorized`) |
+| [`setGate`](/docs/surface/contracts/fixed-price-sale#setgate) | owner-only (the collection's owner, borrowed; `NotAuthorized`) |
+| [`close`](/docs/surface/contracts/fixed-price-sale#close) | owner-only (the collection's owner, borrowed; `NotAuthorized`) |
+| [`initialize`](/docs/surface/contracts/fixed-price-sale#initialize) | deployer one-shot (`initializer`, else `InvalidInitialization`); the collection already names this clone as its minter, or the caller is the collection's owner (`NotAuthorized`) |
 
-## FixedPriceMinterV2
+## AllowlistGate
 
 | Function | Access |
 | --- | --- |
-| [`mint(address, uint256, address, bytes)`](/docs/surface/contracts/fixed-price-minter-v2#mintaddress-uint256-address-bytes) | permissionless (payable; window, ceiling, gate, and payment checks apply) |
-| [`mint(uint256)`](/docs/surface/contracts/fixed-price-minter-v2#mintuint256) | permissionless (payable; window, ceiling, gate, and payment checks apply) |
-| [`withdraw`](/docs/surface/contracts/fixed-price-minter-v2#withdraw) | permissionless (funds go only to `account`) |
-| [`setPrice`](/docs/surface/contracts/fixed-price-minter-v2#setprice) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setMintWindow`](/docs/surface/contracts/fixed-price-minter-v2#setmintwindow) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setPayoutRecipient`](/docs/surface/contracts/fixed-price-minter-v2#setpayoutrecipient) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setMaxMints`](/docs/surface/contracts/fixed-price-minter-v2#setmaxmints) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setAllowlistRoot`](/docs/surface/contracts/fixed-price-minter-v2#setallowlistroot) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setWalletCap`](/docs/surface/contracts/fixed-price-minter-v2#setwalletcap) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setReferralShareBps`](/docs/surface/contracts/fixed-price-minter-v2#setreferralsharebps) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
-| [`rescueStrayETH`](/docs/surface/contracts/fixed-price-minter-v2#rescuestrayeth) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
-| [`initialize`](/docs/surface/contracts/fixed-price-minter-v2#initialize) | deployer one-shot (`initializer`, else `InvalidInitialization`) |
+| [`setRoot`](/docs/surface/contracts/allowlist-gate#setroot) | owner-only (the collection's owner, borrowed; `NotAuthorized`) |
+
+## CloneFactory
+
+| Function | Access |
+| --- | --- |
+| [`create`](/docs/surface/contracts/clone-factory#create) | permissionless (reverts `FactoryPaused` or `FactoryDeprecated`) |
+| [`createDeterministic`](/docs/surface/contracts/clone-factory#createdeterministic) | permissionless (reverts `FactoryPaused` or `FactoryDeprecated`) |
+| [`setPaused`](/docs/surface/contracts/clone-factory#setpaused) | deployer-only (`NotDeployer`) |
+| [`deprecate`](/docs/surface/contracts/clone-factory#deprecate) | deployer-only (`NotDeployer`); one-way (`AlreadyDeprecated`) |
+
+## Launcher
+
+| Function | Access |
+| --- | --- |
+| [`launch`](/docs/surface/contracts/launcher#launch) | permissionless (reverts when either factory is paused or deprecated) |
+| [`setDefaultReferrer`](/docs/surface/contracts/launcher#setdefaultreferrer) | owner-only (`OwnableUnauthorizedAccount`) |
+| [`transferOwnership`](/docs/surface/contracts/launcher#transferownership) | owner-only (`OwnableUnauthorizedAccount`) |
+| [`renounceOwnership`](/docs/surface/contracts/launcher#renounceownership) | owner-only (`OwnableUnauthorizedAccount`) |
