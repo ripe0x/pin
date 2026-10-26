@@ -40,6 +40,14 @@ contract DeploySurfaceV2 is Script {
     error DeployerMismatch(address expected, address actual);
     error DefaultReferrerRequired();
 
+    /// @dev The env-supplied inputs. Tests pass one directly (runWith),
+    ///      since vm.setEnv is process-wide and forge runs tests in parallel.
+    struct Config {
+        address expectedDeployer; // DEPLOYER; 0 = unchecked
+        address defaultReferrer; // DEFAULT_REFERRER; required on mainnet
+        bool landPaused; // LAND_PAUSED; default true
+    }
+
     struct Deployment {
         address surfaceImplV2;
         address saleImplV2;
@@ -52,22 +60,29 @@ contract DeploySurfaceV2 is Script {
     /// @dev CLI entrypoint: broadcasts as the sender forge supplies (--account,
     ///      --private-key, or the default sender).
     function run() external returns (Deployment memory d) {
-        return _run(address(0));
+        return _run(address(0), readConfig());
     }
 
-    /// @dev Same deploy as run(), broadcasting as `sender`. Used by the
-    ///      mainnet-fork test, since vm.startBroadcast and an active prank are
+    /// @dev Same deploy, broadcasting as `sender` with an explicit config.
+    ///      Used by the tests, since vm.startBroadcast and an active prank are
     ///      not compatible.
-    function runAs(address sender) external returns (Deployment memory d) {
-        return _run(sender);
+    function runWith(address sender, Config memory cfg) external returns (Deployment memory d) {
+        return _run(sender, cfg);
     }
 
-    function _run(address sender) private returns (Deployment memory d) {
-        _requireChainSupported();
+    /// @dev Unset and empty variables both fall through to the default.
+    function readConfig() public view returns (Config memory) {
+        return Config({
+            expectedDeployer: vm.envOr("DEPLOYER", address(0)),
+            defaultReferrer: vm.envOr("DEFAULT_REFERRER", address(0)),
+            landPaused: vm.envOr("LAND_PAUSED", true)
+        });
+    }
 
-        address expectedDeployer = vm.envOr("DEPLOYER", address(0));
-        address defaultReferrer = vm.envOr("DEFAULT_REFERRER", address(0));
-        bool landPaused = vm.envOr("LAND_PAUSED", true);
+    function _run(address sender, Config memory cfg) private returns (Deployment memory d) {
+        _requireChainSupported();
+        address defaultReferrer = cfg.defaultReferrer;
+        bool landPaused = cfg.landPaused;
         if (block.chainid == MAINNET_CHAIN_ID && defaultReferrer == address(0)) revert DefaultReferrerRequired();
 
         if (sender == address(0)) {
@@ -101,7 +116,7 @@ contract DeploySurfaceV2 is Script {
             launcherV2: address(launcher)
         });
 
-        _requirePostflight(d, expectedDeployer, defaultReferrer, landPaused);
+        _requirePostflight(d, cfg.expectedDeployer, defaultReferrer, landPaused);
         _log(d);
     }
 

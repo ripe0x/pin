@@ -125,10 +125,11 @@ After deploy, paste the factory address into
 
 ## Surface v2 deploy
 
-One deploy path for the Surface v2 core (SurfaceV2 implementation,
-FixedPriceMinterV2 implementation, RenderAssets, DefaultRenderer,
-SurfaceFactoryV2) across every environment: `script/DeploySurfaceV2.s.sol` is
-the only deploy script, `script/deploy.sh <env>` is the only wrapper, and
+One deploy path for the Surface v2 primitives (docs/pnd-surface-v2-design.md),
+deployed in this order: the `Surface` implementation, the `FixedPriceSale`
+implementation, `AllowlistGate`, the token `CloneFactory`, the sale
+`CloneFactory`, and the `Launcher`. `script/DeploySurfaceV2.s.sol` is the only
+deploy script, `script/deploy.sh <env>` is the only wrapper, and
 `script/env/<env>.env` holds the per-environment values (no secrets). Anvil,
 the fork test, sepolia and mainnet all run the same script and the same
 guards; only the env file's values differ.
@@ -156,35 +157,34 @@ export DEPLOYER_ACCOUNT=ripe0x
 ```
 
 `DEPLOYER_PASSWORD_FILE` (chmod 600) replaces the interactive password
-prompt when set. Mainnet's env file ships `DEPLOYER` empty on purpose: the
-wrapper refuses to run, `DRY_RUN` included, until it is filled in. `CATALOG`
-is filled in already on mainnet and sepolia, since it is the Surface
-protocol's public good and the same address on every chain;
-`DeploySurfaceV2.s.sol` asserts the mainnet value matches on chain id 1.
+prompt when set. Mainnet's env file ships `DEPLOYER` and `DEFAULT_REFERRER`
+empty on purpose: the wrapper refuses to run, `DRY_RUN` included, until both
+are filled in, and the script itself refuses chain id 1 without a default
+referrer or with any signer but the ripe0x deployer. `DEFAULT_REFERRER` is
+PND's referral address: the launcher copies it into every sale it makes
+(paid by `mint(quantity)`), so it should be a Safe or splitter, not a
+personal wallet. The launcher's owner, who can change it for later
+launches, is the deployer. Both factories land paused (`LAND_PAUSED=true`);
+the deployer unpauses them with `setPaused(false)`.
 
 The mainnet deployer is EIP-7702 delegated and accepts only one in-flight
 transaction; `deploy.sh` always broadcasts with `--slow` regardless of
 target, so a multi-transaction deploy never lands a gapped nonce.
 
-`RENDER_ASSETS` and `DEFAULT_RENDERER` are reused when the env file names an
-address with deployed code, otherwise the script deploys fresh instances. A
-local chain deploys a `Catalog` too when `CATALOG` is left empty.
-
-DeploySurfaceV2.s.sol writes only when forge's execution context is a real
-broadcast (`vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)`), never a plain
-simulation: a bare `forge script` or `DRY_RUN=1` run leaves every record file
-untouched. The record is the repo's existing per-chain file, keyed by chain
-id: `deployments.mainnet.json` and `deployments.sepolia.json` already carry
-the v1 protocol's addresses (read by
+The forge script writes nothing. After a real broadcast, `deploy.sh` reads
+`broadcast/DeploySurfaceV2.s.sol/<chainId>/run-latest.json`, requires every
+creation receipt to have succeeded and every address to have code on chain
+(`cast code`), tells the two factories apart by their on-chain
+`implementation()`, checks the launcher points at both, and only then merges
+the record into the repo's existing per-chain file:
+`deployments.mainnet.json` and `deployments.sepolia.json` (read by
 [`packages/addresses/src/index.ts`](../packages/addresses/src/index.ts) and
-`scripts/generate-docs.ts`) and gain the v2 keys (`surfaceFactoryV2`,
-`sequentialImplementationV2`, `minterImplementationV2`, `defaultRenderer`,
-`renderAssets`, `catalog`, `deployer`, `deployedAt`, `factoryDeployBlock`,
-`txHashes`) alongside them, merged key by key so the v1 keys this script
-never names are untouched. `deployments.anvil.json` is the local-chain
-equivalent and is gitignored. After a real broadcast, `deploy.sh` also
-patches `factoryDeployBlock` and `txHashes` from the broadcast receipts and
-prints an on-chain readback of the factory's wiring.
+`scripts/generate-docs.ts`) gain `surfaceImplV2`, `saleImplV2`,
+`allowlistGate`, `surfaceFactoryV2`, `saleFactoryV2`, `launcherV2`,
+`factoryDeployBlock` (the first deploy block) and `txHashes`, merged key by
+key so the v1 keys are untouched. `deployments.anvil.json` is the local-chain
+equivalent and is gitignored. A simulation has no receipts, so it can never
+produce a record.
 
 ## Regenerating ABIs for the web app
 

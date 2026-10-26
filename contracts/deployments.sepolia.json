@@ -1,5 +1,5 @@
 {
-  "_note": "Sepolia rehearsal deploy of the Surface core, used to dress-rehearse the artist deploy-page flow before a mainnet broadcast (see docs/pnd-surface-second-launch.md). Deployed 2026-07-25 from DeploySurfaceSystemSepolia.s.sol, deployer ripe0x.eth (0xCB43078C32423F5348Cab5885911C3B5faE217F9). The factory lands paused; call setPaused(false) to open it for a rehearsal. `defaultRenderer` and `renderAssets` are intentionally empty: the rehearsal uses the RENDERER preset (bring-your-own IRenderer in cfg.renderer), which needs neither. Catalog shares the canonical CREATE2 address across chains. All five verified on sepolia.etherscan.io.",
+  "_note": "Sepolia rehearsal deploy of the Surface core, used to dress-rehearse the artist deploy-page flow before a mainnet broadcast (see docs/pnd-surface-second-launch.md). Deployed 2026-07-25 from DeploySurfaceSystemSepolia.s.sol, deployer ripe0x.eth (0xCB43078C32423F5348Cab5885911C3B5faE217F9). The factory lands paused; call setPaused(false) to open it for a rehearsal. `defaultRenderer` and `renderAssets` are intentionally empty: the rehearsal uses the RENDERER preset (bring-your-own IRenderer in cfg.renderer), which needs neither. Catalog shares the canonical CREATE2 address across chains. All five verified on sepolia.etherscan.io. The Surface v2 keys (`surfaceImplV2`, `saleImplV2`, `allowlistGate`, `surfaceFactoryV2`, `saleFactoryV2`, `launcherV2`) belong to the primitive-first v2 (docs/pnd-surface-v2-design.md) and stay empty until it is rehearsed here; script/deploy.sh fills them, with `factoryDeployBlock` and `txHashes`, from the broadcast receipts. The superseded first v2 rehearsal (SurfaceFactoryV2 0x48Fa2D562650F962acad67C5dE9C7a1ED6ed61DE, SurfaceV2 implementation 0xd83BA4c85bf30f4353C5Fa1d6cbbbf44f3bde9db, FixedPriceMinterV2 implementation 0x8c664D62B0bF29b43FA8f4d3F91b735B241791e2, factory block 11704552, factory tx 0xf7d7b7f5a18a00279a92977b2f890f626f24c0c44cdd686012ad73c9e8eaa638) is still on chain but is no longer recorded under live keys; its sources were removed from the repo.",
   "chainId": 11155111,
   "surfaceFactory": "0xAB8F7b96e6c8f850B6089447F903dbC4aE6e4ac0",
   "defaultRenderer": "0x29Ed24f394a794415A5545481842f0bb37a3bB93",
@@ -10,11 +10,10 @@
   "catalog": "0x6F0441B2f096d4db71C322F700dCeF0E88CFCcBC",
   "deployedAt": 1789409424,
   "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
-  "surfaceFactoryV2": "0x48Fa2D562650F962acad67C5dE9C7a1ED6ed61DE",
-  "sequentialImplementationV2": "0xd83BA4c85bf30f4353C5Fa1d6cbbbf44f3bde9db",
-  "minterImplementationV2": "0x8c664D62B0bF29b43FA8f4d3F91b735B241791e2",
-  "factoryDeployBlock": 11704552,
-  "txHashes": {
-    "surfaceFactoryV2": "0xf7d7b7f5a18a00279a92977b2f890f626f24c0c44cdd686012ad73c9e8eaa638"
-  }
+  "surfaceImplV2": "",
+  "saleImplV2": "",
+  "allowlistGate": "",
+  "surfaceFactoryV2": "",
+  "saleFactoryV2": "",
+  "launcherV2": ""
 }
