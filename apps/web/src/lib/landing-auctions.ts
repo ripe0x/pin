@@ -1,7 +1,7 @@
 import "server-only"
 import { unstable_cache } from "next/cache"
 import { getAuctionForToken, type AuctionState } from "./auctions"
-import { getDisplayMedia, type DisplayMedia } from "./display-media"
+import { chooseDisplayMedia, getDisplayMedia, type DisplayMedia } from "./display-media"
 import { readEnsIdentities } from "./ens-identity-store"
 import { getActivePndAuctions, getTokenMediaFromMetadata } from "./indexer-queries"
 
@@ -81,7 +81,15 @@ async function toShelfCards(live: ActiveAuction[]): Promise<AuctionShelfCard[]> 
       priceWei: (hasBid ? a.amount : a.reservePrice).toString(),
       endTime: a.endTime,
       quantity: a.tokenStandard === "erc1155" ? a.quantity.toString() : "1",
-      artwork: artwork.get(key) ?? { kind: "none" },
+      // getDisplayMedia swallows its own failures, and this shelf is
+      // cached, so an empty artwork map from one bad lookup would pin
+      // blank cards. Fall back to the metadata this build already loaded.
+      artwork:
+        artwork.get(key) ??
+        chooseDisplayMedia(tokenMeta ?? null, null, {
+          contract: a.tokenContract,
+          tokenId: a.tokenId,
+        }),
     }
   })
 }
