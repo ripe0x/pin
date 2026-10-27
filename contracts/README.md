@@ -198,6 +198,44 @@ key so the v1 keys are untouched (Sepolia's top-level `deployer` and
 equivalent and is gitignored. A simulation has no receipts, so it can never
 produce a record.
 
+## Surface v2 assurance
+
+Beyond `forge test` (unit, fuzz and invariant suites under
+`test/surface/v2/`), CI runs Anvil and deep invariants in
+`contracts-anvil-e2e`, Slither in `contracts-static`, and an isolated
+mutation campaign on schedule or manual dispatch in `contracts-v2-mutation`.
+
+| Layer | Command (from `contracts/`) | What it proves |
+| --- | --- | --- |
+| Forge end-to-end | `forge test --match-path test/surface/v2/E2E.t.sol` | One collection's whole life through a real `DeploySurfaceV2` deploy, with every wei accounted for |
+| Anvil end-to-end | `bash script/test/e2e-anvil.sh` | `deploy.sh` on a live chain, the record from receipts, a `cast`-driven lifecycle, and the record step refusing tampered broadcast files and config drift |
+| Deep invariants | `FOUNDRY_PROFILE=invariant forge test --match-path "test/surface/v2/invariants/*"` | Value conservation, close/renounce finality, ids, cap, seeds, at 512 runs x 100 calls |
+| Slither | `slither . --config-file slither.config.json --filter-paths '(^|/)(lib|test|script)/|(^|/)src/(?!surface/v2/)' --fail-none --json /tmp/slither-v2.json && python3 script/test/check-slither.py /tmp/slither-v2.json` | No new medium-or-higher v2 finding |
+| Mutation | `python3 script/test/mutate-surface-v2.py --output /tmp/surface-v2-mutations.json` | Each of 55 valid curated mutants makes a v2 test fail; compilation failures do not count as kills |
+| Symbolic | `halmos --contract SymbolicSurfaceTest --solver z3 --solver-timeout-branching 120s --solver-timeout-assertion 120s` after a Forge AST build; repeat for `SymbolicSaleTest` and `SymbolicFactoryNamespaceTest` | Cap floor, bounded royalty, referral accounting, and address namespaces in `test/surface/v2/symbolic/` |
+
+Coverage (`forge coverage --match-path "test/surface/v2/**" --report summary`)
+is 100% lines, statements, branches and functions on all five v2 contracts.
+
+Slither triage. The `_mint` reentrancy warning is accepted because both
+entrypoints are `nonReentrant`; the initializer and `config()` return values
+are intentionally unused. The CI checker pins those three medium findings
+by ID. Lower-severity findings include the specified mint window, zero
+sentinels, pull-payment call, and a false positive about inherited `owner()`.
+
+Aderyn (`aderyn . --path-includes src/surface/v2`) reports two "High"
+results, both reviewed: the reentrancy item is an `owner()` read before a
+write with no exploitable path, and "weak randomness" is the
+`block.prevrandao` seed the spec accepts. Its Low results are
+informational (`_mint` over `_safeMint` is deliberate: the sale checks the
+receiver).
+
+Halmos 0.3.3 uses etched runtime code with empty clone storage because it
+cannot execute Foundry's deployment cheat. The symbolic cap-floor proof
+covers both `uint256` inputs; royalty bounds cover every `uint16` price
+and `uint256.max`. A full symbolic `uint256` royalty-price proof timed out
+at 120 seconds. `Properties.t.sol` separately fuzzes the same rules.
+
 ## Regenerating ABIs for the web app
 
 After any contract change:

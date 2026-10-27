@@ -41,6 +41,13 @@ contract FixedPriceSaleInvariantsTest is StdInvariant, SurfaceV2Base {
         assertEq(address(sale).balance, owed, "balance != pending");
     }
 
+    /// @dev Once closed, the sale never mints again; once the collection is
+    ///      renounced, the sale's config never changes again.
+    function invariant_closedAndRenouncedAreFinal() public view {
+        if (handler.ghostCloses() != 0) assertEq(sale.totalMinted(), handler.mintedAtClose(), "minted after close");
+        if (handler.ghostRenounces() != 0) assertEq(sale.price(), handler.priceAtRenounce(), "price changed after renounce");
+    }
+
     /// @dev Nobody withdraws more than they were credited.
     function invariant_noOverWithdrawal() public view {
         for (uint256 i = 0; i < handler.actorCount(); i++) {

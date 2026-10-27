@@ -101,6 +101,11 @@ jobs:
       - name: Exercise local deployment lifecycle and receipt validation
         run: bash script/test/e2e-anvil.sh
 
+      - name: Deep Surface v2 invariants
+        env:
+          FOUNDRY_PROFILE: invariant
+        run: forge test --match-path 'test/surface/v2/invariants/*'
+
   contracts-static:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -135,6 +140,30 @@ jobs:
             --filter-paths '(^|/)(lib|test|script)/|(^|/)src/(?!surface/v2/)' \
             --fail-none --json /tmp/slither-v2.json
           python3 script/test/check-slither.py /tmp/slither-v2.json
+
+  contracts-v2-mutation:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install contract dependencies
+        run: |
+          forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 --no-git
+          forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v5.1.0 --no-git
+          forge install foundry-rs/forge-std@v1.16.1 --no-git
+          forge install Vectorized/solady@v0.1.26 --no-git
+
+      - name: Mutate Surface v2 in an isolated copy
+        run: python3 script/test/mutate-surface-v2.py --output /tmp/surface-v2-mutations.json
 
   deployment-drift:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

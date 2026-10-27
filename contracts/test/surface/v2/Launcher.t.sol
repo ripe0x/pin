@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.24;
 
+import {OwnableUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {OwnableUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
@@ -152,6 +153,15 @@ contract LauncherTest is SurfaceV2Base {
         assertEq(none.pendingWithdrawal(artist), PRICE, "zero default referrer: artist keeps all");
     }
 
+    function test_launch_revertsWhenSaleFactoryMispredicts() public {
+        LyingSaleFactory liar = new LyingSaleFactory();
+        Launcher l = new Launcher(tokenFactory, CloneFactory(address(liar)), pnd, launcherOwner);
+        vm.expectRevert(
+            abi.encodeWithSelector(Launcher.SalePredictionMismatch.selector, liar.PREDICTED(), liar.ACTUAL())
+        );
+        l.launch(_tokenParams(), _saleParams());
+    }
+
     // ─── bespoke path, no launcher ──────────────────────────────────────────
 
     function test_bespokePath_tokenFactoryDirect() public {
@@ -186,5 +196,19 @@ contract MismatchingSaleFactory {
 contract BespokeMinter {
     function mint(Surface token, address to, uint256 quantity) external {
         token.mintTo(to, quantity);
+    }
+}
+
+/// @dev A sale factory whose prediction and deployment disagree.
+contract LyingSaleFactory {
+    address public constant PREDICTED = address(0xDEAD);
+    address public constant ACTUAL = address(0xBEEF);
+
+    function predict(bytes32, address) external pure returns (address) {
+        return PREDICTED;
+    }
+
+    function createDeterministic(bytes32, bytes calldata) external pure returns (address) {
+        return ACTUAL;
     }
 }

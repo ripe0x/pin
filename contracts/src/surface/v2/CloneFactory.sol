@@ -104,6 +104,7 @@ contract CloneFactory {
     function _init(address instance, bytes calldata initData) internal {
         bytes4 selector = initData.length < 4 ? bytes4(0) : bytes4(initData[:4]);
         if (selector != initSelector) revert NotInitializer(selector);
+        // slither-disable-next-line unused-return,reentrancy-benign,reentrancy-events
         Address.functionCall(instance, initData);
         isInstance[instance] = true;
         emit Created(implementation, instance, msg.sender);

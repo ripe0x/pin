@@ -22,6 +22,8 @@ contract FixedPriceSaleHandler is Test {
     uint256 public ghostWithdrawalCalls;
     uint256 public ghostCloses;
     uint256 public ghostRenounces;
+    uint256 public mintedAtClose;
+    uint256 public priceAtRenounce;
     mapping(address => uint256) public credited;
     mapping(address => uint256) public paidOut;
 
@@ -145,6 +147,7 @@ contract FixedPriceSaleHandler is Test {
         if (token.owner() != owner || sale.closed() || chance % 20 != 0) return;
         vm.prank(owner);
         sale.close();
+        mintedAtClose = sale.totalMinted();
         ghostCloses++;
     }
 
@@ -152,6 +155,7 @@ contract FixedPriceSaleHandler is Test {
         if (token.owner() != owner || chance % 20 != 0) return;
         vm.prank(owner);
         token.renounceOwnership();
+        priceAtRenounce = sale.price();
         ghostRenounces++;
     }
 

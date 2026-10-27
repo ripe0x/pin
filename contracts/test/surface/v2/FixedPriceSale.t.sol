@@ -219,6 +219,62 @@ contract FixedPriceSaleTest is SurfaceV2Base {
         _checkOrder(false);
     }
 
+    // ─── exact boundaries (mutation-testing survivors) ──────────────────────
+
+    function test_window_opensExactlyAtStart() public {
+        uint64 start = uint64(block.timestamp + 100);
+        vm.prank(artist);
+        sale.setMintWindow(start, start + 100);
+        vm.warp(start - 1);
+        vm.prank(collector);
+        vm.expectRevert(IMinter.MintNotStarted.selector);
+        sale.mint{value: PRICE}(1);
+        vm.warp(start);
+        _mint(sale, collector, 1);
+        assertEq(token.ownerOf(1), collector);
+    }
+
+    function test_window_closesExactlyAtEnd() public {
+        uint64 end = uint64(block.timestamp + 100);
+        vm.prank(artist);
+        sale.setMintWindow(0, end);
+        vm.warp(end - 1);
+        _mint(sale, collector, 1);
+        vm.warp(end);
+        vm.prank(collector);
+        vm.expectRevert(IMinter.MintEnded.selector);
+        sale.mint{value: PRICE}(1);
+    }
+
+    function test_maxMints_allowsExactlyTheCeiling() public {
+        vm.prank(artist);
+        sale.setMaxMints(3);
+        _mint(sale, collector, 2);
+        _mint(sale, collector, 1); // 3 of 3: exactly at the ceiling
+        assertEq(sale.totalMinted(), 3);
+        vm.prank(collector);
+        vm.expectRevert(abi.encodeWithSelector(IMinter.MaxMintsExceeded.selector, 3, 4));
+        sale.mint{value: PRICE}(1);
+    }
+
+    function test_walletCap_allowsExactlyTheCap() public {
+        vm.prank(artist);
+        sale.setWalletCap(2);
+        _mint(sale, collector, 2);
+        assertEq(sale.mintedBy(collector), 2);
+    }
+
+    function test_close_isOneWay() public {
+        vm.startPrank(artist);
+        sale.close();
+        sale.close();
+        vm.stopPrank();
+        assertTrue(sale.closed(), "a second close does not reopen");
+        vm.prank(collector);
+        vm.expectRevert(IMinter.SaleClosed.selector);
+        sale.mint{value: PRICE}(1);
+    }
+
     function test_zeroQuantity_rejectedByCollection() public {
         vm.prank(collector);
         vm.expectRevert(ISurface.ZeroQuantity.selector);
