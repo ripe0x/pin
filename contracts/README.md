@@ -125,10 +125,11 @@ After deploy, paste the factory address into
 
 ## Surface v2 deploy
 
-One deploy path for the Surface v2 core (SurfaceV2 implementation,
-FixedPriceMinterV2 implementation, RenderAssets, DefaultRenderer,
-SurfaceFactoryV2) across every environment: `script/DeploySurfaceV2.s.sol` is
-the only deploy script, `script/deploy.sh <env>` is the only wrapper, and
+One deploy path for the Surface v2 primitives (docs/pnd-surface-v2-design.md),
+deployed in this order: the `Surface` implementation, the `FixedPriceSale`
+implementation, `AllowlistGate`, the token `CloneFactory`, the sale
+`CloneFactory`, and the `Launcher`. `script/DeploySurfaceV2.s.sol` is the only
+deploy script, `script/deploy.sh <env>` is the only wrapper, and
 `script/env/<env>.env` holds the per-environment values (no secrets). Anvil,
 the fork test, sepolia and mainnet all run the same script and the same
 guards; only the env file's values differ.
@@ -156,35 +157,84 @@ export DEPLOYER_ACCOUNT=ripe0x
 ```
 
 `DEPLOYER_PASSWORD_FILE` (chmod 600) replaces the interactive password
-prompt when set. Mainnet's env file ships `DEPLOYER` empty on purpose: the
-wrapper refuses to run, `DRY_RUN` included, until it is filled in. `CATALOG`
-is filled in already on mainnet and sepolia, since it is the Surface
-protocol's public good and the same address on every chain;
-`DeploySurfaceV2.s.sol` asserts the mainnet value matches on chain id 1.
+prompt when set. Mainnet's env file ships `DEPLOYER` and `DEFAULT_REFERRER`
+empty on purpose: the wrapper refuses to run, `DRY_RUN` included, until both
+are filled in, and the script itself refuses chain id 1 without a default
+referrer or with any signer but the ripe0x deployer. `DEFAULT_REFERRER` is
+PND's referral address: the launcher copies it into every sale it makes
+(paid by `mint(quantity)`), so it should be a Safe or splitter, not a
+personal wallet. The launcher's owner, who can change it for later
+launches, is the deployer. Both factories land paused (`LAND_PAUSED=true`);
+the deployer unpauses them with `setPaused(false)`.
 
 The mainnet deployer is EIP-7702 delegated and accepts only one in-flight
 transaction; `deploy.sh` always broadcasts with `--slow` regardless of
 target, so a multi-transaction deploy never lands a gapped nonce.
 
-`RENDER_ASSETS` and `DEFAULT_RENDERER` are reused when the env file names an
-address with deployed code, otherwise the script deploys fresh instances. A
-local chain deploys a `Catalog` too when `CATALOG` is left empty.
+`deploy.sh` needs bash 4 or newer (macOS `/bin/bash` is 3.2; use
+`brew install bash`) plus `forge`, `cast` and `jq`, and refuses to start
+without them, before anything broadcasts.
 
-DeploySurfaceV2.s.sol writes only when forge's execution context is a real
-broadcast (`vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)`), never a plain
-simulation: a bare `forge script` or `DRY_RUN=1` run leaves every record file
-untouched. The record is the repo's existing per-chain file, keyed by chain
-id: `deployments.mainnet.json` and `deployments.sepolia.json` already carry
-the v1 protocol's addresses (read by
+The forge script writes nothing. After a real broadcast or `--resume`,
+`deploy.sh` takes only the contract names and creation tx hashes from
+`broadcast/DeploySurfaceV2.s.sol/<chainId>/run-latest.json` and re-fetches
+every receipt from the chain. It requires exactly six creations (one each of
+the impls, gate and launcher, two factories), all successful, all from one
+signer, at six distinct addresses with code; tells the factories apart by
+their on-chain `implementation()`; and re-asserts every postflight value the
+script checks, since a resume does not re-simulate it: implementation
+versions, each factory's `initSelector`, deployer, pause state (matching
+`LAND_PAUSED`) and deprecation, the launcher's factories, owner (the signer)
+and `defaultReferrer` (matching `DEFAULT_REFERRER`), the signer against
+`DEPLOYER`, and on mainnet the ripe0x deployer and a nonzero referrer. Only
+then does it merge the record into the repo's existing per-chain file:
+`deployments.mainnet.json` and `deployments.sepolia.json` (read by
 [`packages/addresses/src/index.ts`](../packages/addresses/src/index.ts) and
-`scripts/generate-docs.ts`) and gain the v2 keys (`surfaceFactoryV2`,
-`sequentialImplementationV2`, `minterImplementationV2`, `defaultRenderer`,
-`renderAssets`, `catalog`, `deployer`, `deployedAt`, `factoryDeployBlock`,
-`txHashes`) alongside them, merged key by key so the v1 keys this script
-never names are untouched. `deployments.anvil.json` is the local-chain
-equivalent and is gitignored. After a real broadcast, `deploy.sh` also
-patches `factoryDeployBlock` and `txHashes` from the broadcast receipts and
-prints an on-chain readback of the factory's wiring.
+`scripts/generate-docs.ts`) gain `surfaceImplV2`, `saleImplV2`,
+`allowlistGate`, `surfaceFactoryV2`, `saleFactoryV2`, `launcherV2`,
+`factoryDeployBlock` (the first deploy block) and `txHashes`, merged key by
+key so the v1 keys are untouched (Sepolia's top-level `deployer` and
+`deployedAt` describe the v1 rehearsal and are never rewritten). `deployments.anvil.json` is the local-chain
+equivalent and is gitignored. A simulation has no receipts, so it can never
+produce a record.
+
+## Surface v2 assurance
+
+Beyond `forge test` (unit, fuzz and invariant suites under
+`test/surface/v2/`), CI runs Anvil and deep invariants in
+`contracts-anvil-e2e`, Slither in `contracts-static`, and an isolated
+mutation campaign on schedule or manual dispatch in `contracts-v2-mutation`.
+
+| Layer | Command (from `contracts/`) | What it proves |
+| --- | --- | --- |
+| Forge end-to-end | `forge test --match-path test/surface/v2/E2E.t.sol` | One collection's whole life through a real `DeploySurfaceV2` deploy, with every wei accounted for |
+| Anvil end-to-end | `bash script/test/e2e-anvil.sh` | `deploy.sh` on a live chain, the record from receipts, a `cast`-driven lifecycle, and the record step refusing tampered broadcast files and config drift |
+| Deep invariants | `FOUNDRY_PROFILE=invariant forge test --match-path "test/surface/v2/invariants/*"` | Value conservation, close/renounce finality, ids, cap, seeds, at 512 runs x 100 calls |
+| Slither | `slither . --config-file slither.config.json --filter-paths '(^|/)(lib|test|script)/|(^|/)src/(?!surface/v2/)' --fail-none --json /tmp/slither-v2.json && python3 script/test/check-slither.py /tmp/slither-v2.json` | No new medium-or-higher v2 finding |
+| Mutation | `python3 script/test/mutate-surface-v2.py --output /tmp/surface-v2-mutations.json` | Each of 55 valid curated mutants makes a v2 test fail; compilation failures do not count as kills |
+| Symbolic | `halmos --contract SymbolicSurfaceTest --solver z3 --solver-timeout-branching 120s --solver-timeout-assertion 120s` after a Forge AST build; repeat for `SymbolicSaleTest` and `SymbolicFactoryNamespaceTest` | Cap floor, bounded royalty, referral accounting, and address namespaces in `test/surface/v2/symbolic/` |
+
+Coverage (`forge coverage --match-path "test/surface/v2/**" --report summary`)
+is 100% lines, statements, branches and functions on all five v2 contracts.
+
+Slither triage. The `_mint` reentrancy warning is accepted because both
+entrypoints are `nonReentrant`; the initializer and `config()` return values
+are intentionally unused. The CI checker pins those three medium findings
+by ID. Lower-severity findings include the specified mint window, zero
+sentinels, pull-payment call, and a false positive about inherited `owner()`.
+
+Aderyn (`aderyn . --path-includes src/surface/v2`) reports two "High"
+results, both reviewed: the reentrancy item is an `owner()` read before a
+write with no exploitable path, and "weak randomness" is the
+`block.prevrandao` seed the spec accepts. Its Low results are
+informational (`_mint` over `_safeMint` is deliberate: the sale checks the
+receiver).
+
+Halmos 0.3.3 uses etched runtime code with empty clone storage because it
+cannot execute Foundry's deployment cheat. The symbolic cap-floor proof
+covers both `uint256` inputs; royalty bounds cover every `uint16` price
+and `uint256.max`. A full symbolic `uint256` royalty-price proof timed out
+at 120 seconds. `Properties.t.sol` separately fuzzes the same rules.
 
 ## Regenerating ABIs for the web app
 

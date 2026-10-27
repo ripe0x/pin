@@ -64,27 +64,6 @@ emit({
     "apps/indexer/abis/FixedPriceMinter.ts",
   ],
 });
-emit({
-  artifact: "DefaultRenderer.sol/DefaultRenderer.json",
-  exportName: "defaultRendererAbi",
-  outFiles: ["packages/abi/src/defaultRenderer.ts"],
-});
-// Bring-your-own generative renderer template (artists deploy their own, one
-// per work; not a shared singleton). Published so tools can read/verify a
-// deployed instance's work refs.
-emit({
-  artifact: "ScriptyRenderer.sol/ScriptyRenderer.json",
-  exportName: "scriptyRendererAbi",
-  outFiles: ["packages/abi/src/scriptyRenderer.ts"],
-});
-
-// Render-land registry of static display assets (covers + captures).
-emit({
-  artifact: "RenderAssets.sol/RenderAssets.json",
-  exportName: "renderAssetsAbi",
-  outFiles: ["packages/abi/src/renderAssets.ts"],
-});
-
 // Swappable-slot interfaces (the third-party API surface implementers satisfy).
 emit({
   artifact: "IPriceStrategy.sol/IPriceStrategy.json",
@@ -111,21 +90,36 @@ emit({
   outFiles: ["packages/abi/src/iPreviewRenderer.ts"],
 });
 
-// Surface v2 (art-only core, sequential ids only). Lives beside v1;
-// not emitted to apps/indexer/abis here (indexer v2 support ships
-// separately).
+// DefaultRenderer, ScriptyRenderer, RenderAssets and the first Surface v2
+// (SurfaceV2, SurfaceFactoryV2, FixedPriceMinterV2) no longer have sources in
+// the repo. Their packages/abi files are frozen as last emitted (they still
+// describe the Sepolia deploys the web app reads) and are not re-emitted.
+
+// Surface v2 primitives (docs/pnd-surface-v2-design.md). The token shares
+// its contract name with the v1 Surface, so forge writes it under out/v2/.
+// Not emitted to apps/indexer/abis (indexer v2 support ships separately).
 emit({
-  artifact: "SurfaceV2.sol/SurfaceV2.json",
-  exportName: "surfaceV2Abi",
-  outFiles: ["packages/abi/src/surfaceV2.ts"],
+  artifact: "v2/Surface.sol/Surface.json",
+  exportName: "surfaceTokenV2Abi",
+  outFiles: ["packages/abi/src/surfaceTokenV2.ts"],
 });
 emit({
-  artifact: "SurfaceFactoryV2.sol/SurfaceFactoryV2.json",
-  exportName: "surfaceFactoryV2Abi",
-  outFiles: ["packages/abi/src/surfaceFactoryV2.ts"],
+  artifact: "FixedPriceSale.sol/FixedPriceSale.json",
+  exportName: "fixedPriceSaleAbi",
+  outFiles: ["packages/abi/src/fixedPriceSale.ts"],
 });
 emit({
-  artifact: "FixedPriceMinterV2.sol/FixedPriceMinterV2.json",
-  exportName: "fixedPriceMinterV2Abi",
-  outFiles: ["packages/abi/src/fixedPriceMinterV2.ts"],
+  artifact: "AllowlistGate.sol/AllowlistGate.json",
+  exportName: "allowlistGateAbi",
+  outFiles: ["packages/abi/src/allowlistGate.ts"],
+});
+emit({
+  artifact: "CloneFactory.sol/CloneFactory.json",
+  exportName: "cloneFactoryAbi",
+  outFiles: ["packages/abi/src/cloneFactory.ts"],
+});
+emit({
+  artifact: "Launcher.sol/Launcher.json",
+  exportName: "launcherAbi",
+  outFiles: ["packages/abi/src/launcher.ts"],
 });

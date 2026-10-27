@@ -8,13 +8,25 @@ export { sovereignAuctionHouseV2FactoryAbi } from "./sovereignAuctionHouseV2Fact
 export { surfaceAbi } from "./surface.ts"
 export { pooledSurfaceAbi } from "./pooledSurface.ts"
 export { surfaceFactoryAbi } from "./surfaceFactory.ts"
-// Surface v2: art-only core, sequential ids only, lives beside v1.
+// First Surface v2 (Sepolia rehearsal only), superseded by the primitives
+// below. Frozen: their sources were removed, so these are no longer
+// re-emitted. Kept until the web app migrates (design doc section 8).
 export { surfaceV2Abi } from "./surfaceV2.ts"
 export { surfaceFactoryV2Abi } from "./surfaceFactoryV2.ts"
 export { fixedPriceMinterV2Abi } from "./fixedPriceMinterV2.ts"
+// Surface v2 primitives (docs/pnd-surface-v2-design.md): the token, the sale,
+// the allowlist gate, the clone factory (one per implementation) and the
+// launcher that wires a token and its sale in one call.
+export { surfaceTokenV2Abi } from "./surfaceTokenV2.ts"
+export { fixedPriceSaleAbi } from "./fixedPriceSale.ts"
+export { allowlistGateAbi } from "./allowlistGate.ts"
+export { cloneFactoryAbi } from "./cloneFactory.ts"
+export { launcherAbi } from "./launcher.ts"
 // Canonical fixed-price/referral minter clone (Phase 2/3): the mint/withdraw/
 // sale-config ABI every canonical-minter collection shares.
 export { fixedPriceMinterAbi } from "./fixedPriceMinter.ts"
+// DefaultRenderer, ScriptyRenderer and RenderAssets: sources removed from the
+// repo (design doc section 5); ABIs frozen for the existing Sepolia deploys.
 export { defaultRendererAbi } from "./defaultRenderer.ts"
 export { scriptyRendererAbi } from "./scriptyRenderer.ts"
 // Surface slot interfaces (docs generator + integrators). The mint-hook

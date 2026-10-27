@@ -1,0 +1,4 @@
+{
+  "filter_paths": "(^|/)(lib|test|script)/|(^|/)src/(?!surface/v2/)",
+  "exclude_dependencies": true
+}

@@ -9,8 +9,8 @@
 #
 # Env file values (script/env/<name>.env): CHAIN_ID, FOUNDRY_PROFILE,
 # RPC_URL, VERIFY (0/1), REQUIRE_MAIN_BRANCH (0/1), WALLET_MODE
-# (keystore|anvil), DEPLOYER, CATALOG, RENDER_ASSETS, DEFAULT_RENDERER,
-# LAND_PAUSED. No secrets live in these files.
+# (keystore|anvil), DEPLOYER, DEFAULT_REFERRER, LAND_PAUSED. No secrets
+# live in these files.
 #
 # Overrides:
 #   RPC_URL              overrides the env file's default RPC endpoint.
@@ -25,6 +25,17 @@
 #                         refuse); every other guard still hard-fails. No
 #                         wallet flags, no --broadcast, no --verify. Nothing
 #                         is written.
+#   RECORD_ONLY=1         validate RECORD_BROADCAST_FILE against on-chain
+#                         receipts and update the record; never invokes forge.
+#   RECORD_BROADCAST_FILE  broadcast JSON to validate in RECORD_ONLY mode.
+#
+# The deploy record is written by this wrapper, never by the forge script.
+# After a real broadcast (or --resume) it takes only the creation tx hashes
+# from the broadcast file, re-fetches every receipt from the chain, requires
+# exactly the six expected contracts from one signer, re-asserts every value
+# the script's postflight checks (a resume skips that simulation), and only
+# then merges the addresses, first deploy block and tx hashes into the
+# record. A simulation has no receipts, so it can never produce a record.
 #   --resume              passthrough to `forge script --resume`, for
 #                         recovering a broadcast that stopped part way
 #                         (an EIP-7702 delegated signer allows only one
@@ -32,6 +43,16 @@
 #                         avoid this, but a dropped RPC connection mid-run can
 #                         still leave a broadcast half-sent).
 set -euo pipefail
+
+# The record step below uses associative arrays (bash 4+). Refuse here, before
+# anything broadcasts, rather than after (macOS ships bash 3.2 as /bin/bash).
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+  echo "refusing: bash ${BASH_VERSION:-unknown} is too old; run with bash 4 or newer (e.g. brew install bash)" >&2
+  exit 1
+fi
+for tool in forge cast jq; do
+  command -v "$tool" >/dev/null || { echo "refusing: $tool is not on PATH" >&2; exit 1; }
+done
 
 ENV_NAME="${1:-}"
 case "$ENV_NAME" in
@@ -54,6 +75,15 @@ ENV_FILE="script/env/${ENV_NAME}.env"
 [ -f "$ENV_FILE" ] || { echo "missing $ENV_FILE" >&2; exit 1; }
 
 DRY_RUN="${DRY_RUN:-0}"
+RECORD_ONLY="${RECORD_ONLY:-0}"
+[ "$RECORD_ONLY" = "0" ] || [ "$RECORD_ONLY" = "1" ] \
+  || { echo "refusing: RECORD_ONLY must be 0 or 1" >&2; exit 1; }
+if [ "$RECORD_ONLY" = "1" ]; then
+  [ "$DRY_RUN" != "1" ] && [ "$RESUME_FLAG" = "0" ] \
+    || { echo "refusing: RECORD_ONLY cannot be combined with DRY_RUN or --resume" >&2; exit 1; }
+  [ -n "${RECORD_BROADCAST_FILE:-}" ] \
+    || { echo "refusing: RECORD_ONLY requires RECORD_BROADCAST_FILE" >&2; exit 1; }
+fi
 # A caller-exported RPC_URL/FOUNDRY_PROFILE wins over the env file's default;
 # snapshot before sourcing, which would otherwise overwrite it.
 RPC_URL_OVERRIDE="${RPC_URL:-}"
@@ -70,10 +100,10 @@ export FOUNDRY_PROFILE
 
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 
-# mainnet.env ships DEPLOYER and CATALOG empty until they are decided; refuse
-# before touching any RPC, DRY_RUN included.
+# mainnet.env ships DEPLOYER and DEFAULT_REFERRER empty until they are
+# decided; refuse before touching any RPC, DRY_RUN included.
 if [ "$ENV_NAME" = "mainnet" ]; then
-  for var in DEPLOYER CATALOG; do
+  for var in DEPLOYER DEFAULT_REFERRER; do
     [ -n "${!var:-}" ] || {
       echo "refusing: $ENV_FILE has no $var set. Fill in the mainnet env file first." >&2
       exit 1
@@ -84,11 +114,10 @@ fi
 [ -n "${RPC_URL:-}" ] || { echo "refusing: no RPC_URL configured for $ENV_NAME" >&2; exit 1; }
 [ -n "${CHAIN_ID:-}" ] || { echo "refusing: $ENV_FILE has no CHAIN_ID set" >&2; exit 1; }
 
-# The repo's canonical per-chain record: DeploySurfaceV2.s.sol writes into
-# the same file for every environment (see contracts/README.md and its own
-# _recordPath()); deployments.mainnet.json and deployments.sepolia.json
-# already carry the v1 protocol's addresses, deployments.anvil.json is the
-# local-chain equivalent and is gitignored.
+# The repo's canonical per-chain record (see contracts/README.md):
+# deployments.mainnet.json and deployments.sepolia.json already carry the v1
+# protocol's addresses, deployments.anvil.json is the local-chain equivalent
+# and is gitignored.
 case "$ENV_NAME" in
   mainnet) RECORD_FILE="deployments.mainnet.json" ;;
   sepolia) RECORD_FILE="deployments.sepolia.json" ;;
@@ -100,6 +129,7 @@ echo "  rpc      $RPC_URL"
 echo "  profile  $FOUNDRY_PROFILE"
 echo "  dry run  $DRY_RUN"
 echo "  resume   $RESUME_FLAG"
+echo "  record   $RECORD_ONLY"
 
 # --- guards: identical code path for every target, switched only by the env
 #     file's values ------------------------------------------------------
@@ -137,7 +167,7 @@ if [ "${REQUIRE_MAIN_BRANCH:-0}" = "1" ]; then
   [ "$DRY_RUN" = "1" ] || echo "  ok: clean, exact, fetched main"
 fi
 
-if [ "$VERIFY" = "1" ] && [ "$DRY_RUN" != "1" ]; then
+if [ "$VERIFY" = "1" ] && [ "$DRY_RUN" != "1" ] && [ "$RECORD_ONLY" != "1" ]; then
   : "${ETHERSCAN_API_KEY:?VERIFY=1 for $ENV_NAME requires ETHERSCAN_API_KEY}"
   echo "  ok: ETHERSCAN_API_KEY set"
 fi
@@ -146,7 +176,7 @@ fi
 
 WALLET_ARGS=()
 SLOW_ARGS=()
-if [ "$DRY_RUN" != "1" ]; then
+if [ "$DRY_RUN" != "1" ] && [ "$RECORD_ONLY" != "1" ]; then
   case "$WALLET_MODE" in
     keystore)
       : "${DEPLOYER_ACCOUNT:?WALLET_MODE=keystore requires DEPLOYER_ACCOUNT}"
@@ -183,13 +213,32 @@ fi
 
 # --- run --------------------------------------------------------------
 
-# CATALOG/RENDER_ASSETS/DEFAULT_RENDERER/DEPLOYER are already exported by
+# DEFAULT_REFERRER/DEPLOYER are already exported by
 # `set -a` when the env file was sourced above, blank or not: forge's typed
 # env cheatcodes (vm.envAddress/envBool via vm.envOr) fall through to the
 # script's default on a variable that is set but empty, same as when it is
 # unset entirely (verified against forge 1.8.1).
 export LAND_PAUSED="${LAND_PAUSED:-true}"
 BROADCAST_FILE="broadcast/DeploySurfaceV2.s.sol/${CHAIN_ID}/run-latest.json"
+if [ "$RECORD_ONLY" = "1" ]; then
+  BROADCAST_FILE="$RECORD_BROADCAST_FILE"
+fi
+
+# Forge --resume can send transactions before running the Solidity postflight.
+# Check the saved plan against today's config before allowing that send.
+if [ "$RESUME_FLAG" = "1" ]; then
+  [ -f "$BROADCAST_FILE" ] || { echo "refusing: no broadcast file to resume" >&2; exit 1; }
+  WANT_REFERRER="${DEFAULT_REFERRER:-0x0000000000000000000000000000000000000000}"
+  PLAN_REFERRER="$(jq -r '[.transactions[] | select(.transactionType == "CREATE" and .contractName == "Launcher")][0].arguments[2] // empty' "$BROADCAST_FILE")"
+  [ -n "$PLAN_REFERRER" ] && [ "$(lower "$PLAN_REFERRER")" = "$(lower "$WANT_REFERRER")" ] \
+    || { echo "refusing: DEFAULT_REFERRER differs from the saved broadcast plan" >&2; exit 1; }
+  PAUSE_CALLS="$(jq '[.transactions[] | select(.transactionType == "CALL" and .function == "setPaused(bool)" and .arguments == ["true"])] | length' "$BROADCAST_FILE")"
+  if [ "$LAND_PAUSED" = "true" ]; then
+    [ "$PAUSE_CALLS" = "2" ] || { echo "refusing: LAND_PAUSED differs from the saved broadcast plan" >&2; exit 1; }
+  else
+    [ "$PAUSE_CALLS" = "0" ] || { echo "refusing: LAND_PAUSED differs from the saved broadcast plan" >&2; exit 1; }
+  fi
+fi
 
 if [ "$DRY_RUN" = "1" ]; then
   echo "DRY_RUN=1: simulating only, nothing will be broadcast or written"
@@ -202,47 +251,145 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-FORGE_ARGS=(script script/DeploySurfaceV2.s.sol --tc DeploySurfaceV2 --rpc-url "$RPC_URL" "${WALLET_ARGS[@]}" "${SLOW_ARGS[@]}" --broadcast)
-[ "$RESUME_FLAG" = "1" ] && FORGE_ARGS+=(--resume)
-if [ "$VERIFY" = "1" ]; then
-  # forge reads ETHERSCAN_API_KEY from the environment; the key stays out of argv.
-  FORGE_ARGS+=(--verify)
+if [ "$RECORD_ONLY" != "1" ]; then
+  FORGE_ARGS=(script script/DeploySurfaceV2.s.sol --tc DeploySurfaceV2 --rpc-url "$RPC_URL" "${WALLET_ARGS[@]}" "${SLOW_ARGS[@]}" --broadcast)
+  [ "$RESUME_FLAG" = "1" ] && FORGE_ARGS+=(--resume)
+  if [ "$VERIFY" = "1" ]; then
+    # forge reads ETHERSCAN_API_KEY from the environment; the key stays out of argv.
+    FORGE_ARGS+=(--verify)
+  fi
+  forge "${FORGE_ARGS[@]}"
 fi
-forge "${FORGE_ARGS[@]}"
 
-# --- post-broadcast: resolve the factory's creation tx/block, patch the
-#     record, read wiring back on chain ----------------------------------
+# --- post-broadcast: build the record from on-chain receipts --------------
 
 [ -f "$BROADCAST_FILE" ] || { echo "no broadcast file at $BROADCAST_FILE" >&2; exit 1; }
-[ -f "$RECORD_FILE" ] || { echo "no record written at $RECORD_FILE" >&2; exit 1; }
 
-FACTORY_ADDRESS="$(jq -r '.surfaceFactoryV2' "$RECORD_FILE")"
-FACTORY_TX="$(jq -r --arg addr "$FACTORY_ADDRESS" \
-  '.receipts[] | select(.contractAddress != null) | select((.contractAddress | ascii_downcase) == ($addr | ascii_downcase)) | .transactionHash' \
-  "$BROADCAST_FILE" | tail -1)"
+refuse() { echo "refusing to record: $1" >&2; exit 1; }
+ZERO_ADDRESS=0x0000000000000000000000000000000000000000
+MAINNET_DEPLOYER=0xCB43078C32423F5348Cab5885911C3B5faE217F9
+call() { cast call "$1" "$2" --rpc-url "$RPC_URL"; }
 
-if [[ "$FACTORY_TX" =~ ^0x[0-9a-fA-F]{64}$ ]]; then
-  FACTORY_BLOCK="$(cast to-dec "$(cast receipt "$FACTORY_TX" --rpc-url "$RPC_URL" --json | jq -r '.blockNumber')")"
-  TMP_RECORD="$(mktemp)"
-  jq --arg block "$FACTORY_BLOCK" --arg tx "$FACTORY_TX" \
-    '.factoryDeployBlock = ($block | tonumber) | .txHashes = { surfaceFactoryV2: $tx }' \
-    "$RECORD_FILE" > "$TMP_RECORD"
-  mv "$TMP_RECORD" "$RECORD_FILE"
-  echo "  ok: factory deploy block $FACTORY_BLOCK, tx $FACTORY_TX"
-else
-  echo "  warn: could not resolve the factory's creation tx from $BROADCAST_FILE" >&2
-fi
+# Only the contract name and tx hash are taken from the broadcast file; the
+# address, status, block and sender all come from a fresh on-chain receipt.
+CREATES="$(jq -r '.transactions[] | select(.transactionType == "CREATE") | [.contractName, .hash] | @tsv' "$BROADCAST_FILE")"
+[ "$(printf '%s\n' "$CREATES" | grep -c .)" = "6" ] \
+  || refuse "expected exactly 6 CREATE transactions in $BROADCAST_FILE"
 
-echo "Readback:"
-cast call "$FACTORY_ADDRESS" 'sequentialImplementation()(address)' --rpc-url "$RPC_URL" | sed 's/^/  sequentialImplementation  /'
-cast call "$FACTORY_ADDRESS" 'minterImplementation()(address)' --rpc-url "$RPC_URL" | sed 's/^/  minterImplementation      /'
-cast call "$FACTORY_ADDRESS" 'defaultRenderer()(address)' --rpc-url "$RPC_URL" | sed 's/^/  defaultRenderer           /'
-cast call "$FACTORY_ADDRESS" 'catalog()(address)' --rpc-url "$RPC_URL" | sed 's/^/  catalog                   /'
-cast call "$FACTORY_ADDRESS" 'paused()(bool)' --rpc-url "$RPC_URL" | sed 's/^/  paused                    /'
+declare -A ADDR TX SEEN
+FACTORIES=()
+FIRST_BLOCK=""
+SIGNER=""
+FIRST_NONCE=""
+CREATE_INDEX=0
+EXPECTED_NAMES=(Surface FixedPriceSale AllowlistGate CloneFactory CloneFactory Launcher)
+while IFS=$'\t' read -r name tx; do
+  [ "$name" = "${EXPECTED_NAMES[$CREATE_INDEX]}" ] \
+    || refuse "CREATE $CREATE_INDEX is $name, expected ${EXPECTED_NAMES[$CREATE_INDEX]}"
+  [[ "$tx" =~ ^0x[0-9a-fA-F]{64}$ ]] || refuse "malformed tx hash $tx for $name"
+  tx_fields="$(cast tx "$tx" --json --rpc-url "$RPC_URL" | jq -r '[.success, (.data.to // "null"), .data.nonce, .data.from] | join("|")')" \
+    || refuse "no on-chain transaction for $name tx $tx"
+  IFS='|' read -r tx_success tx_to nonce_hex tx_from <<< "$tx_fields"
+  [ "$tx_success" = "true" ] || refuse "$name transaction lookup failed"
+  [ "$tx_to" = "null" ] || refuse "$name tx $tx is not a CREATE"
+  nonce="$(cast to-dec "$nonce_hex")"
+  [ -n "$FIRST_NONCE" ] || FIRST_NONCE="$nonce"
+  [ "$nonce" = "$((FIRST_NONCE + CREATE_INDEX))" ] \
+    || refuse "$name tx $tx has nonce $nonce, expected $((FIRST_NONCE + CREATE_INDEX))"
+  receipt="$(cast receipt "$tx" --json --rpc-url "$RPC_URL")" || refuse "no on-chain receipt for $name tx $tx"
+  status="$(printf '%s\n' "$receipt" | jq -r '.status')"
+  [ "$status" = "0x1" ] || [ "$status" = "1" ] || refuse "$name creation tx $tx has status $status"
+  addr="$(printf '%s\n' "$receipt" | jq -r '.contractAddress // empty')"
+  [ -n "$addr" ] || refuse "$name tx $tx created no contract"
+  addr="$(cast to-check-sum-address "$addr")"
+  from="$(cast to-check-sum-address "$(printf '%s\n' "$receipt" | jq -r '.from')")"
+  expect_tx_from="$(cast to-check-sum-address "$tx_from")"
+  [ "$from" = "$expect_tx_from" ] || refuse "$name transaction sender differs from receipt"
+  [ -z "$SIGNER" ] && SIGNER="$from"
+  [ "$from" = "$SIGNER" ] || refuse "$name was deployed by $from, the rest by $SIGNER"
+  [ -z "${SEEN[$addr]:-}" ] || refuse "address $addr appears twice"
+  SEEN[$addr]=1
+  code="$(cast code "$addr" --rpc-url "$RPC_URL")"
+  [ -n "$code" ] && [ "$code" != "0x" ] || refuse "$name at $addr has no code on chain"
+  dec_block="$(cast to-dec "$(printf '%s\n' "$receipt" | jq -r '.blockNumber')")"
+  { [ -z "$FIRST_BLOCK" ] || [ "$dec_block" -lt "$FIRST_BLOCK" ]; } && FIRST_BLOCK="$dec_block"
+  CREATE_INDEX=$((CREATE_INDEX + 1))
+  case "$name" in
+    Surface) key=surfaceImplV2 ;;
+    FixedPriceSale) key=saleImplV2 ;;
+    AllowlistGate) key=allowlistGate ;;
+    Launcher) key=launcherV2 ;;
+    CloneFactory) FACTORIES+=("$addr $tx"); continue ;;
+    *) refuse "unexpected contract $name in $BROADCAST_FILE" ;;
+  esac
+  [ -z "${ADDR[$key]:-}" ] || refuse "$name appears twice in $BROADCAST_FILE"
+  ADDR[$key]="$addr"; TX[$key]="$tx"
+done < <(printf '%s\n' "$CREATES")
+[ "${#FACTORIES[@]}" = "2" ] || refuse "expected exactly 2 CloneFactory deployments"
+
+# The two factories share a contract name; tell them apart by what each one
+# clones, read back on chain.
+for entry in "${FACTORIES[@]}"; do
+  read -r addr tx <<< "$entry"
+  impl="$(cast to-check-sum-address "$(call "$addr" 'implementation()(address)')")"
+  if [ "$impl" = "${ADDR[surfaceImplV2]:-}" ]; then key=surfaceFactoryV2
+  elif [ "$impl" = "${ADDR[saleImplV2]:-}" ]; then key=saleFactoryV2
+  else refuse "CloneFactory $addr clones unknown implementation $impl"
+  fi
+  [ -z "${ADDR[$key]:-}" ] || refuse "two factories clone $impl"
+  ADDR[$key]="$addr"; TX[$key]="$tx"
+done
+
+KEYS=(surfaceImplV2 saleImplV2 allowlistGate surfaceFactoryV2 saleFactoryV2 launcherV2)
+for key in "${KEYS[@]}"; do
+  [ -n "${ADDR[$key]:-}" ] || refuse "no $key in $BROADCAST_FILE"
+done
+
+# --- re-assert the script's postflight on chain --------------------------
+# A --resume does not re-simulate the Solidity script, so every value its
+# postflight checks is checked again here before anything is written.
+
+expect() { # <label> <actual> <expected>
+  [ "$(lower "$2")" = "$(lower "$3")" ] || refuse "$1 is $2, expected $3"
+}
+[ "$ENV_NAME" != "mainnet" ] || expect "mainnet signer" "$SIGNER" "$MAINNET_DEPLOYER"
+[ -z "${DEPLOYER:-}" ] || expect "signer" "$SIGNER" "$DEPLOYER"
+WANT_REFERRER="${DEFAULT_REFERRER:-}"
+[ -n "$WANT_REFERRER" ] || WANT_REFERRER="$ZERO_ADDRESS"
+[ "$ENV_NAME" != "mainnet" ] || [ "$WANT_REFERRER" != "$ZERO_ADDRESS" ] || refuse "mainnet requires DEFAULT_REFERRER"
+
+expect "surfaceImplV2.version()" "$(call "${ADDR[surfaceImplV2]}" 'version()(uint256)')" 2
+expect "saleImplV2.version()" "$(call "${ADDR[saleImplV2]}" 'version()(uint256)')" 2
+SURFACE_INIT="$(cast sig 'initialize(string,string,address,address,uint256,uint16,address,address)')"
+SALE_INIT="$(cast sig 'initialize(address,uint256,uint64,uint64,uint256,uint256,address,address,address)')"
+for pair in "surfaceFactoryV2:$SURFACE_INIT" "saleFactoryV2:$SALE_INIT"; do
+  key="${pair%%:*}"; sel="${pair#*:}"
+  expect "$key.initSelector()" "$(call "${ADDR[$key]}" 'initSelector()(bytes4)')" "$sel"
+  expect "$key.deployer()" "$(call "${ADDR[$key]}" 'deployer()(address)')" "$SIGNER"
+  expect "$key.paused()" "$(call "${ADDR[$key]}" 'paused()(bool)')" "$LAND_PAUSED"
+  expect "$key.deprecated()" "$(call "${ADDR[$key]}" 'deprecated()(bool)')" false
+done
+expect "launcherV2.tokenFactory()" "$(call "${ADDR[launcherV2]}" 'tokenFactory()(address)')" "${ADDR[surfaceFactoryV2]}"
+expect "launcherV2.saleFactory()" "$(call "${ADDR[launcherV2]}" 'saleFactory()(address)')" "${ADDR[saleFactoryV2]}"
+expect "launcherV2.owner()" "$(call "${ADDR[launcherV2]}" 'owner()(address)')" "$SIGNER"
+expect "launcherV2.defaultReferrer()" "$(call "${ADDR[launcherV2]}" 'defaultReferrer()(address)')" "$WANT_REFERRER"
+echo "  ok: on-chain wiring matches the deploy config (signer $SIGNER)"
+
+UPDATE='.chainId = ($chainId | tonumber) | .factoryDeployBlock = ($block | tonumber) | .txHashes = {}'
+JQ_ARGS=(--arg chainId "$CHAIN_ID" --arg block "$FIRST_BLOCK")
+for key in "${KEYS[@]}"; do
+  UPDATE+=" | .${key} = \$a_${key} | .txHashes.${key} = \$t_${key}"
+  JQ_ARGS+=(--arg "a_${key}" "${ADDR[$key]}" --arg "t_${key}" "${TX[$key]}")
+done
+[ -f "$RECORD_FILE" ] || echo '{}' > "$RECORD_FILE"
+TMP_RECORD="$(mktemp)"
+jq "${JQ_ARGS[@]}" "$UPDATE" "$RECORD_FILE" > "$TMP_RECORD"
+mv "$TMP_RECORD" "$RECORD_FILE"
+echo "  ok: recorded ${#KEYS[@]} contracts from receipts, first block $FIRST_BLOCK"
 
 case "$ENV_NAME" in
-  mainnet) echo "  explorer  https://evm.now/address/${FACTORY_ADDRESS}?chainId=1" ;;
-  sepolia) echo "  explorer  https://sepolia.etherscan.io/address/${FACTORY_ADDRESS}" ;;
+  mainnet) echo "  explorer  https://evm.now/address/${ADDR[launcherV2]}?chainId=1" ;;
+  sepolia) echo "  explorer  https://sepolia.etherscan.io/address/${ADDR[launcherV2]}" ;;
   anvil) : ;;
 esac
 
