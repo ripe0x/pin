@@ -125,7 +125,11 @@ contract FixedPriceSale is Initializable, ReentrancyGuardUpgradeable, IMinter, I
     }
 
     /// @dev The ten checks of the spec (3.2), in order. Quantity 0 is
-    ///      rejected by the collection at step 8.
+    ///      rejected by the collection at step 8. Steps 7 and 8 call out
+    ///      before the step 9 writes; both entrypoints are nonReentrant, the
+    ///      collection accepts mints only from this sale, and no other
+    ///      function reads totalMinted or mintedBy mid-mint.
+    // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
     function _mint(address to, uint256 quantity, address referrer, bytes memory data) internal {
         if (closed) revert SaleClosed(); // 1
         if (mintStart != 0 && block.timestamp < mintStart) revert MintNotStarted(); // 2
@@ -160,6 +164,7 @@ contract FixedPriceSale is Initializable, ReentrancyGuardUpgradeable, IMinter, I
     /// @dev The receiver check the token deliberately skips (it never calls
     ///      out). Asked once per mint call, for the first id it will mint.
     function _checkReceiver(address collection_, address to) internal {
+        // slither-disable-next-line unused-return
         (,,,,, uint256 mintedEver) = ISurface(collection_).config();
         try IERC721Receiver(to).onERC721Received(msg.sender, address(0), mintedEver + 1, "") returns (bytes4 ret) {
             if (ret != IERC721Receiver.onERC721Received.selector) revert ReceiverRejected(to);
