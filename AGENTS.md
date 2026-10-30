@@ -111,7 +111,8 @@ Full notes: `docs/muri-integration.md`.
   `indexer` Railway service (the one writing `ponder_v2`) is retired.
   Do not point new work at it.
 - **Bumping the schema again:** a schema-changing indexer release bumps
-  the version (`ponder_v3` to `ponder_v4`, next time), and the version
+  the version (`ponder_v4` to `ponder_v5` is pending: the Surface v2
+  primitive rebind, runbook in `docs/ponder-schema-cutover.md`), and the version
   must be flipped in Netlify's production context specifically (not just
   local `.env.local`), followed by a redeploy. Confirm the flip actually
   applied by hitting `/api/health/indexer` on the deployed site, do not

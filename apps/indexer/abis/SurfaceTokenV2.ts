@@ -1,29 +1,9 @@
-// Auto-extracted from contracts/out/SurfaceV2.sol/SurfaceV2.json.
-// Re-run: node scripts/emit-surface-abi.mjs (add v2 emit() calls there when this becomes permanent)
-export const surfaceV2Abi = [
+// Auto-extracted from contracts/out/v2/Surface.sol/Surface.json.
+// Re-run: node scripts/emit-surface-abi.mjs
+export const surfaceTokenV2Abi = [
   {
     "type": "constructor",
     "inputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "acceptOwnership",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "addAdmin",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -78,58 +58,33 @@ export const surfaceV2Abi = [
   },
   {
     "type": "function",
-    "name": "catalog",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "config",
     "inputs": [],
     "outputs": [
       {
-        "name": "cfg",
-        "type": "tuple",
-        "internalType": "struct SurfaceConfig",
-        "components": [
-          {
-            "name": "supplyCap",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "royaltyBps",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "royaltyReceiver",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "renderer",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "rendererLocked",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "supplyLocked",
-            "type": "bool",
-            "internalType": "bool"
-          }
-        ]
+        "name": "renderer_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "minter_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "supplyCap_",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "royaltyBps_",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "royaltyReceiver_",
+        "type": "address",
+        "internalType": "address"
       },
       {
         "name": "minted",
@@ -173,132 +128,51 @@ export const surfaceV2Abi = [
   },
   {
     "type": "function",
-    "name": "idMode",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint8",
-        "internalType": "enum IdMode"
-      }
-    ],
-    "stateMutability": "pure"
-  },
-  {
-    "type": "function",
     "name": "initialize",
     "inputs": [
       {
-        "name": "p",
-        "type": "tuple",
-        "internalType": "struct InitParamsV2",
-        "components": [
-          {
-            "name": "name",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "symbol",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "owner",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "cfg",
-            "type": "tuple",
-            "internalType": "struct SurfaceConfig",
-            "components": [
-              {
-                "name": "supplyCap",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "royaltyBps",
-                "type": "uint16",
-                "internalType": "uint16"
-              },
-              {
-                "name": "royaltyReceiver",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "renderer",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "rendererLocked",
-                "type": "bool",
-                "internalType": "bool"
-              },
-              {
-                "name": "supplyLocked",
-                "type": "bool",
-                "internalType": "bool"
-              }
-            ]
-          },
-          {
-            "name": "defaultRenderer",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "initialMinters",
-            "type": "address[]",
-            "internalType": "address[]"
-          },
-          {
-            "name": "primaryMinter",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "catalog",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "creators",
-            "type": "address[]",
-            "internalType": "address[]"
-          },
-          {
-            "name": "seedSource",
-            "type": "address",
-            "internalType": "address"
-          }
-        ]
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "isAdmin",
-    "inputs": [
+        "name": "name_",
+        "type": "string",
+        "internalType": "string"
+      },
       {
-        "name": "account",
+        "name": "symbol_",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "owner_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "renderer_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "supplyCap_",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "royaltyBps_",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "royaltyReceiver_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "minter_",
         "type": "address",
         "internalType": "address"
       }
     ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -326,143 +200,6 @@ export const surfaceV2Abi = [
   },
   {
     "type": "function",
-    "name": "isConfirmedCreator",
-    "inputs": [
-      {
-        "name": "who",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isListedCreator",
-    "inputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isMinter",
-    "inputs": [
-      {
-        "name": "minter",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isMinterLocked",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isRendererLocked",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isRoyaltyLocked",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isSupplyLocked",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "lockMinter",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "lockRenderer",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "lockRoyalty",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "lockSupply",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "mintTo",
     "inputs": [
       {
@@ -487,27 +224,16 @@ export const surfaceV2Abi = [
   },
   {
     "type": "function",
-    "name": "mintToSeeded",
-    "inputs": [
-      {
-        "name": "to",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "seeds",
-        "type": "bytes32[]",
-        "internalType": "bytes32[]"
-      }
-    ],
+    "name": "minter",
+    "inputs": [],
     "outputs": [
       {
-        "name": "firstTokenId",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -574,83 +300,6 @@ export const surfaceV2Abi = [
   },
   {
     "type": "function",
-    "name": "pendingOwner",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "permanence",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "rendererLocked",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "supplyLocked",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "minterLocked",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "royaltyLocked",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "sealed_",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "version_",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "primaryMinter",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "removeAdmin",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "renderer",
     "inputs": [],
     "outputs": [
@@ -671,16 +320,16 @@ export const surfaceV2Abi = [
   },
   {
     "type": "function",
-    "name": "rescueStrayETH",
-    "inputs": [
+    "name": "royaltyBps",
+    "inputs": [],
+    "outputs": [
       {
-        "name": "to",
-        "type": "address",
-        "internalType": "address"
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -699,14 +348,27 @@ export const surfaceV2Abi = [
     ],
     "outputs": [
       {
-        "name": "receiver",
+        "name": "",
         "type": "address",
         "internalType": "address"
       },
       {
-        "name": "royaltyAmount",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "royaltyReceiver",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -764,26 +426,6 @@ export const surfaceV2Abi = [
   },
   {
     "type": "function",
-    "name": "seal",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "seedSource",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "setApprovalForAll",
     "inputs": [
       {
@@ -802,35 +444,12 @@ export const surfaceV2Abi = [
   },
   {
     "type": "function",
-    "name": "setCreators",
-    "inputs": [
-      {
-        "name": "list",
-        "type": "address[]",
-        "internalType": "address[]"
-      },
-      {
-        "name": "listed",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "setMinter",
     "inputs": [
       {
-        "name": "minter",
+        "name": "minter_",
         "type": "address",
         "internalType": "address"
-      },
-      {
-        "name": "allowed",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -838,12 +457,17 @@ export const surfaceV2Abi = [
   },
   {
     "type": "function",
-    "name": "setPrimaryMinter",
+    "name": "setName",
     "inputs": [
       {
-        "name": "minter",
-        "type": "address",
-        "internalType": "address"
+        "name": "name_",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "symbol_",
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "outputs": [],
@@ -867,12 +491,12 @@ export const surfaceV2Abi = [
     "name": "setRoyalty",
     "inputs": [
       {
-        "name": "royaltyBps",
+        "name": "bps",
         "type": "uint16",
         "internalType": "uint16"
       },
       {
-        "name": "royaltyReceiver",
+        "name": "receiver",
         "type": "address",
         "internalType": "address"
       }
@@ -885,13 +509,26 @@ export const surfaceV2Abi = [
     "name": "setSupplyCap",
     "inputs": [
       {
-        "name": "supplyCap",
+        "name": "supplyCap_",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "supplyCap",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1027,25 +664,6 @@ export const surfaceV2Abi = [
   },
   {
     "type": "event",
-    "name": "AdminSet",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "allowed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Approval",
     "inputs": [
       {
@@ -1099,13 +717,13 @@ export const surfaceV2Abi = [
     "name": "BatchMetadataUpdate",
     "inputs": [
       {
-        "name": "_fromTokenId",
+        "name": "fromTokenId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "_toTokenId",
+        "name": "toTokenId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1134,25 +752,6 @@ export const surfaceV2Abi = [
   },
   {
     "type": "event",
-    "name": "CreatorListed",
-    "inputs": [
-      {
-        "name": "creator",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "listed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Initialized",
     "inputs": [
       {
@@ -1160,19 +759,6 @@ export const surfaceV2Abi = [
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "MetadataUpdate",
-    "inputs": [
-      {
-        "name": "_tokenId",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -1204,20 +790,8 @@ export const surfaceV2Abi = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      },
-      {
-        "name": "firstMintIndex",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "MinterLocked",
-    "inputs": [],
     "anonymous": false
   },
   {
@@ -1229,31 +803,25 @@ export const surfaceV2Abi = [
         "type": "address",
         "indexed": true,
         "internalType": "address"
-      },
-      {
-        "name": "allowed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
       }
     ],
     "anonymous": false
   },
   {
     "type": "event",
-    "name": "OwnershipTransferStarted",
+    "name": "NameSet",
     "inputs": [
       {
-        "name": "previousOwner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
+        "name": "name",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
       },
       {
-        "name": "newOwner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
+        "name": "symbol",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
       }
     ],
     "anonymous": false
@@ -1279,25 +847,6 @@ export const surfaceV2Abi = [
   },
   {
     "type": "event",
-    "name": "PrimaryMinterSet",
-    "inputs": [
-      {
-        "name": "minter",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "RendererLocked",
-    "inputs": [],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "RendererSet",
     "inputs": [
       {
@@ -1311,44 +860,19 @@ export const surfaceV2Abi = [
   },
   {
     "type": "event",
-    "name": "RoyaltyLocked",
-    "inputs": [],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "RoyaltySet",
     "inputs": [
       {
-        "name": "royaltyBps",
+        "name": "bps",
         "type": "uint16",
         "indexed": false,
         "internalType": "uint16"
       },
       {
-        "name": "royaltyReceiver",
+        "name": "receiver",
         "type": "address",
         "indexed": true,
         "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "StrayETHRescued",
-    "inputs": [
-      {
-        "name": "to",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -1357,31 +881,6 @@ export const surfaceV2Abi = [
     "type": "event",
     "name": "SupplyCapSet",
     "inputs": [
-      {
-        "name": "supplyCap",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "SupplyLocked",
-    "inputs": [],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "SurfaceConfigured",
-    "inputs": [
-      {
-        "name": "idMode",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "enum IdMode"
-      },
       {
         "name": "supplyCap",
         "type": "uint256",
@@ -1418,20 +917,15 @@ export const surfaceV2Abi = [
   },
   {
     "type": "error",
-    "name": "AlreadyAdmin",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "BadSupplyCap",
     "inputs": [
       {
-        "name": "floor",
+        "name": "minted",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "requested",
+        "name": "cap",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1563,34 +1057,19 @@ export const surfaceV2Abi = [
   },
   {
     "type": "error",
-    "name": "MinterIsLocked",
+    "name": "MinterRequired",
     "inputs": []
   },
   {
     "type": "error",
     "name": "NeverMinted",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NoStrayETH",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotAContract",
     "inputs": [
       {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "NotAnAdmin",
-    "inputs": []
   },
   {
     "type": "error",
@@ -1631,26 +1110,6 @@ export const surfaceV2Abi = [
   },
   {
     "type": "error",
-    "name": "OwnerRequired",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "PrimaryMinterNotAuthorized",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ReentrancyGuardReentrantCall",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "RendererIsLocked",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "RendererNotContract",
     "inputs": [
       {
@@ -1667,54 +1126,23 @@ export const surfaceV2Abi = [
   },
   {
     "type": "error",
-    "name": "RescueFailed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "RoyaltyIsLocked",
+    "name": "RoyaltyReceiverRequired",
     "inputs": []
   },
   {
     "type": "error",
     "name": "RoyaltyTooHigh",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "SeedSourceNotContract",
     "inputs": [
       {
-        "name": "seedSource",
-        "type": "address",
-        "internalType": "address"
+        "name": "bps",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ]
   },
   {
     "type": "error",
     "name": "SelfCustodyRejected",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "SupplyIsLocked",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ZeroAccount",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ZeroMinter",
     "inputs": []
   },
   {

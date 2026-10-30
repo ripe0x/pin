@@ -1,6 +1,6 @@
-// Auto-extracted from contracts/out/FixedPriceMinterV2.sol/FixedPriceMinterV2.json.
-// Re-run: node scripts/emit-surface-abi.mjs (add v2 emit() calls there when this becomes permanent)
-export const fixedPriceMinterV2Abi = [
+// Auto-extracted from contracts/out/FixedPriceSale.sol/FixedPriceSale.json.
+// Re-run: node scripts/emit-surface-abi.mjs
+export const fixedPriceSaleAbi = [
   {
     "type": "constructor",
     "inputs": [],
@@ -8,7 +8,7 @@ export const fixedPriceMinterV2Abi = [
   },
   {
     "type": "function",
-    "name": "MAX_REFERRAL_SHARE_BPS",
+    "name": "REFERRAL_SHARE_BPS",
     "inputs": [],
     "outputs": [
       {
@@ -21,13 +21,20 @@ export const fixedPriceMinterV2Abi = [
   },
   {
     "type": "function",
-    "name": "allowlistRoot",
+    "name": "close",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "closed",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -47,54 +54,78 @@ export const fixedPriceMinterV2Abi = [
   },
   {
     "type": "function",
+    "name": "defaultReferrer",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "gate",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "initialize",
     "inputs": [
       {
-        "name": "p",
-        "type": "tuple",
-        "internalType": "struct FixedPriceMinterV2InitParams",
-        "components": [
-          {
-            "name": "collection",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "price",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "mintStart",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "mintEnd",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "payoutRecipient",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "maxMints",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "allowlistRoot",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "walletCap",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
+        "name": "collection_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "price_",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "mintStart_",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "mintEnd_",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "maxMints_",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "walletCap_",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "payoutRecipient_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "gate_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "defaultReferrer_",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -128,7 +159,33 @@ export const fixedPriceMinterV2Abi = [
   },
   {
     "type": "function",
-    "name": "mint",
+    "name": "mintEnd",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "mintStart",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "mintWithReferral",
     "inputs": [
       {
         "name": "to",
@@ -153,32 +210,6 @@ export const fixedPriceMinterV2Abi = [
     ],
     "outputs": [],
     "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "mintEnd",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "mintStart",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -270,51 +301,12 @@ export const fixedPriceMinterV2Abi = [
   },
   {
     "type": "function",
-    "name": "referralShareBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "rescueStrayETH",
+    "name": "setGate",
     "inputs": [
       {
-        "name": "to",
+        "name": "gate_",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "saleCap",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "setAllowlistRoot",
-    "inputs": [
-      {
-        "name": "root",
-        "type": "bytes32",
-        "internalType": "bytes32"
       }
     ],
     "outputs": [],
@@ -379,12 +371,12 @@ export const fixedPriceMinterV2Abi = [
   },
   {
     "type": "function",
-    "name": "setReferralShareBps",
+    "name": "setWalletCap",
     "inputs": [
       {
-        "name": "bps",
-        "type": "uint16",
-        "internalType": "uint16"
+        "name": "walletCap_",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -392,16 +384,22 @@ export const fixedPriceMinterV2Abi = [
   },
   {
     "type": "function",
-    "name": "setWalletCap",
+    "name": "supportsInterface",
     "inputs": [
       {
-        "name": "cap",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "interfaceId",
+        "type": "bytes4",
+        "internalType": "bytes4"
       }
     ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -418,7 +416,7 @@ export const fixedPriceMinterV2Abi = [
   },
   {
     "type": "function",
-    "name": "totalMintedByThisMinter",
+    "name": "version",
     "inputs": [],
     "outputs": [
       {
@@ -456,14 +454,33 @@ export const fixedPriceMinterV2Abi = [
     "stateMutability": "nonpayable"
   },
   {
-    "type": "event",
-    "name": "AllowlistRootSet",
+    "type": "function",
+    "name": "withdrawTo",
     "inputs": [
       {
-        "name": "root",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "Closed",
+    "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "GateSet",
+    "inputs": [
+      {
+        "name": "gate",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -515,61 +532,6 @@ export const fixedPriceMinterV2Abi = [
   },
   {
     "type": "event",
-    "name": "MinterConfigured",
-    "inputs": [
-      {
-        "name": "collection",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "price",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "mintStart",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "mintEnd",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "payoutRecipient",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
-        "name": "maxMints",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "allowlistRoot",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "walletCap",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "PayoutRecipientSet",
     "inputs": [
       {
@@ -609,19 +571,6 @@ export const fixedPriceMinterV2Abi = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ReferralShareSet",
-    "inputs": [
-      {
-        "name": "bps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
       }
     ],
     "anonymous": false
@@ -671,29 +620,10 @@ export const fixedPriceMinterV2Abi = [
   },
   {
     "type": "event",
-    "name": "StrayETHRescued",
-    "inputs": [
-      {
-        "name": "to",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "WalletCapSet",
     "inputs": [
       {
-        "name": "cap",
+        "name": "walletCap",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -707,6 +637,12 @@ export const fixedPriceMinterV2Abi = [
     "inputs": [
       {
         "name": "account",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "to",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -728,6 +664,11 @@ export const fixedPriceMinterV2Abi = [
   {
     "type": "error",
     "name": "CollectionRequired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "GateRejected",
     "inputs": []
   },
   {
@@ -763,11 +704,6 @@ export const fixedPriceMinterV2Abi = [
   },
   {
     "type": "error",
-    "name": "NoStrayETH",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "NotAContract",
     "inputs": [
       {
@@ -776,11 +712,6 @@ export const fixedPriceMinterV2Abi = [
         "internalType": "address"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "NotAllowlisted",
-    "inputs": []
   },
   {
     "type": "error",
@@ -804,45 +735,24 @@ export const fixedPriceMinterV2Abi = [
   },
   {
     "type": "error",
+    "name": "ReceiverRejected",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "ReferralShareAboveCap",
-    "inputs": [
-      {
-        "name": "requested",
-        "type": "uint16",
-        "internalType": "uint16"
-      },
-      {
-        "name": "cap",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "RescueFailed",
+    "name": "SaleClosed",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "Underpayment",
-    "inputs": [
-      {
-        "name": "required",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "sent",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
   },
   {
     "type": "error",
@@ -884,11 +794,6 @@ export const fixedPriceMinterV2Abi = [
   {
     "type": "error",
     "name": "ZeroAccount",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ZeroQuantity",
     "inputs": []
   }
 ] as const;

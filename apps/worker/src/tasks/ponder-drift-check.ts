@@ -6,8 +6,9 @@
  * fires for those clones.
  *
  * Covers every factory-watched child address PND ships: the PND V1 and V2
- * auction house factories, and the Surface factory's two child streams
- * (collection address, minter address). Factory ids in
+ * auction house factories, the Surface v1 factory's two child streams
+ * (collection address, minter address), and the Surface v2 token and sale
+ * CloneFactories (one `Created.instance` stream each). Factory ids in
  * `ponder_sync.factories` are assigned by Ponder at sync time and are not
  * stable across a fresh replay, so ids are resolved at runtime by matching
  * the factory contract address (and, for Surface, the childAddressLocation
@@ -27,6 +28,8 @@ import {
   SOVEREIGN_AUCTION_HOUSE_FACTORY,
   SOVEREIGN_AUCTION_HOUSE_V2_FACTORY,
   SURFACE_FACTORY,
+  SURFACE_TOKEN_FACTORY_V2,
+  SALE_FACTORY_V2,
   getAddressOrNull,
 } from "@pin/addresses"
 import {
@@ -137,6 +140,16 @@ export async function ponderDriftCheck(): Promise<TaskResult> {
   const surfaceMinterId = surfaceFactoryAddr
     ? resolveFactoryId(factories, surfaceFactoryAddr, "offset0")
     : undefined
+  // Surface v2 CloneFactory: Created(implementation, instance, caller), all
+  // indexed, so the child address is topic2 on both factories.
+  const tokenFactoryV2Addr = getAddressOrNull(SURFACE_TOKEN_FACTORY_V2, CHAIN_ID)
+  const saleFactoryV2Addr = getAddressOrNull(SALE_FACTORY_V2, CHAIN_ID)
+  const surfaceV2CollectionId = tokenFactoryV2Addr
+    ? resolveFactoryId(factories, tokenFactoryV2Addr, "topic2")
+    : undefined
+  const surfaceV2SaleId = saleFactoryV2Addr
+    ? resolveFactoryId(factories, saleFactoryV2Addr, "topic2")
+    : undefined
 
   let rowsWritten = 0
 
@@ -164,30 +177,37 @@ export async function ponderDriftCheck(): Promise<TaskResult> {
 
   // Surface tables are deploy-gated: absent until the Surface factory has
   // synced its first collection.
+  // collections.protocol_version exists from ponder_v4 onward; on an older
+  // schema every collection is implicitly v1. Each version's rows repair
+  // only its own factory's watch set: a v2 address in a v1 stream would
+  // subscribe it under the v1 ABI.
   if (await tableExists("collections")) {
+    const versionExpr = (await columnExists("collections", "protocol_version"))
+      ? "c.protocol_version"
+      : "1"
     const collectionRows = (await sql.unsafe(
-      `SELECT lower(collection) AS address, created_at_block AS block_number
-       FROM ${INDEXER_SCHEMA}.collections WHERE created_at_block IS NOT NULL`,
-    )) as Array<{ address: string; block_number: string }>
-    rowsWritten += await repairFactory(
-      surfaceCollectionId,
-      "Surface collections",
-      collectionRows.map((r) => ({ address: r.address, blockNumber: r.block_number })),
-    )
+      `SELECT lower(c.collection) AS address, c.created_at_block AS block_number, ${versionExpr} AS version
+       FROM ${INDEXER_SCHEMA}.collections c WHERE c.created_at_block IS NOT NULL`,
+    )) as Array<{ address: string; block_number: string; version: number }>
+    const ofVersion = (rows: typeof collectionRows, version: number) =>
+      rows
+        .filter((r) => r.version === version)
+        .map((r) => ({ address: r.address, blockNumber: r.block_number }))
+    rowsWritten += await repairFactory(surfaceCollectionId, "Surface collections", ofVersion(collectionRows, 1))
+    rowsWritten += await repairFactory(surfaceV2CollectionId, "Surface v2 collections", ofVersion(collectionRows, 2))
 
     if (await tableExists("minters")) {
+      // The collection's creation block is a safe lower bound for its
+      // minter or sale: neither can emit before the collection exists.
       const minterRows = (await sql.unsafe(
-        `SELECT lower(m.minter) AS address, c.created_at_block AS block_number
+        `SELECT lower(m.minter) AS address, c.created_at_block AS block_number, ${versionExpr} AS version
          FROM ${INDEXER_SCHEMA}.minters m
          JOIN ${INDEXER_SCHEMA}.collections c ON c.collection = m.collection
          WHERE c.created_at_block IS NOT NULL
            AND lower(m.minter) <> '0x0000000000000000000000000000000000000000'`,
-      )) as Array<{ address: string; block_number: string }>
-      rowsWritten += await repairFactory(
-        surfaceMinterId,
-        "Surface minters",
-        minterRows.map((r) => ({ address: r.address, blockNumber: r.block_number })),
-      )
+      )) as Array<{ address: string; block_number: string; version: number }>
+      rowsWritten += await repairFactory(surfaceMinterId, "Surface minters", ofVersion(minterRows, 1))
+      rowsWritten += await repairFactory(surfaceV2SaleId, "Surface v2 sales", ofVersion(minterRows, 2))
     }
   }
 
