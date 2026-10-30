@@ -1,5 +1,5 @@
 {
-  "_note": "Sepolia rehearsal deploy of the Surface core, used to dress-rehearse the artist deploy-page flow before a mainnet broadcast (see docs/pnd-surface-second-launch.md). Deployed 2026-07-25 from DeploySurfaceSystemSepolia.s.sol, deployer ripe0x.eth (0xCB43078C32423F5348Cab5885911C3B5faE217F9). The factory lands paused; call setPaused(false) to open it for a rehearsal. `defaultRenderer` and `renderAssets` are intentionally empty: the rehearsal uses the RENDERER preset (bring-your-own IRenderer in cfg.renderer), which needs neither. Catalog shares the canonical CREATE2 address across chains. All five verified on sepolia.etherscan.io. The Surface v2 keys (`surfaceImplV2`, `saleImplV2`, `allowlistGate`, `surfaceFactoryV2`, `saleFactoryV2`, `launcherV2`) belong to the primitive-first v2 (docs/pnd-surface-v2-design.md), deployed here 2026-10-27 at block 12002730 from commit 6c522b96 by script/deploy.sh (deployer ripe0x.eth, GAS_ESTIMATE_MULTIPLIER for Sepolia's creation pricing), which recorded `factoryDeployBlock` and `txHashes` from the broadcast receipts. Each runtime matches a build of that commit (immutables and metadata digest aside). The superseded first v2 rehearsal (SurfaceFactoryV2 0x48Fa2D562650F962acad67C5dE9C7a1ED6ed61DE, SurfaceV2 implementation 0xd83BA4c85bf30f4353C5Fa1d6cbbbf44f3bde9db, FixedPriceMinterV2 implementation 0x8c664D62B0bF29b43FA8f4d3F91b735B241791e2, factory block 11704552, factory tx 0xf7d7b7f5a18a00279a92977b2f890f626f24c0c44cdd686012ad73c9e8eaa638) is still on chain but is no longer recorded under live keys; its sources were removed from the repo.",
+  "_note": "Sepolia rehearsal deploy of the Surface core, used to dress-rehearse the artist deploy-page flow before a mainnet broadcast (see docs/pnd-surface-second-launch.md). Deployed 2026-07-25 from DeploySurfaceSystemSepolia.s.sol, deployer ripe0x.eth (0xCB43078C32423F5348Cab5885911C3B5faE217F9). The factory lands paused; call setPaused(false) to open it for a rehearsal. `defaultRenderer` and `renderAssets` are intentionally empty: the rehearsal uses the RENDERER preset (bring-your-own IRenderer in cfg.renderer), which needs neither. Catalog shares the canonical CREATE2 address across chains. All five verified on sepolia.etherscan.io. The Surface v2 keys (`surfaceImplV2`, `saleImplV2`, `allowlistGate`, `surfaceFactoryV2`, `saleFactoryV2`, `launcherV2`) belong to the primitive-first v2 (docs/pnd-surface-v2-design.md), deployed here 2026-10-30 at block 12029161 from commit 385433b3 (main with the #355 receiver and referrer fixes) by script/deploy.sh (deployer ripe0x.eth, GAS_ESTIMATE_MULTIPLIER for Sepolia's creation pricing), which recorded `factoryDeployBlock` and `txHashes` from the broadcast receipts. FixedPriceSale's runtime matches a build of that commit (metadata trailer aside). The first v2 deploy (2026-10-27, block 12002730, from 6c522b96: Launcher 0xD41E5b79f9e4EFabF01B04a7f745E93e1c24999d, sale implementation 0xBef975eb106f2c4E976D62D4CD950A0Fc79421bb) predates those fixes; it is still on chain but no longer recorded. The superseded first v2 rehearsal (SurfaceFactoryV2 0x48Fa2D562650F962acad67C5dE9C7a1ED6ed61DE, SurfaceV2 implementation 0xd83BA4c85bf30f4353C5Fa1d6cbbbf44f3bde9db, FixedPriceMinterV2 implementation 0x8c664D62B0bF29b43FA8f4d3F91b735B241791e2, factory block 11704552, factory tx 0xf7d7b7f5a18a00279a92977b2f890f626f24c0c44cdd686012ad73c9e8eaa638) is still on chain but is no longer recorded under live keys; its sources were removed from the repo.",
   "chainId": 11155111,
   "surfaceFactory": "0xAB8F7b96e6c8f850B6089447F903dbC4aE6e4ac0",
   "defaultRenderer": "0x29Ed24f394a794415A5545481842f0bb37a3bB93",
@@ -10,19 +10,19 @@
   "catalog": "0x6F0441B2f096d4db71C322F700dCeF0E88CFCcBC",
   "deployedAt": 1789409424,
   "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
-  "surfaceImplV2": "0x8F7234a894Fd0833d9A86F8e20350647AF69AbB7",
-  "saleImplV2": "0xBef975eb106f2c4E976D62D4CD950A0Fc79421bb",
-  "allowlistGate": "0x7ddE288978828F29598232bf922613Cda9934766",
-  "surfaceFactoryV2": "0x9dB041AF422b0D8a06d4E5157103a954FA3b2e90",
-  "saleFactoryV2": "0xfe9eF78d290be95E26e6A6B733DB170186e8CaF0",
-  "launcherV2": "0xD41E5b79f9e4EFabF01B04a7f745E93e1c24999d",
-  "factoryDeployBlock": 12002730,
+  "surfaceImplV2": "0x01a309508f8F45BC899abDBdE586f95D5A1c2381",
+  "saleImplV2": "0xA502a270C6aF817aeED6eef3F06FDA6329B798E6",
+  "allowlistGate": "0xC3f9A77e46576b678C0a9705Ee39Cb2479A5f031",
+  "surfaceFactoryV2": "0x53611B0C91a4D6D6178B17A90F844792f3c03b0f",
+  "saleFactoryV2": "0xAAb1E1504262A5225b2F44F9F7A9B555D830c099",
+  "launcherV2": "0x7F3e9B843845Aa44A1860bB1C343D7554920Fb59",
+  "factoryDeployBlock": 12029161,
   "txHashes": {
-    "surfaceImplV2": "0xa8eba83a4d95e00e2300a0cf0d9aa9fcfa7c9b34312bd64b71c11865c45c6165",
-    "saleImplV2": "0xe013f6582b5850a81a4b5ad1f512969c986c974b8937119edf5ddb0883f5b201",
-    "allowlistGate": "0x9d6f26a9f19030a51c0d1e44185b49396ea18a8b73b95c6556496e8cc68febae",
-    "surfaceFactoryV2": "0xfbd92b424636a8fa55a4c7915ead7d2e350739dbb65c691b2b815bc68290828e",
-    "saleFactoryV2": "0xd9227dbe9da103129e06b49ca52b4f3aefcf4d8b8b57c1f1e3be09092dcb67ab",
-    "launcherV2": "0x52f28432e35452e886448863fcf17381230578d8052e3b872b1c6360c76bf6de"
+    "surfaceImplV2": "0x25bf149c2e0b3aff950b2504c74c3620221a58a451922837c391f401e89d53cb",
+    "saleImplV2": "0xfd2d18e3481aec920c7631a1b8def198ef8929da4831cd4e5a2a9518a4f1e78d",
+    "allowlistGate": "0x816c21845715933ddc82de5447f8064671decd7f3f7abecd2fb3a484ca86cfa3",
+    "surfaceFactoryV2": "0x6856083d39189fa5ef736e02d32da318dce6985f8d481c3c9e77b20dd8b0f043",
+    "saleFactoryV2": "0x7b3b1c92eb568c5de67f1cee4a45a5ae0610dceda0ec78cc6d3e91f98d2ef1e7",
+    "launcherV2": "0x57bfbdbf685111f0d13d5ee4bddd0c2759422c82a329f7decc06b5e30f80df27"
   }
 }

@@ -207,35 +207,35 @@ export const SURFACE_FACTORY_V2: Record<number, Address> = {
 // Surface v2 primitives (docs/pnd-surface-v2-design.md). Values come from
 // contracts/deployments.<network>.json, which script/deploy.sh fills from
 // the broadcast receipts (keys surfaceImplV2, saleImplV2, allowlistGate,
-// surfaceFactoryV2, saleFactoryV2, launcherV2). On Sepolia since 2026-10-27
-// (block 12002730); not yet on mainnet (zero address). Artists normally call
+// surfaceFactoryV2, saleFactoryV2, launcherV2). On Sepolia since 2026-10-30
+// (block 12029161); not yet on mainnet (zero address). Artists normally call
 // LAUNCHER_V2; a bespoke project calls the two factories directly.
 // Collections and sales are EIP-1167 clones of the two implementations.
 export const SURFACE_IMPLEMENTATION_V2: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
-  [SEPOLIA_CHAIN_ID]: "0x8F7234a894Fd0833d9A86F8e20350647AF69AbB7",
+  [SEPOLIA_CHAIN_ID]: "0x01a309508f8F45BC899abDBdE586f95D5A1c2381",
 }
 export const SALE_IMPLEMENTATION_V2: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
-  [SEPOLIA_CHAIN_ID]: "0xBef975eb106f2c4E976D62D4CD950A0Fc79421bb",
+  [SEPOLIA_CHAIN_ID]: "0xA502a270C6aF817aeED6eef3F06FDA6329B798E6",
 }
 export const ALLOWLIST_GATE: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
-  [SEPOLIA_CHAIN_ID]: "0x7ddE288978828F29598232bf922613Cda9934766",
+  [SEPOLIA_CHAIN_ID]: "0xC3f9A77e46576b678C0a9705Ee39Cb2479A5f031",
 }
 // The token CloneFactory (record key surfaceFactoryV2). Named apart from the
 // superseded SURFACE_FACTORY_V2 above, which the web app still reads.
 export const SURFACE_TOKEN_FACTORY_V2: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
-  [SEPOLIA_CHAIN_ID]: "0x9dB041AF422b0D8a06d4E5157103a954FA3b2e90",
+  [SEPOLIA_CHAIN_ID]: "0x53611B0C91a4D6D6178B17A90F844792f3c03b0f",
 }
 export const SALE_FACTORY_V2: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
-  [SEPOLIA_CHAIN_ID]: "0xfe9eF78d290be95E26e6A6B733DB170186e8CaF0",
+  [SEPOLIA_CHAIN_ID]: "0xAAb1E1504262A5225b2F44F9F7A9B555D830c099",
 }
 export const LAUNCHER_V2: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
-  [SEPOLIA_CHAIN_ID]: "0xD41E5b79f9e4EFabF01B04a7f745E93e1c24999d",
+  [SEPOLIA_CHAIN_ID]: "0x7F3e9B843845Aa44A1860bB1C343D7554920Fb59",
 }
 
 // RenderAssets — renderer-land registry of static display assets (cover +
