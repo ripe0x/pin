@@ -137,6 +137,9 @@ contract FixedPriceSale is Initializable, ReentrancyGuardUpgradeable, IMinter, I
         uint256 minted = totalMinted;
         if (maxMints != 0 && minted + quantity > maxMints) revert MaxMintsExceeded(maxMints, minted + quantity); // 3
         address collection_ = collection;
+        // Neither this sale nor the collection can ever withdraw a balance,
+        // so naming either as referrer counts as no referrer.
+        if (referrer == address(this) || referrer == collection_) referrer = address(0);
         if (gate != address(0) && !IGate(gate).check(collection_, to, quantity, data)) revert GateRejected(); // 4
         uint256 mintedByTo = mintedBy[to];
         if (walletCap != 0 && mintedByTo + quantity > walletCap) {
@@ -144,7 +147,7 @@ contract FixedPriceSale is Initializable, ReentrancyGuardUpgradeable, IMinter, I
         }
         uint256 paid = price * quantity;
         if (msg.value != paid) revert WrongPayment(paid, msg.value); // 6
-        if (to.code.length != 0) _checkReceiver(collection_, to); // 7
+        if (to.code.length != 0) _checkReceiver(collection_, to, quantity); // 7
         uint256 firstTokenId = ISurface(collection_).mintTo(to, quantity); // 8
         totalMinted = minted + quantity; // 9
         mintedBy[to] = mintedByTo + quantity;
@@ -162,14 +165,17 @@ contract FixedPriceSale is Initializable, ReentrancyGuardUpgradeable, IMinter, I
     }
 
     /// @dev The receiver check the token deliberately skips (it never calls
-    ///      out). Asked once per mint call, for the first id it will mint.
-    function _checkReceiver(address collection_, address to) internal {
+    ///      out). Asked once for every id this call will mint, before any
+    ///      of them exists.
+    function _checkReceiver(address collection_, address to, uint256 quantity) internal {
         // slither-disable-next-line unused-return
         (,,,,, uint256 mintedEver) = ISurface(collection_).config();
-        try IERC721Receiver(to).onERC721Received(msg.sender, address(0), mintedEver + 1, "") returns (bytes4 ret) {
-            if (ret != IERC721Receiver.onERC721Received.selector) revert ReceiverRejected(to);
-        } catch {
-            revert ReceiverRejected(to);
+        for (uint256 i = 1; i <= quantity; i++) {
+            try IERC721Receiver(to).onERC721Received(msg.sender, address(0), mintedEver + i, "") returns (bytes4 ret) {
+                if (ret != IERC721Receiver.onERC721Received.selector) revert ReceiverRejected(to);
+            } catch {
+                revert ReceiverRejected(to);
+            }
         }
     }
 
