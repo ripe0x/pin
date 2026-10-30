@@ -100,8 +100,8 @@ export FOUNDRY_PROFILE
 
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 
-# mainnet.env ships DEPLOYER and DEFAULT_REFERRER empty until they are
-# decided; refuse before touching any RPC, DRY_RUN included.
+# A mainnet run needs DEPLOYER and DEFAULT_REFERRER in mainnet.env; refuse
+# before touching any RPC, DRY_RUN included, if either is blank.
 if [ "$ENV_NAME" = "mainnet" ]; then
   for var in DEPLOYER DEFAULT_REFERRER; do
     [ -n "${!var:-}" ] || {
