@@ -422,6 +422,24 @@ contract FixedPriceSaleTest is SurfaceV2Base {
         assertEq(token.ownerOf(2), stranger);
     }
 
+    function test_receiver_askedForEveryIdInABatch() public {
+        PickyReceiver picky = new PickyReceiver(2);
+        vm.prank(collector);
+        vm.expectRevert(abi.encodeWithSelector(IMinter.ReceiverRejected.selector, address(picky)));
+        sale.mintWithReferral{value: 2 * PRICE}(address(picky), 2, address(0), "");
+        assertEq(token.totalSupply(), 0);
+
+        // A receiver that takes every id is asked once per id, in order.
+        PickyReceiver open_ = new PickyReceiver(0);
+        vm.prank(collector);
+        sale.mintWithReferral{value: 3 * PRICE}(address(open_), 3, address(0), "");
+        assertEq(open_.seenCount(), 3);
+        for (uint256 i = 0; i < 3; i++) {
+            assertEq(open_.seen(i), i + 1);
+            assertEq(token.ownerOf(i + 1), address(open_));
+        }
+    }
+
     // ─── close ──────────────────────────────────────────────────────────────
 
     function test_close() public {
@@ -458,6 +476,23 @@ contract FixedPriceSaleTest is SurfaceV2Base {
         _mintRef(collector, 1 ether);
         assertEq(sale.pendingWithdrawal(collector), 0.05 ether);
         assertEq(sale.pendingWithdrawal(artist), 0.95 ether);
+    }
+
+    function test_referral_saleOrCollectionCountsAsNone() public {
+        address[2] memory sinks = [address(sale), address(token)];
+        vm.prank(artist);
+        sale.setPrice(1 ether);
+        for (uint256 i = 0; i < 2; i++) {
+            uint256 before = sale.pendingWithdrawal(artist);
+            vm.recordLogs();
+            vm.expectEmit(address(sale));
+            emit IMinter.Sold(collector, collector, address(0), 1, 1 ether, i + 1);
+            _mintRef(sinks[i], 1 ether);
+            assertFalse(_hasLog(IMinter.ReferralPaid.selector));
+            assertEq(sale.pendingWithdrawal(sinks[i]), 0);
+            assertEq(sale.pendingWithdrawal(artist) - before, 1 ether);
+        }
+        assertEq(address(sale).balance, sale.pendingWithdrawal(artist));
     }
 
     function test_referral_artistKeepsAll() public {
@@ -697,5 +732,25 @@ contract ExpectingGate {
 
     function check(address c, address t, uint256 q, bytes calldata d) external view returns (bool) {
         return c == _collection && t == _to && q == _quantity && keccak256(d) == keccak256(_data);
+    }
+}
+
+/// @dev Accepts every id except `rejectId` (0 = accept all) and records the
+///      ids it was asked about.
+contract PickyReceiver {
+    uint256 public immutable rejectId;
+    uint256[] public seen;
+
+    constructor(uint256 rejectId_) {
+        rejectId = rejectId_;
+    }
+
+    function seenCount() external view returns (uint256) {
+        return seen.length;
+    }
+
+    function onERC721Received(address, address, uint256 tokenId, bytes calldata) external returns (bytes4) {
+        seen.push(tokenId);
+        return tokenId == rejectId ? bytes4(0) : this.onERC721Received.selector;
     }
 }

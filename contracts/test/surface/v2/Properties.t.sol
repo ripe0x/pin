@@ -30,9 +30,11 @@ contract SurfaceV2PropertiesTest is SurfaceV2Base {
         vm.deal(payer, paid);
         vm.prank(payer);
         sale.mintWithReferral{value: paid}(payer, quantity, referrer, "");
-        uint256 referral = referrer == address(0) ? 0 : (paid * 500) / 10_000;
+        // The sale and the collection can never withdraw, so they count as no referrer.
+        bool none = referrer == address(0) || referrer == address(sale) || referrer == address(token);
+        uint256 referral = none ? 0 : (paid * 500) / 10_000;
         assertEq(sale.pendingWithdrawal(artist), paid - referral);
-        if (referrer != address(0)) assertEq(sale.pendingWithdrawal(referrer), referral);
+        assertEq(sale.pendingWithdrawal(referrer), none ? 0 : referral);
         assertEq(address(sale).balance, paid);
     }
 
