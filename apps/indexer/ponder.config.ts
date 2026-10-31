@@ -14,12 +14,13 @@ import { muriProtocolAbi } from "./abis/MURIProtocol"
 import { surfaceAbi } from "./abis/Surface"
 import { surfaceFactoryAbi } from "./abis/SurfaceFactory"
 import { fixedPriceMinterAbi } from "./abis/FixedPriceMinter"
-import { surfaceV2Abi } from "./abis/SurfaceV2"
-import { surfaceFactoryV2Abi } from "./abis/SurfaceFactoryV2"
-import { fixedPriceMinterV2Abi } from "./abis/FixedPriceMinterV2"
+import { surfaceTokenV2Abi } from "./abis/SurfaceTokenV2"
+import { fixedPriceSaleAbi } from "./abis/FixedPriceSale"
+import { cloneFactoryAbi } from "./abis/CloneFactory"
+import { launcherAbi } from "./abis/Launcher"
 import { homageCollectionAbi } from "./abis/HomageCollection"
 import { homageMinterAbi } from "./abis/HomageMinter"
-import { readSurfaceV2Deployment } from "./src/surfaceV2Deployment"
+import { readSurfaceV2Deployment, type SurfaceV2Deployment } from "./src/surfaceV2Deployment"
 
 /**
  * PND v2 Ponder scope: REDUCED from v1.
@@ -30,7 +31,8 @@ import { readSurfaceV2Deployment } from "./src/surfaceV2Deployment"
  *   - FoundationNFT shared 1/1 contract
  *   - SuperRareNFT shared 1/1 contract
  *   - Catalog
- *   - SurfaceFactory + every clone (PND Surface System)
+ *   - SurfaceFactory + every clone (PND Surface System v1)
+ *   - Surface v2 token + sale CloneFactory pair, every clone, Launcher
  *
  * Discovery-only (one row per artist-deploys-a-clone, NO per-clone events):
  *   - NFTCollectionFactoryV1 + V2 → fnd_collections
@@ -139,55 +141,57 @@ export const SOVEREIGN_V2_WIRED =
       process.env.SOVEREIGN_V2_FACTORY_START_BLOCK,
   )
 
-// Surface v2 (contracts/src/surface/v2/, docs/pnd-surface-v2-plan.md):
-// same factory + factory() clone pattern as v1's
-// SurfaceFactory/Surface/FixedPriceMinter below, plus a sepolia
-// rehearsal instance for pre-mainnet-broadcast verification. Event
-// shapes are byte-identical to v1's, so src/Collections.ts shares one
-// set of handler functions between the two, keyed by contract name.
+// Surface v2 primitives (contracts/src/surface/v2/, docs/pnd-surface-v2-design.md
+// section 8): two CloneFactory instances (token, sale) and the Launcher that
+// wires one of each. Discovery is each factory's `Created` event; the token
+// and sale clones are bound as factory() children of their own factory, so
+// a sale can only be indexed if the sale factory made it, and a collection
+// only if the token factory made it. Launched is bound for the launch-path
+// record only: anyone can launch naming any owner, so it proves nothing
+// about that owner's consent (see src/Collections.ts).
 //
-// SurfaceFactoryV2/SurfaceV2/FixedPriceMinterV2 are declared ONCE each,
-// unconditionally, using Ponder's per-chain `chain: { mainnet: {...},
-// sepolia: {...} }` override so the SAME contract name resolves on
-// whichever network has a real deployment. A network with NO deployment
-// yet has its key OMITTED from that chain map (not pointed at the zero
-// address): Ponder's `flattenSources` (build/config.js) does
-// `Object.entries(source.chain).map(...)`, so a missing chain key
-// contributes no source at all for that chain, no `eth_getLogs` call,
-// no `ponder_sync.factories` row. Pointing an undeployed network at the
-// zero address instead would still run a full genesis-to-head scan
-// (Ponder's single-address historical sync has no zero-address short-
-// circuit), on both chains, on every startup, burning paid mainnet RPC
-// for a contract that will never emit a log. If every network is
-// undeployed, the resulting `chain: {}` is empty; `flattenSources`
-// still runs (`Object.entries({}).map(...)` is `[]`), so the contract
-// contributes zero sources rather than erroring, confirmed against
-// Ponder 0.16.6's source and a live `ponder dev` run below.
+// Each v2 contract is declared ONCE, unconditionally, with Ponder's
+// per-chain `chain: { mainnet: {...}, sepolia: {...} }` map. A network with
+// no deployment recorded has its key OMITTED from that map (not pointed at
+// the zero address): Ponder's `flattenSources` (build/config.js) does
+// `Object.entries(source.chain).map(...)`, so a missing key contributes no
+// source, no `eth_getLogs` call and no `ponder_sync.factories` row, where
+// a zero address would still run a genesis-to-head scan on every startup.
+// An empty `chain: {}` contributes zero sources rather than erroring.
 //
-// The KEY ITSELF (`SurfaceFactoryV2` etc.) stays unconditional: this is
+// The KEY ITSELF (`SurfaceV2` etc.) stays unconditional: this is
 // load-bearing for typing, not style. `createConfig`'s `contracts` type
-// parameter is declared `const`, and Ponder's EventNames/Event type
-// utilities never resolve a real event-args type when the CONTRACT KEY
-// is optionally present (verified empirically: a key included via
-// `...(cond ? {A: {...}} : {})` at the top level of `contracts` makes
-// every ponder.on(...) call in the whole file resolve to `never`, not
-// just the conditional one). A conditional spread INSIDE `chain: {...}`
-// does not have this problem: the contract key is still always there,
-// only which networks it runs on varies, so typing stays real. This is
-// also why v1's contracts (below) are one flat object with no wrapping
-// condition: they have no per-network variance at all.
-const mainnetSurfaceV2 = readSurfaceV2Deployment("mainnet")
-// The sepolia chain and its Surface v2 sources are indexed only when
-// INDEX_SEPOLIA=1 or in sepolia-only mode. The `collections` and
-// `collection_*` tables have no chain column, so production indexes
-// mainnet only.
+// parameter is declared `const`, and a contract key included via a
+// top-level conditional spread makes every ponder.on(...) call in the
+// codebase resolve to `never`. Varying only the `chain` map keeps the key
+// present and the event types real.
+//
+// The sepolia chain is indexed only when INDEX_SEPOLIA=1 or in sepolia-only
+// mode: the `collections` and `collection_*` tables have no chain column,
+// so production indexes mainnet only. Mainnet is skipped in sepolia-only
+// mode, matching every other mainnet contract below.
 const INDEX_SEPOLIA = process.env.INDEX_SEPOLIA === "1" || SEPOLIA_ONLY_MODE
-const sepoliaSurfaceV2 = INDEX_SEPOLIA
-  ? readSurfaceV2Deployment("sepolia")
-  : null
+const surfaceV2Deployments = {
+  mainnet: SEPOLIA_ONLY_MODE ? null : readSurfaceV2Deployment("mainnet"),
+  sepolia: INDEX_SEPOLIA ? readSurfaceV2Deployment("sepolia") : null,
+}
 
+function surfaceV2Chain<A>(address: (d: SurfaceV2Deployment) => A) {
+  const chain: Partial<Record<"mainnet" | "sepolia", { address: A; startBlock: number }>> = {}
+  for (const network of ["mainnet", "sepolia"] as const) {
+    const d = surfaceV2Deployments[network]
+    if (d) chain[network] = { address: address(d), startBlock: d.factoryDeployBlock }
+  }
+  return chain
+}
+
+// v1 SurfaceFactory's discovery event (Surface/FixedPriceMinter below).
 const surfaceCreatedEvent = parseAbiItem(
   "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)",
+)
+
+const cloneCreatedEvent = parseAbiItem(
+  "event Created(address indexed implementation, address indexed instance, address indexed caller)",
 )
 
 // PONDER_RPC_URL_1 is required for production/mainnet mode. Skipped in
@@ -401,93 +405,32 @@ export default createConfig({
       startBlock: SURFACE_FACTORY_DEPLOY_BLOCK,
     },
 
-    // ── PND Surface System v2 ─────────────────────────────────────────
-    // See the comment above `mainnetSurfaceV2`/`sepoliaSurfaceV2`: each
-    // network's key is present only once that network has a real
-    // deployment; an undeployed network is omitted, not zero-addressed.
-    // The mainnet entry is also gated on `!SEPOLIA_ONLY_MODE`, matching
-    // every other mainnet contract below: without that gate, sepolia
-    // mode would emit a `mainnet` chain key here once
-    // contracts/deployments.mainnet.json records a real deployment,
-    // even though `chains.mainnet` itself is omitted in that mode.
-    SurfaceFactoryV2: {
-      abi: surfaceFactoryV2Abi,
-      chain: {
-        ...(!SEPOLIA_ONLY_MODE && mainnetSurfaceV2
-          ? {
-              mainnet: {
-                address: mainnetSurfaceV2.surfaceFactoryV2,
-                startBlock: mainnetSurfaceV2.factoryDeployBlock,
-              },
-            }
-          : {}),
-        ...(sepoliaSurfaceV2
-          ? {
-              sepolia: {
-                address: sepoliaSurfaceV2.surfaceFactoryV2,
-                startBlock: sepoliaSurfaceV2.factoryDeployBlock,
-              },
-            }
-          : {}),
-      },
+    // ── PND Surface System v2 primitives ──────────────────────────────
+    // See `surfaceV2Chain` above: a network's key is present only once its
+    // deploy record names all three addresses.
+    SurfaceTokenFactoryV2: {
+      abi: cloneFactoryAbi,
+      chain: surfaceV2Chain((d) => d.tokenFactory),
+    },
+    SurfaceSaleFactoryV2: {
+      abi: cloneFactoryAbi,
+      chain: surfaceV2Chain((d) => d.saleFactory),
+    },
+    LauncherV2: {
+      abi: launcherAbi,
+      chain: surfaceV2Chain((d) => d.launcher),
     },
     SurfaceV2: {
-      abi: surfaceV2Abi,
-      chain: {
-        ...(!SEPOLIA_ONLY_MODE && mainnetSurfaceV2
-          ? {
-              mainnet: {
-                address: factory({
-                  address: mainnetSurfaceV2.surfaceFactoryV2,
-                  event: surfaceCreatedEvent,
-                  parameter: "collection",
-                }),
-                startBlock: mainnetSurfaceV2.factoryDeployBlock,
-              },
-            }
-          : {}),
-        ...(sepoliaSurfaceV2
-          ? {
-              sepolia: {
-                address: factory({
-                  address: sepoliaSurfaceV2.surfaceFactoryV2,
-                  event: surfaceCreatedEvent,
-                  parameter: "collection",
-                }),
-                startBlock: sepoliaSurfaceV2.factoryDeployBlock,
-              },
-            }
-          : {}),
-      },
+      abi: surfaceTokenV2Abi,
+      chain: surfaceV2Chain((d) =>
+        factory({ address: d.tokenFactory, event: cloneCreatedEvent, parameter: "instance" }),
+      ),
     },
-    FixedPriceMinterV2: {
-      abi: fixedPriceMinterV2Abi,
-      chain: {
-        ...(!SEPOLIA_ONLY_MODE && mainnetSurfaceV2
-          ? {
-              mainnet: {
-                address: factory({
-                  address: mainnetSurfaceV2.surfaceFactoryV2,
-                  event: surfaceCreatedEvent,
-                  parameter: "primaryMinter",
-                }),
-                startBlock: mainnetSurfaceV2.factoryDeployBlock,
-              },
-            }
-          : {}),
-        ...(sepoliaSurfaceV2
-          ? {
-              sepolia: {
-                address: factory({
-                  address: sepoliaSurfaceV2.surfaceFactoryV2,
-                  event: surfaceCreatedEvent,
-                  parameter: "primaryMinter",
-                }),
-                startBlock: sepoliaSurfaceV2.factoryDeployBlock,
-              },
-            }
-          : {}),
-      },
+    FixedPriceSaleV2: {
+      abi: fixedPriceSaleAbi,
+      chain: surfaceV2Chain((d) =>
+        factory({ address: d.saleFactory, event: cloneCreatedEvent, parameter: "instance" }),
+      ),
     },
 
     // ── Sovereign Auction House V2 (ENV-GATED: see SOVEREIGN_V2_WIRED) ──

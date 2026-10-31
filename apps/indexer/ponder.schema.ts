@@ -417,15 +417,17 @@ export const muriTokens = onchainTable(
 // primaryMinter too (the canonical clone createSurface wires), independent
 // of later primaryMinter repoints.
 //
-// Surface v2 (contracts/src/surface/v2/, docs/pnd-surface-v2-plan.md)
-// shares this table with v1: `protocolVersion` records which factory
-// created the collection (1 or 2). `ownerRenounced` tracks
-// OwnershipTransferred to address(0) for both versions: v2 reaches it
-// through seal(), v1 has no seal() but its OZ Ownable2Step base still
-// exposes renounceOwnership() directly, so a v1 owner can renounce the
-// same way. `royaltyLocked` (RoyaltyLocked engaged, setRoyalty reverts)
-// is v2 only; v1 has no lockRoyalty function, so a v1 row stays false
-// for the life of the row.
+// Surface v2 primitives (contracts/src/surface/v2/,
+// docs/pnd-surface-v2-design.md) share these tables with v1:
+// `protocolVersion` records which generation created the collection (1 =
+// SurfaceFactory, 2 = the v2 token CloneFactory; matches the token's own
+// `version()`). For v2 the `minters` reverse index maps a FixedPriceSale
+// clone to its collection, and `ownerConfirmed` separates collections the
+// owner launched or has since acted on from ones a third party launched
+// naming them (CloneFactory and Launcher let anyone name any owner).
+// `ownerRenounced` tracks OwnershipTransferred to address(0) for both
+// versions (v1's OZ Ownable2Step base and v2's OZ Ownable both expose
+// renounceOwnership()).
 
 export const collections = onchainTable(
   "collections",
@@ -433,30 +435,33 @@ export const collections = onchainTable(
     // The deployed Collection clone address.
     collection: t.hex().primaryKey(),
     owner: t.hex().notNull(),
-    // Which Surface factory created this collection: 1 (SurfaceFactory)
-    // or 2 (SurfaceFactoryV2).
+    // Which Surface generation created this collection: 1 (SurfaceFactory)
+    // or 2 (the v2 token CloneFactory).
     protocolVersion: t.integer().notNull(),
-    // v2 only: RoyaltyLocked engaged (setRoyalty now reverts). v1 has no
-    // lockRoyalty function, so a v1 row stays false.
-    royaltyLocked: t.boolean().notNull(),
     // owner() == address(0), from OwnershipTransferred(to: address(0)).
-    // Tracked for both versions: v2's seal() reaches it, and v1's OZ
-    // Ownable2Step base still allows a direct renounceOwnership() call.
     ownerRenounced: t.boolean().notNull(),
-    // ERC721 identity from the SurfaceCreated event (fixed at initialize,
-    // no setter). Nullable only for rows indexed before the event carried
-    // these fields; mainnet deploys always populate them.
+    // v2 only (null for v1). True once the current owner has shown consent:
+    // it sent the creating transaction, or it has since made an owner-only
+    // call (setMinter/setRenderer/setSupplyCap/setRoyalty/setName). False
+    // means a third party created or transferred the collection naming this
+    // owner; treat the listing like an unclaimed v1 roster entry.
+    ownerConfirmed: t.boolean(),
+    // v2 only: the Launcher that emitted Launched for this collection, null
+    // when the token factory was called directly (or for v1).
+    launcher: t.hex(),
+    // ERC721 identity. v1: from SurfaceCreated, fixed. v2: read at
+    // creation and kept current by NameSet. Nullable only for rows indexed
+    // before v1's event carried these fields.
     name: t.text(),
     symbol: t.text(),
-    // Frontend-discovery default: mirrors the collection's own
-    // primaryMinter(), null when unset. Seeded from SurfaceCreated and kept
-    // live by the Surface:PrimaryMinterSet handler: there is no minterOf
-    // storage mapping onchain, so this column IS the discovery record.
+    // Frontend-discovery default. v1: the collection's primaryMinter(),
+    // seeded from SurfaceCreated and kept live by PrimaryMinterSet. v2: the
+    // token's single minter(), read at creation and kept live by MinterSet.
+    // Null when unset.
     primaryMinter: t.hex(),
-    // Structural id mode from SurfaceCreated (0 = Sequential, 1 = Pooled;
-    // mirrors SurfaceTypes.IdMode). Fixed at initialize, no setter.
-    // Nullable only for rows indexed before this column existed; mainnet
-    // deploys always populate it.
+    // Structural id mode (0 = Sequential, 1 = Pooled; mirrors
+    // SurfaceTypes.IdMode). Fixed at initialize. v2 is always Sequential.
+    // Nullable only for rows indexed before this column existed.
     idMode: t.integer(),
     createdAtBlock: t.bigint().notNull(),
     createdAtTime: t.bigint().notNull(),
@@ -468,10 +473,11 @@ export const collections = onchainTable(
 )
 
 // Reverse index for the canonical-minter binding: given a FixedPriceMinter
-// clone address (the Sold/ReferralPaid event's own contract), resolve which
-// collection it sells for. Populated alongside `collections` whenever
-// SurfaceCreated carries a nonzero primaryMinter; independent of later
-// primaryMinter repoints on `collections`.
+// (v1) or FixedPriceSale (v2) clone address (the Sold/ReferralPaid event's
+// own contract), resolve which collection it sells for. v1: populated
+// alongside `collections` whenever SurfaceCreated carries a nonzero
+// primaryMinter. v2: one row per sale-factory clone whose collection() is a
+// token-factory collection. Independent of later minter repoints.
 export const minters = onchainTable("minters", (t) => ({
   minter: t.hex().primaryKey(),
   collection: t.hex().notNull(),
