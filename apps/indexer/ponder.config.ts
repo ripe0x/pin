@@ -204,6 +204,28 @@ if (!RPC_URL && !SEPOLIA_ONLY_MODE) {
 const SEPOLIA_RPC_URL =
   process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 
+// Free fallbacks behind PONDER_RPC_URL_1. Given a URL array, Ponder
+// load-balances and re-picks a provider on every retry, so one
+// rate-limited provider no longer stalls head following. A single URL
+// took prod down on 2026-10-19: the Tenderly public gateway answered
+// "rate limit exceeded" for 20+ minutes, Ponder exits after 10 minutes of
+// failed latest-block or block-log fetches, and Railway's 10 restarts
+// burned out in 11 minutes while the limit held.
+//
+// Neither fallback covers everything, which is why there are two:
+// - publicnode serves latest-block polls and single-address eth_getLogs,
+//   but rejects more than 10 addresses (the factory watch sets hold ~107)
+//   and 403s archive ranges.
+// - drpc's free tier serves multi-address eth_getLogs up to ~100 blocks,
+//   enough for head following, but rejects wider ranges.
+// A genesis replay therefore still leans on the primary. RPC URLs are
+// outside Ponder's build id (it hashes contracts/accounts/blocks only),
+// so changing this list does not force a schema bump.
+const MAINNET_FALLBACK_RPCS = [
+  "https://ethereum-rpc.publicnode.com",
+  "https://eth.drpc.org",
+]
+
 export default createConfig({
   // In sepolia-only mode `mainnet` is omitted entirely, not just
   // unsubscribed: a declared chain gets a `eth_getBlockByNumber latest`
@@ -216,7 +238,7 @@ export default createConfig({
       : {
           mainnet: {
             id: 1,
-            rpc: http(RPC_URL as string),
+            rpc: [...new Set([RPC_URL as string, ...MAINNET_FALLBACK_RPCS])],
             // 15s poll. Per-poll work scales linearly with the indexed-
             // contract surface, and a head-follow poll is one small
             // getLogs batch per filter over a few blocks: free-RPC
