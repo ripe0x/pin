@@ -116,10 +116,10 @@ export async function pgCache<T>(
 
 /**
  * Invalidate cached entries by key prefix. Called by:
- *   - `/api/auction/revalidate` after a bid / settle / cancel / update tx
- *     confirms (prefix = `auction:<contract>:<tokenId>`).
+ *   - `/api/seller-listings/revalidate` after a bulk list / delist tx
+ *     confirms (prefix = `seller-listings:<seller>`).
  *   - `/api/revalidate` when the artist gallery cache is manually flushed
- *     (prefixes = `artist-tokens:`, `artist-enriched:`, `ens:`, etc.).
+ *     (prefixes = `auction:`, `token-metadata:`, `ens:`, etc.).
  *
  * Pattern uses `LIKE` with an anchored prefix; for tag-style invalidation
  * across many keys this is fine at our scale (the cache table will be in
