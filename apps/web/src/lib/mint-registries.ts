@@ -109,6 +109,8 @@ export type ArgsBuilderCtx = EligibilityCtx & {
   selection?: unknown
   /** The `data` payload from this phase's eligibility provider, if any. */
   eligibilityData?: unknown
+  /** The quantity selector's value (1 for single-token mints). */
+  quantity: number
 }
 
 /**
