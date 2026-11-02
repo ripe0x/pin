@@ -12,6 +12,13 @@
       "slug": "homage",
       "featured": false,
       "editorialSummary": "Ten thousand generative artworks, one for every CryptoPunk. Each is composed from the punk's onchain data and its live market state, rendered fully onchain."
+    },
+    {
+      "collection": "0x4490f1dadefa3234961404f5cc58056296eb4a89",
+      "slug": "form-of-solitude",
+      "featured": false,
+      "mintPage": "form-of-solitude",
+      "editorialSummary": "Every ending holds the possibility of a new beginning. Nothing is ever truly complete, as existence unfolds through perpetual transformation. A solitary form moves through this endless cycle, constantly transforming while remaining itself."
     }
   ]
 }

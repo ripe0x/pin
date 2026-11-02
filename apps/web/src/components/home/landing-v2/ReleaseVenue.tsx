@@ -171,7 +171,7 @@ function FeaturedRelease({
           </div>
         ) : (
           <Link
-            href={`/collections/${release.address}`}
+            href={release.href}
             className="block aspect-square overflow-hidden bg-gray-100"
           >
             <Artwork media={release.artwork} alt={release.name} />
@@ -182,7 +182,7 @@ function FeaturedRelease({
             <ReleaseState release={release} now={now} />
             <div>
               <h3 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-                <Link href={`/collections/${release.address}`} className="hover:underline">
+                <Link href={release.href} className="hover:underline">
                   {release.name}
                 </Link>
               </h3>
@@ -225,7 +225,7 @@ function ReleaseShelf({
         {items.map((release) => (
           <li key={release.address}>
             <Link
-              href={`/collections/${release.address}`}
+              href={release.href}
               className="group block h-full overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400"
             >
               <div className="aspect-square overflow-hidden bg-gray-100">
