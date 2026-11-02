@@ -231,6 +231,14 @@ async function applyIndexerSnapshotOverlay(
   }
 }
 
+/** The token contract's owner(), for an artist label (homepage venue). */
+export async function getMintOwner(desc: MintCollection): Promise<Address> {
+  return pgCache(`mint-owner:${lc(desc.address)}`, 300, async () => {
+    const tc = tokenSide(desc)
+    return (await getClient().readContract({ address: tc.address, abi: tc.abi, functionName: "owner" })) as Address
+  })
+}
+
 export async function getMintSnapshot(desc: MintCollection): Promise<MintSnapshot> {
   const base = await getMintSnapshotRpc(desc)
   return applyIndexerSnapshotOverlay(desc, base)
