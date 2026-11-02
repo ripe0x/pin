@@ -58,7 +58,6 @@ export type VenueRelease = {
 
 export type VenueModel = {
   featured: VenueRelease & { summary: string | null; programmed: boolean }
-  upcoming: VenueRelease[]
   recent: VenueRelease[]
 }
 
@@ -84,8 +83,9 @@ async function buildVenueModel(): Promise<VenueModel | null> {
   const programmedEditorial = featuredReleaseEditorial()
   const [recent, programmed, mintPages] = await Promise.all([
     getRecentCollections(factory, RECENT_LIMIT).catch(() => [] as Collection[]),
+    // Mint-page entries are not Surface collections; getMintPageReleases builds them.
     Promise.all(
-      programmedEditorial.map((entry) =>
+      programmedEditorial.filter((entry) => !entry.mintPage).map((entry) =>
         getCollection(entry.collection as Address).catch(() => null),
       ),
     ),
@@ -154,13 +154,15 @@ async function buildVenueModel(): Promise<VenueModel | null> {
     programmedPick?.editorial ?? getReleaseEditorial(featuredRelease.address)
   const featuredKey = featuredRelease.address.toLowerCase()
   // Prefer the release's own description (its contractURI metadata) over
-  // editorial copy. One pgCached read for the featured collection only.
-  const featuredCollection = byAddress.get(featuredKey)
-  const contractDescription = featuredCollection
-    ? await getContractMetadata(featuredCollection.address, featuredCollection.renderer)
-        .then((m) => m.description)
-        .catch(() => null)
-    : null
+  // editorial copy. One pgCached read for the featured release only; a
+  // mint-page token is keyed on the zero renderer, as no Collection read
+  // gives its renderer.
+  const contractDescription = await getContractMetadata(
+    featuredRelease.address as Address,
+    byAddress.get(featuredKey)?.renderer ?? ZERO_ADDRESS,
+  )
+    .then((m) => m.description)
+    .catch(() => null)
   const others = recentReleases.filter((r) => r.address.toLowerCase() !== featuredKey)
 
   // Latest token's media for the featured release only, so its hero can play
@@ -186,15 +188,12 @@ async function buildVenueModel(): Promise<VenueModel | null> {
       animationUrl: featuredMedia?.animationUrl ?? null,
       programmed: programmedPick !== undefined,
     },
-    upcoming: others.filter((r) => statusOf(r) === SurfaceStatus.Scheduled).slice(0, SHELF_LIMIT),
     // Recent row leads with the featured release, then the most recent
-    // non-scheduled releases, so the featured also appears in the list.
-    // featuredRelease can be a programmed pick absent from recentReleases,
-    // so prepend it rather than relying on it being in `others`.
-    recent: [
-      featuredRelease,
-      ...others.filter((r) => statusOf(r) !== SurfaceStatus.Scheduled),
-    ].slice(0, SHELF_LIMIT),
+    // releases, scheduled ones included, so the featured also appears in
+    // the list. featuredRelease can be a programmed pick absent from
+    // recentReleases, so prepend it rather than relying on it being in
+    // `others`.
+    recent: [featuredRelease, ...others].slice(0, SHELF_LIMIT),
   }
 }
 
