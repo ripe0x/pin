@@ -786,6 +786,7 @@ export async function getActivityFeed(
     // the web deploy that learns the address.
     const surfaceLive =
       surfaceFactory() !== null && (await surfaceTablesExist(db, schema))
+    const ownerConfirmed = surfaceLive ? await ownerConfirmedFilter(db, schema) : "TRUE"
 
     // Drop quick list/cancel pairs (listed then cancelled within 15
     // minutes: test mints, mistaken listings) from the "listed" rows so
@@ -1112,7 +1113,7 @@ export async function getActivityFeed(
             created_tx_hash::text,
             NULL::text
           FROM ${schema}.collections
-          ${where(null, "created_at_time")}
+          ${where(ownerConfirmed, "created_at_time")}
           ORDER BY created_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})`)
 
@@ -1645,6 +1646,9 @@ export type IndexedCollectionIdentity = {
   symbol: string | null
   idMode: number | null
   primaryMinter: string | null
+  /** 1 or 2 (see IndexedCollectionRow.protocolVersion). Picks the ABI the
+   *  live read uses. */
+  protocolVersion: number
 }
 
 /**
@@ -1663,16 +1667,19 @@ export async function getCollectionRowFromIndexer(
 ): Promise<IndexedCollectionIdentity | null> {
   if (INDEXER_DISABLED || !sql) return null
   const db = sql
+  const schema = indexerSchema()
+  const hasVersion = await collectionsColumnExists(db, schema, "protocol_version")
   return withTimeout(async () => {
     const rows = (await db.unsafe(
-      `SELECT name, symbol, id_mode, primary_minter
-       FROM ${indexerSchema()}.collections WHERE collection = $1 LIMIT 1`,
+      `SELECT name, symbol, id_mode, primary_minter${hasVersion ? ", protocol_version" : ""}
+       FROM ${schema}.collections WHERE collection = $1 LIMIT 1`,
       [collection.toLowerCase()],
     )) as Array<{
       name: string | null
       symbol: string | null
       id_mode: number | null
       primary_minter: string | null
+      protocol_version?: number | null
     }>
     if (rows.length === 0) return null
     const r = rows[0]
@@ -1681,6 +1688,7 @@ export async function getCollectionRowFromIndexer(
       symbol: r.symbol,
       idMode: r.id_mode,
       primaryMinter: r.primary_minter,
+      protocolVersion: r.protocol_version ?? 1,
     }
   })
 }
@@ -1698,9 +1706,12 @@ export async function getCollectionAddressesFromIndexer(
 ): Promise<string[] | null> {
   if (INDEXER_DISABLED || !sql) return null
   const db = sql
+  const schema = indexerSchema()
+  const confirmed = await ownerConfirmedFilter(db, schema)
   return withTimeout(async () => {
     const rows = (await db.unsafe(
-      `SELECT collection FROM ${indexerSchema()}.collections
+      `SELECT collection FROM ${schema}.collections
+       WHERE ${confirmed}
        ORDER BY created_at_block DESC LIMIT $1`,
       [limit],
     )) as Array<{ collection: string }>
@@ -1716,33 +1727,46 @@ export type IndexedCollectionRow = {
   primaryMinter: string | null
   /** 1 for a v1-factory collection, 2 for v2 (see SurfaceV2.version()).
    *  Defaults to 1 when the indexer schema predates the column (see
-   *  protocolVersionColumnExists): every collection indexed before v2
+   *  collectionsColumnExists): every collection indexed before v2
    *  shipped is a v1 collection. */
   protocolVersion: number
 }
 
 /**
- * Does `collections.protocol_version` exist yet? The column ships with the
- * indexer release that adds v2 discovery; a web deploy can precede it, same
- * risk `surfaceTablesExist` guards against for the tables themselves. Sticky
- * once true for the process lifetime.
+ * Does `collections.<column>` exist yet? protocol_version ships with the
+ * indexer release that adds v2 discovery, owner_confirmed with the ponder_v5
+ * rebind; a web deploy can precede either, same risk `surfaceTablesExist`
+ * guards against for the tables themselves. Sticky once true for the process
+ * lifetime.
  */
-let protocolVersionColumnSeen = false
-async function protocolVersionColumnExists(db: NonNullable<typeof sql>, schema: string): Promise<boolean> {
-  if (protocolVersionColumnSeen) return true
+const collectionsColumnsSeen = new Set<string>()
+async function collectionsColumnExists(
+  db: NonNullable<typeof sql>,
+  schema: string,
+  column: "protocol_version" | "owner_confirmed",
+): Promise<boolean> {
+  if (collectionsColumnsSeen.has(column)) return true
   try {
     const rows = (await db.unsafe(
       `SELECT EXISTS (
          SELECT 1 FROM information_schema.columns
-         WHERE table_schema = $1 AND table_name = 'collections' AND column_name = 'protocol_version'
+         WHERE table_schema = $1 AND table_name = 'collections' AND column_name = $2
        ) AS ok`,
-      [schema],
+      [schema, column],
     )) as Array<{ ok: boolean }>
-    if (rows[0]?.ok) protocolVersionColumnSeen = true
-    return protocolVersionColumnSeen
+    if (rows[0]?.ok) collectionsColumnsSeen.add(column)
+    return collectionsColumnsSeen.has(column)
   } catch {
     return false
   }
+}
+
+/** SQL predicate hiding v2 collections whose named owner never acted: anyone
+ *  can launch a collection naming any owner, so those rows must not list as
+ *  the owner's work. v1 rows carry NULL and always pass. TRUE before the
+ *  column exists (ponder_v4 and older have no rows of the new v2 shape). */
+async function ownerConfirmedFilter(db: NonNullable<typeof sql>, schema: string): Promise<string> {
+  return (await collectionsColumnExists(db, schema, "owner_confirmed")) ? "owner_confirmed IS NOT FALSE" : "TRUE"
 }
 
 /**
@@ -1757,12 +1781,13 @@ export async function getCollectionsByOwnerFromIndexer(
   if (INDEXER_DISABLED || !sql) return null
   const db = sql
   const schema = indexerSchema()
-  const hasVersion = await protocolVersionColumnExists(db, schema)
+  const hasVersion = await collectionsColumnExists(db, schema, "protocol_version")
+  const confirmed = await ownerConfirmedFilter(db, schema)
   return withTimeout(async () => {
     const rows = (await db.unsafe(
       `SELECT collection, name, symbol, id_mode, primary_minter${hasVersion ? ", protocol_version" : ""}
        FROM ${schema}.collections
-       WHERE owner = $1 ORDER BY created_at_block DESC LIMIT 100`,
+       WHERE owner = $1 AND ${confirmed} ORDER BY created_at_block DESC LIMIT 100`,
       [owner.toLowerCase()],
     )) as Array<{
       collection: string

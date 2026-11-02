@@ -17,6 +17,9 @@ import {
   surfaceFactoryAbi,
   surfaceFactoryV2Abi,
   fixedPriceMinterAbi,
+  fixedPriceSaleAbi,
+  surfaceTokenV2Abi,
+  cloneFactoryAbi,
   renderAssetsAbi,
   iBatchRenderRouterAbi,
   BATCH_RENDER_ROUTER_INTERFACE_ID,
@@ -38,13 +41,16 @@ import {
   decodeCollectionConfig,
   decodeLocks,
   decodeMinterSaleConfig,
+  decodeSaleV2Config,
   renderAssetsAddress,
   surfaceFactory,
   surfaceFactoryV2,
+  surfaceTokenFactoryV2,
   type Collection,
   type MinterSaleConfig,
   type MulticallEntry,
   type PermanenceTuple,
+  type SurfaceV2ConfigTuple,
   type WorkConfig,
   IdMode,
   ZERO_ADDRESS,
@@ -109,6 +115,24 @@ function buildMinterContracts(minterAddr: Address) {
     { ...base, functionName: "referralShareBps" },
   ] as const
 }
+
+/** A v2 FixedPriceSale's getters, in the order decodeSaleV2Config expects. */
+function buildSaleV2Contracts(sale: Address) {
+  const base = { address: sale, abi: fixedPriceSaleAbi } as const
+  return [
+    { ...base, functionName: "price" },
+    { ...base, functionName: "mintStart" },
+    { ...base, functionName: "mintEnd" },
+    { ...base, functionName: "payoutRecipient" },
+    { ...base, functionName: "maxMints" },
+    { ...base, functionName: "walletCap" },
+    { ...base, functionName: "REFERRAL_SHARE_BPS" },
+    { ...base, functionName: "gate" },
+    { ...base, functionName: "closed" },
+    { ...base, functionName: "defaultReferrer" },
+  ] as const
+}
+const SALE_V2_READS = 10
 
 async function getMinterSaleConfig(
   client: ReturnType<typeof getClient>,
@@ -297,7 +321,8 @@ export async function isFactoryCollection(address: Address): Promise<boolean> {
   }
   const factoryV1 = surfaceFactory()
   const factoryV2 = surfaceFactoryV2()
-  if (!factoryV1 && !factoryV2) return false
+  const tokenFactoryV2 = surfaceTokenFactoryV2()
+  if (!factoryV1 && !factoryV2 && !tokenFactoryV2) return false
   const live = await pgCache(`sc-issurface:${lc(address)}`, 60, async () => {
     const client = getClient()
     try {
@@ -309,6 +334,9 @@ export async function isFactoryCollection(address: Address): Promise<boolean> {
           : []),
         ...(factoryV2
           ? [{ address: factoryV2, abi: surfaceFactoryV2Abi, functionName: "isSurface" as const, args: [address] as const }]
+          : []),
+        ...(tokenFactoryV2
+          ? [{ address: tokenFactoryV2, abi: cloneFactoryAbi, functionName: "isInstance" as const, args: [address] as const }]
           : []),
       ]
       const results = await client.multicall({ allowFailure: true, contracts })
@@ -390,6 +418,21 @@ export async function readCollectionFullyLive(
     versionRes,
     permanenceRes,
   ] = results
+
+  // A primitive-first v2 Surface shares name/symbol/owner/version with v1 but
+  // has none of the lock getters, so its reads above fail. Read it through
+  // its own ABI instead.
+  if (
+    versionRes.status === "success" &&
+    Number(versionRes.result) === 2 &&
+    nameRes.status === "success" &&
+    symbolRes.status === "success"
+  ) {
+    return readCollectionV2(client, address, null, {
+      name: nameRes.result as string,
+      symbol: symbolRes.result as string,
+    })
+  }
 
   // Every field but permanence() must succeed; a real failure (bring-your-own
   // contract that doesn't fully implement the read surface, bad address)
@@ -560,6 +603,77 @@ export async function readCollectionFromIndexerRow(
   }
 }
 
+/**
+ * A primitive-first v2 Surface (contracts/src/surface/v2/Surface.sol). It has
+ * no locks: everything stays owner-settable until the owner renounces, which
+ * this reports as `sealed`. One multicall: owner + config(), the identity
+ * when not supplied, the RenderAssets cover, and the sale's getters when the
+ * caller already knows the sale (the indexed primary minter). config()
+ * returns the live minter; if it differs from that hint (a setMinter the
+ * indexer has not caught up with), its getters cost one more multicall.
+ */
+async function readCollectionV2(
+  client: ReturnType<typeof getClient>,
+  address: Address,
+  saleHint: Address | null,
+  identity: { name: string; symbol: string } | null,
+): Promise<Collection | null> {
+  const base = { address, abi: surfaceTokenV2Abi } as const
+  const assets = renderAssetsAddress()
+  const contracts: ContractFunctionParameters[] = [
+    { ...base, functionName: "owner" },
+    { ...base, functionName: "config" },
+    ...(identity ? [] : [{ ...base, functionName: "name" }, { ...base, functionName: "symbol" }]),
+    ...(assets ? [{ address: assets, abi: renderAssetsAbi, functionName: "coverOf", args: [address] }] : []),
+    ...(saleHint ? buildSaleV2Contracts(saleHint) : []),
+  ]
+  const results = (await client.multicall({ allowFailure: true, contracts })) as readonly MulticallEntry<unknown>[]
+  let idx = 0
+  const ownerRes = results[idx++]
+  const cfgRes = results[idx++]
+  const nameRes = identity ? null : results[idx++]
+  const symbolRes = identity ? null : results[idx++]
+  const coverRes = assets ? results[idx++] : undefined
+  const hintResults = saleHint ? results.slice(idx, idx + SALE_V2_READS) : null
+
+  if (ownerRes?.status !== "success" || cfgRes?.status !== "success") return null
+  if (nameRes && nameRes.status !== "success") return null
+  if (symbolRes && symbolRes.status !== "success") return null
+
+  const [renderer, minterRaw, supplyCap, royaltyBps, royaltyReceiver, minted] = cfgRes.result as SurfaceV2ConfigTuple
+  const minter = minterRaw.toLowerCase() !== ZERO_ADDRESS ? minterRaw : null
+  let sale: MinterSaleConfig | null = null
+  if (minter && hintResults && saleHint && lc(saleHint) === lc(minter)) {
+    sale = decodeSaleV2Config(hintResults)
+  } else if (minter) {
+    const live = (await client
+      .multicall({ allowFailure: true, contracts: [...buildSaleV2Contracts(minter)] })
+      .catch(() => [])) as readonly MulticallEntry<unknown>[]
+    sale = decodeSaleV2Config(live)
+  }
+
+  const owner = ownerRes.result as Address
+  return {
+    address,
+    protocolVersion: 2,
+    name: identity?.name ?? ((nameRes as { result: string }).result),
+    symbol: identity?.symbol ?? ((symbolRes as { result: string }).result),
+    owner,
+    isRendererLocked: false,
+    isSupplyLocked: false,
+    isMinterLocked: false,
+    isRoyaltyLocked: false,
+    sealed: owner.toLowerCase() === ZERO_ADDRESS,
+    renderer,
+    cfg: { supplyCap, royaltyBps: Number(royaltyBps), royaltyReceiver, renderer, idMode: IdMode.Sequential },
+    primaryMinter: minter,
+    sale,
+    work: emptyWork(),
+    cover: coverRes?.status === "success" ? ((coverRes.result as string) ?? "") : "",
+    minted,
+  }
+}
+
 export async function getCollection(address: Address): Promise<Collection | null> {
   // Membership gate first (indexed set, RPC fallback, see
   // isFactoryCollection): an arbitrary pasted address that merely
@@ -577,6 +691,11 @@ export async function getCollection(address: Address): Promise<Collection | null
       if (!FORK_MODE && !USE_SEPOLIA) {
         const id = await getCollectionRowFromIndexer(address)
         if (id && id.name !== null && id.symbol !== null && id.idMode !== null) {
+          if (id.protocolVersion === 2) {
+            const hint =
+              id.primaryMinter && id.primaryMinter.toLowerCase() !== ZERO_ADDRESS ? (id.primaryMinter as Address) : null
+            return await readCollectionV2(client, address, hint, { name: id.name, symbol: id.symbol })
+          }
           return await readCollectionFromIndexerRow(client, address, id)
         }
       }
@@ -624,8 +743,10 @@ export async function getCollectionToken(
       })
       // The seed is the was-ever-minted sentinel (tokenSeed reverts otherwise).
       if (seedRes.status !== "success") return null // never minted
+      // A v2 Surface has no idMode(): it is always sequential, so a failed
+      // read means sequential (every v1 Surface answers idMode()).
       const mintOrder =
-        modeRes.status === "success" && Number(modeRes.result) === IdMode.Sequential
+        modeRes.status !== "success" || Number(modeRes.result) === IdMode.Sequential
           ? Number(tokenId)
           : null
       const collection = ownerRes.status === "success" ? await getCollection(address) : null

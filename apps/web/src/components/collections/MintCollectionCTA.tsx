@@ -37,7 +37,7 @@ import {
   useWriteContract,
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { surfaceAbi, fixedPriceMinterAbi } from "@pin/abi"
+import { surfaceAbi, surfaceTokenV2Abi, fixedPriceMinterAbi, fixedPriceSaleAbi } from "@pin/abi"
 import {
   AllowlistChecker,
   EligibilityVerdict,
@@ -94,6 +94,7 @@ export function MintCollectionCTA({
   minter,
   snapshot,
   referrer,
+  protocolVersion = 1,
   work,
 }: {
   collection: `0x${string}`
@@ -106,6 +107,10 @@ export function MintCollectionCTA({
   /** Override the mint referrer (a self-hosted page passes the artist's own
    *  address). Defaults to PND's configured referrer. */
   referrer?: `0x${string}`
+  /** 2 for a primitive-first v2 Surface: its FixedPriceSale names the
+   *  referral entrypoint mintWithReferral (plain mint(qty) there only takes
+   *  a quantity and pays the sale's defaultReferrer). */
+  protocolVersion?: number
   /** The collection's work config when generative — enables the live reveal
    *  after a successful mint. Omit/null for edition presets. */
   work?: WorkConfig | null
@@ -246,7 +251,12 @@ export function MintCollectionCTA({
   const mintedEvent = useMemo(() => {
     if (!receipt) return null
     try {
-      const logs = parseEventLogs({ abi: surfaceAbi, logs: receipt.logs, eventName: "Minted" })
+      // v1 and v2 Minted differ in shape, so each has its own topic.
+      const logs = parseEventLogs({
+        abi: protocolVersion === 2 ? surfaceTokenV2Abi : surfaceAbi,
+        logs: receipt.logs,
+        eventName: "Minted",
+      })
       const log = logs.find((l) => l.address.toLowerCase() === collection.toLowerCase())
       if (!log) return null
       return {
@@ -256,7 +266,7 @@ export function MintCollectionCTA({
     } catch {
       return null
     }
-  }, [receipt, collection])
+  }, [receipt, collection, protocolVersion])
 
   async function handleMint() {
     if (!amountValid || !minter || !address) return
@@ -284,6 +294,16 @@ export function MintCollectionCTA({
       allowlisted && proof
         ? encodeAbiParameters([{ type: "bytes32[]" }], [proof])
         : "0x"
+    if (protocolVersion === 2) {
+      writeContract({
+        address: minter,
+        abi: fixedPriceSaleAbi,
+        functionName: "mintWithReferral",
+        args: [address, BigInt(amount), referrerAddr, data],
+        value: sendValue,
+      })
+      return
+    }
     writeContract({
       address: minter,
       abi: fixedPriceMinterAbi,
