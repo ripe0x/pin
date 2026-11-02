@@ -288,6 +288,7 @@ export function useMintEngine(
           phaseKey: activePhase?.key ?? null,
           selection,
           eligibilityData: eligibilityState.result?.data,
+          quantity: qty,
         })
         // Bare args keep the phase/descriptor mintFn; a BuiltCall may override
         // it (Homage claim routing: claim / claimFor / claimTo by selection).
