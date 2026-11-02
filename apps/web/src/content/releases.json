@@ -5,7 +5,7 @@
       "collection": "0xb741055bd0467a5831b8b5f7df376cda93a76af1",
       "slug": "abstracts",
       "featured": true,
-      "featureOrder": 1
+      "featureOrder": 2
     },
     {
       "collection": "0xd938ff57d2c7111880a4ea5c8e6a92796c72a76e",
@@ -16,9 +16,9 @@
     {
       "collection": "0x4490f1dadefa3234961404f5cc58056296eb4a89",
       "slug": "form-of-solitude",
-      "featured": false,
+      "featured": true,
       "mintPage": "form-of-solitude",
-      "editorialSummary": "Every ending holds the possibility of a new beginning. Nothing is ever truly complete, as existence unfolds through perpetual transformation. A solitary form moves through this endless cycle, constantly transforming while remaining itself."
+      "featureOrder": 1
     }
   ]
 }

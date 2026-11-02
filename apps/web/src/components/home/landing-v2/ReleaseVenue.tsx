@@ -38,24 +38,11 @@ export async function ReleaseVenue({ part }: { part: "featured" | "recent" }) {
   const featuredAuction = await getFeaturedAuction().catch(() => null)
   if (!featuredAuction && !model) return null
 
-  return (
-    <div className="space-y-20">
-      {featuredAuction ? (
-        <FeaturedAuction card={featuredAuction.card} auction={featuredAuction.auction} />
-      ) : model ? (
-        <FeaturedRelease release={model.featured} now={now} />
-      ) : null}
-      {model && model.upcoming.length > 0 ? (
-        <ReleaseShelf
-          id="upcoming"
-          eyebrow="On the calendar"
-          title="Upcoming"
-          items={model.upcoming}
-          now={now}
-        />
-      ) : null}
-    </div>
-  )
+  return featuredAuction ? (
+    <FeaturedAuction card={featuredAuction.card} auction={featuredAuction.auction} />
+  ) : model ? (
+    <FeaturedRelease release={model.featured} now={now} />
+  ) : null
 }
 
 function FeaturedAuction({
