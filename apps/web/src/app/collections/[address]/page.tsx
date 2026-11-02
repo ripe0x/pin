@@ -58,6 +58,7 @@ import {
   hasPriceStrategy,
   ipfsToHttp,
   lifecycleStatus,
+  mintReferrerFor,
   saleWindowOf,
   sellsViaMinterOnly,
   shortAddress,
@@ -110,7 +111,15 @@ function RendererPermanenceNote({ permanent }: { permanent: boolean }) {
 /** How to mint this collection from another interface. When the minter
  *  carries a referral share, names the address that share is paid to.
  *  Shown only when the collection sells through a primary minter. */
-function SelfHostNote({ minter, referralShareBps }: { minter: Address; referralShareBps: number }) {
+function SelfHostNote({
+  minter,
+  referralShareBps,
+  protocolVersion,
+}: {
+  minter: Address
+  referralShareBps: number
+  protocolVersion: number
+}) {
   return (
     <div className="pt-2">
       <h3 className="mb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
@@ -123,9 +132,12 @@ function SelfHostNote({ minter, referralShareBps }: { minter: Address; referralS
         {referralShareBps > 0 && (
           <>
             {" "}
-            Call <code className="text-fg">mint(to, qty, referrer, 0x)</code> and
-            the {formatBps(referralShareBps)} referral share routes to the
-            referrer address passed to mint.
+            Call{" "}
+            <code className="text-fg">
+              {protocolVersion === 2 ? "mintWithReferral" : "mint"}(to, qty, referrer, 0x)
+            </code>{" "}
+            and the {formatBps(referralShareBps)} referral share routes to the
+            referrer address passed in.
           </>
         )}
       </p>
@@ -275,6 +287,9 @@ export default async function CollectionPage({
   // direct buy flow.
   const pooled = sellsViaMinterOnly(c.cfg.idMode) || !c.primaryMinter
   const strategy = hasPriceStrategy(c.sale?.priceStrategy ?? ZERO_ADDRESS)
+  // PND's referral share for every mint here, except the per-collection
+  // exemptions in mintReferrerFor.
+  const mintReferrer = mintReferrerFor(addr, c.sale?.defaultReferrer)
 
   // Batch view (docs/pnd-surface-second-launch.md): interface-driven, not a
   // per-address registry — any collection whose live renderer advertises
@@ -364,7 +379,9 @@ export default async function CollectionPage({
         mintInstrument={
           <MintCollectionCTA
             collection={addr}
-            minter={c.primaryMinter}
+            minter={c.sale ? c.primaryMinter : null}
+            protocolVersion={c.protocolVersion}
+            referrer={mintReferrer}
             work={hasWork ? c.work : null}
             snapshot={{
               price: (c.sale?.price ?? 0n).toString(),
@@ -441,7 +458,9 @@ export default async function CollectionPage({
         mintInstrument={
           <MintCollectionCTA
             collection={addr}
-            minter={c.primaryMinter}
+            minter={c.sale ? c.primaryMinter : null}
+            protocolVersion={c.protocolVersion}
+            referrer={mintReferrer}
             work={null}
             snapshot={{
               price: (c.sale?.price ?? 0n).toString(),
@@ -469,6 +488,7 @@ export default async function CollectionPage({
               <SelfHostNote
                 minter={c.primaryMinter}
                 referralShareBps={c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS}
+                protocolVersion={c.protocolVersion}
               />
             )}
           </div>
@@ -687,6 +707,7 @@ export default async function CollectionPage({
                 <SelfHostNote
                   minter={c.primaryMinter}
                   referralShareBps={c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS}
+                  protocolVersion={c.protocolVersion}
                 />
               )}
             </div>
@@ -707,7 +728,9 @@ export default async function CollectionPage({
           ) : (
             <MintCollectionCTA
               collection={addr}
-              minter={c.primaryMinter}
+              minter={c.sale ? c.primaryMinter : null}
+              protocolVersion={c.protocolVersion}
+              referrer={mintReferrer}
               work={hasWork ? c.work : null}
               snapshot={{
                 price: (c.sale?.price ?? 0n).toString(),

@@ -17,6 +17,7 @@ import {
   RENDER_ASSETS,
   SURFACE_FACTORY,
   SURFACE_FACTORY_V2,
+  SURFACE_TOKEN_FACTORY_V2,
   getAddressOrNull,
 } from "@pin/addresses"
 
@@ -54,6 +55,15 @@ export function surfaceFactoryV2(chainId: number = PND_CHAIN_ID): Address | null
   return getAddressOrNull(SURFACE_FACTORY_V2, chainId)
 }
 
+/** The Surface v2 token CloneFactory (the primitive-first contracts in
+ *  contracts/src/surface/v2; env override for local dev wins). Distinct from
+ *  the superseded SurfaceFactoryV2 above, which only Sepolia ever had. */
+export function surfaceTokenFactoryV2(chainId: number = PND_CHAIN_ID): Address | null {
+  const env = process.env.NEXT_PUBLIC_SURFACE_TOKEN_FACTORY_V2
+  if (env && isAddress(env)) return env as Address
+  return getAddressOrNull(SURFACE_TOKEN_FACTORY_V2, chainId)
+}
+
 /** The RenderAssets registry address (env override for local dev wins). */
 export function renderAssetsAddress(chainId: number = PND_CHAIN_ID): Address | null {
   const env = process.env.NEXT_PUBLIC_RENDER_ASSETS
@@ -82,6 +92,30 @@ export function pndReferrerAddress(): Address {
     process.env.NEXT_PUBLIC_PND_REFERRAL_ADDRESS || process.env.NEXT_PUBLIC_PND_SURFACE_ADDRESS
   if (env && isAddress(env)) return env as Address
   return ZERO_ADDRESS
+}
+
+/**
+ * Collections whose mints on PND pass no referrer, keyed by lowercase
+ * address. Every other PND mint pays the referral share to PND. An entry here
+ * is a deal-specific exception, not a setting: PND is already paid through
+ * the collection's payout split.
+ */
+const NO_REFERRAL_COLLECTIONS: ReadonlySet<string> = new Set([
+  // Form of Solitude (Anton Dubrovin): PND takes 20% through the 80/20 payout split.
+  "0x4490f1dadefa3234961404f5cc58056296eb4a89",
+])
+
+/**
+ * The referrer a PND-hosted mint of `collection` passes. Zero for the
+ * exempt collections above; otherwise PND's configured referrer, falling
+ * back to the sale's own defaultReferrer (a v2 FixedPriceSale carries PND's
+ * address there) so an unset env var never silently drops PND's share.
+ */
+export function mintReferrerFor(collection: Address, saleDefaultReferrer?: Address | null): Address {
+  if (NO_REFERRAL_COLLECTIONS.has(collection.toLowerCase())) return ZERO_ADDRESS
+  const pnd = pndReferrerAddress()
+  if (pnd !== ZERO_ADDRESS) return pnd
+  return saleDefaultReferrer ?? ZERO_ADDRESS
 }
 
 // ── enums (mirror SurfaceTypes.sol) ──────────────────────────────────────────
@@ -166,6 +200,9 @@ export type MinterSaleConfig = {
   allowlistRoot: `0x${string}`
   walletCap: bigint
   referralShareBps: number
+  /** v2 FixedPriceSale.defaultReferrer (paid when a mint names no
+   *  referrer through plain mint(qty)); absent for v1 minters. */
+  defaultReferrer?: Address
 }
 
 /** The window/cap inputs lifecycleStatus/isMintable derive a status from.
@@ -387,6 +424,39 @@ export function decodeMinterSaleConfig(
     allowlistRoot: allowlistRoot.result as `0x${string}`,
     walletCap: walletCap.result as bigint,
     referralShareBps: Number(referralShareBps.result as number),
+  }
+}
+
+/** Surface v2 Surface.config() return: renderer, minter, supplyCap,
+ *  royaltyBps, royaltyReceiver, minted (ever, burns included). */
+export type SurfaceV2ConfigTuple = readonly [Address, Address, bigint, number, Address, bigint]
+
+/**
+ * Decode a v2 FixedPriceSale's getters (the order
+ * lib/collection-onchain.ts:buildSaleV2Contracts issues them) into a
+ * MinterSaleConfig. A v2 sale has no price strategy and no built-in
+ * allowlist, and its referral share is a fixed constant. Null when any read
+ * failed, and when a gate is set: gate proofs are not wired into the PND
+ * mint flow yet, so a gated sale gets the "mints through its minter" notice
+ * rather than a buy button that would revert GateRejected. A closed sale
+ * reports mintEnd 1 (long past), so every window check reads it as Closed.
+ */
+export function decodeSaleV2Config(results: readonly MulticallEntry<unknown>[]): MinterSaleConfig | null {
+  if (results.length < 10 || results.some((r) => r?.status !== "success")) return null
+  const v = results.map((r) => (r as { result: unknown }).result)
+  const [price, mintStart, mintEnd, payout, maxMints, walletCap, referralShareBps, gate, closed, defaultReferrer] = v
+  if ((gate as Address).toLowerCase() !== ZERO_ADDRESS) return null
+  return {
+    price: price as bigint,
+    priceStrategy: ZERO_ADDRESS,
+    mintStart: BigInt(mintStart as bigint),
+    mintEnd: closed ? 1n : BigInt(mintEnd as bigint),
+    payout: payout as Address,
+    maxMints: maxMints as bigint,
+    allowlistRoot: ("0x" + "0".repeat(64)) as `0x${string}`,
+    walletCap: walletCap as bigint,
+    referralShareBps: Number(referralShareBps),
+    defaultReferrer: defaultReferrer as Address,
   }
 }
 
