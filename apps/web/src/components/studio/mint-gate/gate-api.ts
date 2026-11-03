@@ -1,12 +1,17 @@
 /**
  * Client-side fetch helpers for the mint gate studio tool. Both hit the
  * same /api/collections/[address]/allowlist route the public mint page's
- * MintGate.tsx uses (see lib/allowlist.ts for the trust model: publishing
- * is permissionless, only the root a collection's owner/admin sets onchain
- * via FixedPriceMinter.setAllowlistRoot grants anything). No direct chain
- * reads here — the API's GET already wraps a config-class-cached
- * getMinterGate.
+ * MintGate.tsx uses (see lib/allowlist.ts for the trust model: only the
+ * root a collection's owner/admin sets onchain via
+ * FixedPriceMinter.setAllowlistRoot grants anything). Publishing is signed
+ * by the connected wallet, which must be the collection's owner or an
+ * admin (lib/allowlist-auth.ts). No direct chain reads here — the API's GET
+ * already wraps a config-class-cached getMinterGate.
  */
+
+import { buildAllowlistPublishMessage } from "@/lib/allowlist-auth"
+import { allowlistRoot } from "@/lib/allowlist-tree"
+import { PND_CHAIN_ID } from "@/lib/collection"
 
 export const ZERO_ROOT = ("0x" + "0".repeat(64)) as `0x${string}`
 
@@ -71,12 +76,46 @@ export type PublishResult =
   | { ok: true; root: `0x${string}`; count: number }
   | { ok: false; error: string }
 
-export async function publishList(collection: string, addresses: string[]): Promise<PublishResult> {
+/** The connected wallet, as the publish flow needs it. */
+export type PublishSigner = {
+  address: `0x${string}`
+  signMessage: (message: string) => Promise<`0x${string}`>
+}
+
+export async function publishList(
+  collection: string,
+  addresses: string[],
+  signer: PublishSigner,
+): Promise<PublishResult> {
+  // The server recomputes the root from the posted addresses, so the root
+  // signed here is the root of exactly this list.
+  const computed = allowlistRoot(addresses)
+  if ("error" in computed) return { ok: false, error: computed.error }
+  const issuedAt = new Date().toISOString()
+  let signature: `0x${string}`
+  try {
+    signature = await signer.signMessage(
+      buildAllowlistPublishMessage({
+        chainId: PND_CHAIN_ID,
+        collection,
+        root: computed.root,
+        issuedAt,
+      }),
+    )
+  } catch {
+    return { ok: false, error: "Signature was not given. Sign the message to publish." }
+  }
   try {
     const res = await fetch(`/api/collections/${collection.toLowerCase()}/allowlist`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ addresses }),
+      body: JSON.stringify({
+        addresses,
+        signer: signer.address,
+        signature,
+        issuedAt,
+        chainId: PND_CHAIN_ID,
+      }),
     })
     const body = (await res.json()) as { root?: `0x${string}`; count?: number; error?: string }
     if (!res.ok || body.error || !body.root) {

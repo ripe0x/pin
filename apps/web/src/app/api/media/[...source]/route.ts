@@ -92,7 +92,7 @@ export async function GET(
       "Cache-Control": CACHE_CONTROL,
       "Content-Type": media.contentType,
       "Content-Length": String(media.body.byteLength),
-      "Content-Security-Policy": "default-src 'none'; sandbox",
+      "Content-Security-Policy": "default-src 'none'; sandbox; frame-ancestors 'self'",
       "X-Content-Type-Options": "nosniff",
     },
   })

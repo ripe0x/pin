@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { revalidateTag } from "next/cache"
+import { rateLimit } from "@/lib/rate-limit"
 
 /**
  * Bust the record-cache for a specific artist after a write tx confirms.
@@ -15,16 +16,22 @@ import { revalidateTag } from "next/cache"
  * though we revalidate the whole `catalog` tag — kept so a future per-
  * artist invalidation strategy can slot in without breaking callers.
  *
- * Same pattern as `/api/auction/revalidate`. Safe to call unauthenticated:
- * worst case a stranger forces a re-fetch of public data, which is what
- * the route already does on cache miss. No write surface, no rate limit
- * worth tightening here because the cost is bounded by the registry
- * read itself.
+ * Same pattern as `/api/auction/revalidate`. Unauthenticated: worst case a
+ * stranger forces a re-fetch of public data, which is what the route
+ * already does on cache miss. The tag is global, so a shared per-IP rate
+ * limit keeps one client from holding every catalog cold.
  */
 export async function POST(
-  _req: Request,
+  req: Request,
   ctx: { params: Promise<{ address: string }> },
-): Promise<NextResponse<{ ok: true } | { error: string }>> {
+): Promise<NextResponse<{ ok: true } | { error: string; retryAfter?: number }>> {
+  const rl = await rateLimit(req, { namespace: "catalog-revalidate", windowMs: 60_000, max: 20 })
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "rate-limited", retryAfter: rl.retryAfter },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    )
+  }
   const { address } = await ctx.params
   if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
     return NextResponse.json({ error: "invalid address" }, { status: 400 })

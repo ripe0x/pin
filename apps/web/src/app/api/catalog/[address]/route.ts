@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { unstable_cache } from "next/cache"
 import type { Address } from "viem"
-import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
+import { rateLimit } from "@/lib/rate-limit"
 import { getCatalog, type Catalog } from "@/lib/catalog"
 
 /**
@@ -48,8 +48,7 @@ export async function GET(
     return NextResponse.json({ error: "invalid address" }, { status: 400 })
   }
 
-  const ip = getClientIp(req)
-  const rl = checkRateLimit("catalog", ip, 60_000, 10)
+  const rl = await rateLimit(req, { namespace: "catalog", windowMs: 60_000, max: 10 })
   if (!rl.ok) {
     return NextResponse.json(
       { error: "rate-limited" },

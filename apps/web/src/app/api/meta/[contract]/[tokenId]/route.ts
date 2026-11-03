@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
+import { isAddress } from "viem"
 import { ipfsToHttp } from "@pin/shared"
 import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
-import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
+import { rateLimit } from "@/lib/rate-limit"
 import { isCrawlerUserAgent } from "@/lib/crawler"
 import { withRouteContext } from "@/lib/rpc-log"
 
@@ -21,6 +22,10 @@ import { withRouteContext } from "@/lib/rpc-log"
  * lands) gets a second cache tier across all sandbox instances. Successful
  * responses keep their 1-year HTTP cache header so repeat embeds never even
  * reach the function.
+ *
+ * Input is validated (0x address, decimal token id), and only tokens the
+ * site already tracks get a persistent `token_metadata` row; any other
+ * token is resolved and returned without being stored.
  */
 export async function GET(
   req: NextRequest,
@@ -45,8 +50,7 @@ export async function GET(
   // tokenURI eth_call + IPFS fetch on cache miss; without this an
   // address-iterating bot can amplify into hundreds of RPC calls a
   // minute under a single IP.
-  const ip = getClientIp(req)
-  const rl = checkRateLimit("meta", ip, 60_000, 120)
+  const rl = await rateLimit(req, { namespace: "meta", windowMs: 60_000, max: 120 })
   if (!rl.ok) {
     return NextResponse.json(
       { error: "rate-limited", retryAfter: rl.retryAfter },
@@ -54,12 +58,19 @@ export async function GET(
     )
   }
 
-  const { contract, tokenId } = await params
+  const { contract: rawContract, tokenId } = await params
+  const contract = decodeURIComponent(rawContract)
+  if (!isAddress(contract, { strict: false }) || !/^\d{1,78}$/.test(tokenId)) {
+    return NextResponse.json(
+      { metadata: null, mediaUri: null, error: "invalid contract or tokenId" },
+      { status: 400, headers: { "Cache-Control": "public, max-age=300" } },
+    )
+  }
 
   try {
     const metadata = await withRouteContext(
       "/api/meta/[contract]/[tokenId]",
-      () => resolveTokenMetadataDirect(contract, tokenId),
+      () => resolveTokenMetadataDirect(contract, tokenId, { persistKnownOnly: true }),
     )
 
     if (!metadata) {

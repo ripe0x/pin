@@ -4,12 +4,14 @@
  * Paste-in allowlist editor: one address per line (commas/extra whitespace
  * tolerated too), live count + validation, then a "Publish list" button
  * that stores it via the allowlist API and returns the root to activate.
- * Publishing is intentionally permissionless — see gate-api.ts / the API
- * route's doc comment for the trust model this leans on.
+ * Publishing asks the connected wallet (the collection's owner or an admin)
+ * to sign the list's root first — see gate-api.ts / the API route's doc
+ * comment for the trust model.
  */
 
 import { useMemo, useState } from "react"
 import { isAddress } from "viem"
+import { useAccount, useSignMessage } from "wagmi"
 import { BTN, ERROR, HELP, LABEL, TEXTAREA } from "@/components/studio/create/wizard-ui"
 import { publishList } from "./gate-api"
 
@@ -31,6 +33,8 @@ export function AllowlistEditor({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [published, setPublished] = useState<{ root: `0x${string}`; count: number } | null>(null)
+  const { address: account } = useAccount()
+  const { signMessageAsync } = useSignMessage()
 
   const parsed = useMemo(() => parseAddresses(raw), [raw])
   const invalid = useMemo(() => parsed.filter((a) => !isAddress(a)), [parsed])
@@ -39,12 +43,19 @@ export function AllowlistEditor({
     [parsed],
   )
 
-  const canPublish = parsed.length > 0 && invalid.length === 0 && !busy
+  const canPublish = parsed.length > 0 && invalid.length === 0 && !busy && !!account
 
   async function handlePublish() {
+    if (!account) {
+      setError("Connect the collection owner's wallet to publish.")
+      return
+    }
     setBusy(true)
     setError(null)
-    const result = await publishList(collection, parsed)
+    const result = await publishList(collection, parsed, {
+      address: account,
+      signMessage: (message) => signMessageAsync({ message }),
+    })
     setBusy(false)
     if (!result.ok) {
       setError(result.error)
@@ -59,9 +70,9 @@ export function AllowlistEditor({
       <header className="space-y-1.5">
         <h3 className="text-sm font-medium">Allowlist</h3>
         <p className="text-xs text-gray-500 leading-relaxed">
-          One address per line. Publishing stores the list and returns a
-          root. It grants nothing on its own until you set that root as
-          active in the activation queue below.
+          One address per line. Publishing asks your wallet to sign the
+          list, stores it, and returns a root. It grants nothing on its own
+          until you set that root as active in the activation queue below.
         </p>
       </header>
 
@@ -97,7 +108,7 @@ export function AllowlistEditor({
       )}
 
       <button type="button" onClick={() => void handlePublish()} disabled={!canPublish} className={BTN}>
-        {busy ? "Publishing…" : "Publish list"}
+        {busy ? "Publishing…" : account ? "Sign and publish list" : "Connect wallet to publish"}
       </button>
 
       {error && <p className={ERROR}>{error}</p>}

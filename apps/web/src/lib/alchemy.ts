@@ -1,3 +1,4 @@
+import "server-only"
 /**
  * Thin server-side helpers for Alchemy's enhanced APIs.
  *
