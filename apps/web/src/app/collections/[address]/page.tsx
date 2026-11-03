@@ -58,10 +58,13 @@ import {
   hasPriceStrategy,
   ipfsToHttp,
   lifecycleStatus,
+  mintCtaMinter,
   mintReferrerFor,
+  rendererPermanenceCopy,
   saleWindowOf,
   sellsViaMinterOnly,
   shortAddress,
+  type Collection,
 } from "@/lib/collection"
 
 /**
@@ -96,14 +99,14 @@ function addressLink(a: Address) {
   )
 }
 
-/** Whether the renderer is locked, a fact about the Surface protocol
- *  rather than the collection's own content. Shown in both hero layouts. */
-function RendererPermanenceNote({ permanent }: { permanent: boolean }) {
+/** Whether the renderer can still change, a fact about the Surface protocol
+ *  rather than the collection's own content. Shown in both hero layouts.
+ *  Version-aware (rendererPermanenceCopy): v1 pins it with a lock, a
+ *  primitive v2 Surface by renouncing ownership. */
+function RendererPermanenceNote({ collection }: { collection: Collection }) {
   return (
     <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-      {permanent
-        ? "The renderer is locked: this collection renders through its current contract forever. The contract itself has had no upgrade path since deploy."
-        : "The contract is immutable from deploy. The renderer can change until the artist locks it."}
+      {rendererPermanenceCopy(collection)}
     </p>
   )
 }
@@ -114,11 +117,11 @@ function RendererPermanenceNote({ permanent }: { permanent: boolean }) {
 function SelfHostNote({
   minter,
   referralShareBps,
-  protocolVersion,
+  primitiveV2,
 }: {
   minter: Address
   referralShareBps: number
-  protocolVersion: number
+  primitiveV2: boolean
 }) {
   return (
     <div className="pt-2">
@@ -134,7 +137,7 @@ function SelfHostNote({
             {" "}
             Call{" "}
             <code className="text-fg">
-              {protocolVersion === 2 ? "mintWithReferral" : "mint"}(to, qty, referrer, 0x)
+              {primitiveV2 ? "mintWithReferral" : "mint"}(to, qty, referrer, 0x)
             </code>{" "}
             and the {formatBps(referralShareBps)} referral share routes to the
             referrer address passed in.
@@ -379,8 +382,8 @@ export default async function CollectionPage({
         mintInstrument={
           <MintCollectionCTA
             collection={addr}
-            minter={c.sale ? c.primaryMinter : null}
-            protocolVersion={c.protocolVersion}
+            minter={mintCtaMinter(c)}
+            primitiveV2={c.primitiveV2}
             referrer={mintReferrer}
             work={hasWork ? c.work : null}
             snapshot={{
@@ -458,8 +461,8 @@ export default async function CollectionPage({
         mintInstrument={
           <MintCollectionCTA
             collection={addr}
-            minter={c.sale ? c.primaryMinter : null}
-            protocolVersion={c.protocolVersion}
+            minter={mintCtaMinter(c)}
+            primitiveV2={c.primitiveV2}
             referrer={mintReferrer}
             work={null}
             snapshot={{
@@ -483,12 +486,12 @@ export default async function CollectionPage({
         history={<CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />}
         about={
           <div className="space-y-4">
-            <RendererPermanenceNote permanent={permanent} />
+            <RendererPermanenceNote collection={c} />
             {c.primaryMinter && (
               <SelfHostNote
                 minter={c.primaryMinter}
                 referralShareBps={c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS}
-                protocolVersion={c.protocolVersion}
+                primitiveV2={c.primitiveV2}
               />
             )}
           </div>
@@ -702,12 +705,12 @@ export default async function CollectionPage({
                   </p>
                 </>
               )}
-              <RendererPermanenceNote permanent={permanent} />
+              <RendererPermanenceNote collection={c} />
               {c.primaryMinter && (
                 <SelfHostNote
                   minter={c.primaryMinter}
                   referralShareBps={c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS}
-                  protocolVersion={c.protocolVersion}
+                  primitiveV2={c.primitiveV2}
                 />
               )}
             </div>
@@ -728,8 +731,8 @@ export default async function CollectionPage({
           ) : (
             <MintCollectionCTA
               collection={addr}
-              minter={c.sale ? c.primaryMinter : null}
-              protocolVersion={c.protocolVersion}
+              minter={mintCtaMinter(c)}
+              primitiveV2={c.primitiveV2}
               referrer={mintReferrer}
               work={hasWork ? c.work : null}
               snapshot={{

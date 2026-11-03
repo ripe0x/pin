@@ -94,7 +94,7 @@ export function MintCollectionCTA({
   minter,
   snapshot,
   referrer,
-  protocolVersion = 1,
+  primitiveV2 = false,
   work,
 }: {
   collection: `0x${string}`
@@ -107,10 +107,12 @@ export function MintCollectionCTA({
   /** Override the mint referrer (a self-hosted page passes the artist's own
    *  address). Defaults to PND's configured referrer. */
   referrer?: `0x${string}`
-  /** 2 for a primitive-first v2 Surface: its FixedPriceSale names the
-   *  referral entrypoint mintWithReferral (plain mint(qty) there only takes
-   *  a quantity and pays the sale's defaultReferrer). */
-  protocolVersion?: number
+  /** A primitive-first v2 Surface (Collection.primitiveV2, never inferred
+   *  from version() alone): its FixedPriceSale names the referral entrypoint
+   *  mintWithReferral (plain mint(qty) there only takes a quantity and pays
+   *  the sale's defaultReferrer). Everything else, the superseded SurfaceV2
+   *  included, mints through the v1 minter ABI. */
+  primitiveV2?: boolean
   /** The collection's work config when generative — enables the live reveal
    *  after a successful mint. Omit/null for edition presets. */
   work?: WorkConfig | null
@@ -202,7 +204,9 @@ export function MintCollectionCTA({
 
   const status = lifecycleStatus({ mintStart, mintEnd, supplyCap: effectiveCap }, minted, nowSec)
   const ready = nowSec > 0 || (mintEnd === 0n && mintStart === 0n)
-  const notStarted = mintStart > 0n && nowSec > 0 && BigInt(nowSec) < mintStart
+  // Scheduled, not merely a future mintStart: a closed sale keeps its start
+  // (see lifecycleStatus) and must not count down to it.
+  const notStarted = nowSec > 0 && status === SurfaceStatus.Scheduled
   const mintable =
     ready &&
     !notStarted &&
@@ -253,7 +257,7 @@ export function MintCollectionCTA({
     try {
       // v1 and v2 Minted differ in shape, so each has its own topic.
       const logs = parseEventLogs({
-        abi: protocolVersion === 2 ? surfaceTokenV2Abi : surfaceAbi,
+        abi: primitiveV2 ? surfaceTokenV2Abi : surfaceAbi,
         logs: receipt.logs,
         eventName: "Minted",
       })
@@ -266,7 +270,7 @@ export function MintCollectionCTA({
     } catch {
       return null
     }
-  }, [receipt, collection, protocolVersion])
+  }, [receipt, collection, primitiveV2])
 
   async function handleMint() {
     if (!amountValid || !minter || !address) return
@@ -294,7 +298,7 @@ export function MintCollectionCTA({
       allowlisted && proof
         ? encodeAbiParameters([{ type: "bytes32[]" }], [proof])
         : "0x"
-    if (protocolVersion === 2) {
+    if (primitiveV2) {
       writeContract({
         address: minter,
         abi: fixedPriceSaleAbi,
