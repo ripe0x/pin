@@ -22,12 +22,14 @@ import Link from "next/link"
 import {
   useAccount,
   useChainId,
+  useConfig,
   usePublicClient,
   useReadContract,
   useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi"
+import { simulateContract } from "wagmi/actions"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import {
   PREFERRED_CHAIN,
@@ -36,6 +38,7 @@ import {
   formatWriteError,
 } from "@/components/tx/tx-ui"
 import { resolveMintCollection } from "@/lib/mint-collections"
+import { usePreflight } from "@/lib/use-preflight"
 import { formatLocalTime, formatTokenAmount, useHomageRedeemStatus } from "@/lib/homage/redeem-status"
 import type { LifecyclePanelProps } from "./mint-slots"
 
@@ -76,7 +79,9 @@ export function HomageRedeemPanel({ collectionId, tokenId, owner }: LifecyclePan
     isSuccess,
     error: receiptError,
   } = useWaitForTransactionReceipt({ hash: txHash, query: { retry: false } })
-  const isPending = isWritePending || isTxPending
+  const config = useConfig()
+  const preflight = usePreflight()
+  const isPending = isWritePending || isTxPending || preflight.checking
 
   if (!desc) return null
 
@@ -84,7 +89,7 @@ export function HomageRedeemPanel({ collectionId, tokenId, owner }: LifecyclePan
   const isOwner = !!address && !!owner && address.toLowerCase() === owner.toLowerCase()
 
   async function handleRedeem() {
-    if (!desc || !client || isPending) return
+    if (!desc || !client || isPending || !address) return
     setFeeError(null)
     // Re-read the live exit fee at click time: `redeem` requires msg.value to
     // EQUAL exitFee, so a fee change between mount and click must not brick
@@ -100,12 +105,20 @@ export function HomageRedeemPanel({ collectionId, tokenId, owner }: LifecyclePan
       setFeeError("Couldn't read the current exit fee. Try again.")
       return
     }
-    writeContract({
-      address: desc.address,
-      abi: desc.abi,
-      functionName: "redeem",
-      args: [BigInt(tokenId)],
-      value: fee,
+    // Value-bearing: simulate from the connected account on PREFERRED_CHAIN
+    // first, then sign the simulated request (chainId pinned).
+    reset()
+    await preflight.run(async () => {
+      const { request } = await simulateContract(config, {
+        account: address,
+        chainId: PREFERRED_CHAIN.id,
+        address: desc.address,
+        abi: desc.abi,
+        functionName: "redeem",
+        args: [BigInt(tokenId)],
+        value: fee,
+      })
+      writeContract(request)
     })
   }
 
@@ -228,9 +241,9 @@ export function HomageRedeemPanel({ collectionId, tokenId, owner }: LifecyclePan
             </div>
           )}
 
-          {(writeError || receiptError || feeError) && !isSuccess && (
+          {(writeError || receiptError || feeError || preflight.error != null) && !isSuccess && (
             <p className="text-[11px] font-mono text-red-500 break-words">
-              {feeError ?? formatWriteError(writeError ?? receiptError, "Redeem")}
+              {feeError ?? formatWriteError(writeError ?? receiptError ?? preflight.error, "Redeem")}
             </p>
           )}
         </div>

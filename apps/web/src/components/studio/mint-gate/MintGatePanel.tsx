@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { shortAddress } from "@/lib/collection"
+import { NOT_SURFACE_MINT_GATE_MESSAGE } from "@/lib/not-surface"
 import { AllowlistEditor } from "./AllowlistEditor"
 import { ActivationQueue } from "./ActivationQueue"
 import { deriveGate, fetchGateState, ZERO_ROOT, type DerivedGate, type GateApiState } from "./gate-api"
@@ -42,7 +43,9 @@ function GateStatusCard({ loading, derived }: { loading: boolean; derived: Deriv
 }
 
 export function MintGatePanel({ collection }: { collection: `0x${string}` }) {
-  const [state, setState] = useState<GateApiState | null | undefined>(undefined)
+  const [state, setState] = useState<GateApiState | "not-surface" | null | undefined>(
+    undefined,
+  )
   const [publishedRoot, setPublishedRoot] = useState<`0x${string}` | null>(null)
 
   const refetch = useCallback(() => {
@@ -53,6 +56,14 @@ export function MintGatePanel({ collection }: { collection: `0x${string}` }) {
   useEffect(() => {
     refetch()
   }, [refetch])
+
+  if (state === "not-surface") {
+    return (
+      <p className="text-sm text-gray-600 leading-relaxed" role="status">
+        {NOT_SURFACE_MINT_GATE_MESSAGE}
+      </p>
+    )
+  }
 
   const loading = state === undefined
   const derived = loading ? null : deriveGate(state)

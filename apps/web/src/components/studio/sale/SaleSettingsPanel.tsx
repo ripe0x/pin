@@ -14,8 +14,9 @@ import { useCallback, useEffect, useState } from "react"
 import { formatEther, parseEther, isAddress, type Address } from "viem"
 import { useWaitForTransactionReceipt, useWriteContract } from "wagmi"
 import { fixedPriceMinterAbi } from "@pin/abi"
-import { formatWriteError } from "@/components/tx/tx-ui"
+import { PREFERRED_CHAIN, formatWriteError } from "@/components/tx/tx-ui"
 import { BTN_SECONDARY, ERROR, HELP, INPUT, LABEL } from "@/components/studio/create/wizard-ui"
+import { NOT_SURFACE_SALE_MESSAGE } from "@/lib/not-surface"
 import { fetchSaleState, type SaleState } from "./sale-api"
 
 /** unix seconds -> "YYYY-MM-DDTHH:mm" in local time for a datetime-local input. */
@@ -42,8 +43,15 @@ function useSetter(minter: Address | null, onConfirmed: () => void) {
   const label = write.isPending ? "Confirm in wallet…" : receipt.isLoading ? "Saving…" : "Save"
   const run = (functionName: string, args: readonly unknown[]) => {
     if (!minter) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    write.writeContract({ address: minter, abi: fixedPriceMinterAbi, functionName: functionName as any, args: args as any })
+    write.writeContract({
+      chainId: PREFERRED_CHAIN.id,
+      address: minter,
+      abi: fixedPriceMinterAbi,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      functionName: functionName as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      args: args as any,
+    })
   }
   return { run, busy, label, error: write.error }
 }
@@ -69,7 +77,9 @@ function Field({
 }
 
 export function SaleSettingsPanel({ collection }: { collection: `0x${string}` }) {
-  const [state, setState] = useState<SaleState | null | undefined>(undefined)
+  const [state, setState] = useState<SaleState | "not-surface" | null | undefined>(
+    undefined,
+  )
   const refetch = useCallback(() => {
     setState(undefined)
     void fetchSaleState(collection).then(setState)
@@ -78,9 +88,11 @@ export function SaleSettingsPanel({ collection }: { collection: `0x${string}` })
     refetch()
   }, [refetch])
 
+  const notSurface = state === "not-surface"
+  const loaded = notSurface ? null : state
   const loading = state === undefined
-  const minter = state?.minter ?? null
-  const sale = state?.sale ?? null
+  const minter = loaded?.minter ?? null
+  const sale = loaded?.sale ?? null
 
   // Local form fields, seeded from current state.
   const [price, setPrice] = useState("")
@@ -108,6 +120,13 @@ export function SaleSettingsPanel({ collection }: { collection: `0x${string}` })
 
   if (loading) {
     return <p className="text-[11px] font-mono text-gray-400">Reading current sale settings…</p>
+  }
+  if (notSurface) {
+    return (
+      <p className="text-sm text-gray-600 leading-relaxed" role="status">
+        {NOT_SURFACE_SALE_MESSAGE}
+      </p>
+    )
   }
   if (!minter) {
     return (

@@ -22,11 +22,13 @@ import {
   useAccount,
   useBalance,
   useChainId,
+  useConfig,
   usePublicClient,
   useSwitchChain,
   useWriteContract,
   useWaitForTransactionReceipt,
 } from "wagmi"
+import { simulateContract } from "wagmi/actions"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { mintEditionAbi } from "@pin/abi"
 import {
@@ -36,6 +38,7 @@ import {
   Countdown,
   TxSuccessBanner,
 } from "@/components/tx/tx-ui"
+import { usePreflight } from "@/lib/use-preflight"
 
 const MINT_WINDOW_SECS = 86_400 // 24h, fixed by Mint.sol (MINT_DURATION)
 const BASEFEE_MULTIPLIER = 60_000n // unitPrice = block.basefee * 60_000
@@ -133,7 +136,9 @@ export function MintEditionCTA({
   })
 
   const router = useRouter()
-  const isPending = isWritePending || isTxPending
+  const config = useConfig()
+  const preflight = usePreflight()
+  const isPending = isWritePending || isTxPending || preflight.checking
 
   // Estimated per-copy / total price from the mount-time base fee, for display.
   const unitPriceEst =
@@ -142,7 +147,7 @@ export function MintEditionCTA({
     unitPriceEst != null && amountValid ? unitPriceEst * BigInt(amount) : null
 
   async function handleMint() {
-    if (!amountValid) return
+    if (!amountValid || !address) return
     // Re-read the base fee fresh at click time so the value we send tracks the
     // current network fee as closely as possible (minimizing the no-refund
     // overpayment). Fall back to gas price, then the mount estimate.
@@ -163,12 +168,20 @@ export function MintEditionCTA({
     if (unitPrice == null) return
     const total = unitPrice * BigInt(amount)
     const value = (total * PRICE_BUFFER_NUM) / PRICE_BUFFER_DEN
-    writeContract({
-      address: contract,
-      abi: mintEditionAbi,
-      functionName: "mint",
-      args: [BigInt(tokenId), BigInt(amount)],
-      value,
+    // Value-bearing: simulate from the connected account on PREFERRED_CHAIN
+    // first, then sign the simulated request (chainId pinned).
+    reset()
+    await preflight.run(async () => {
+      const { request } = await simulateContract(config, {
+        account: address,
+        chainId: PREFERRED_CHAIN.id,
+        address: contract,
+        abi: mintEditionAbi,
+        functionName: "mint",
+        args: [BigInt(tokenId), BigInt(amount)],
+        value,
+      })
+      writeContract(request)
     })
   }
 
@@ -294,11 +307,13 @@ export function MintEditionCTA({
                   disabled={isPending || !amountValid}
                   className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {isWritePending
-                    ? "Confirm in wallet…"
-                    : isTxPending
-                      ? "Minting…"
-                      : "Mint"}
+                  {preflight.checking
+                    ? "Checking…"
+                    : isWritePending
+                      ? "Confirm in wallet…"
+                      : isTxPending
+                        ? "Minting…"
+                        : "Mint"}
                 </button>
               )}
 
@@ -307,9 +322,9 @@ export function MintEditionCTA({
                 goes to the artist (no refund).
               </p>
 
-              {writeError && (
+              {(writeError || preflight.error != null) && (
                 <p className="text-[11px] font-mono text-red-500 break-words">
-                  {formatWriteError(writeError, "Mint")}
+                  {formatWriteError(writeError ?? preflight.error, "Mint")}
                 </p>
               )}
             </>

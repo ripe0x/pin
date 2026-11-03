@@ -8,6 +8,8 @@
  * getMinterGate.
  */
 
+import { isNotSurfaceResponse } from "../../../lib/not-surface.ts"
+
 export const ZERO_ROOT = ("0x" + "0".repeat(64)) as `0x${string}`
 
 /** Mirrors the two response shapes of GET /api/collections/[address]/allowlist
@@ -55,13 +57,19 @@ export function deriveGate(state: GateApiState | null): DerivedGate | null {
   }
 }
 
-export async function fetchGateState(collection: string): Promise<GateApiState | null> {
+/** Gate summary, "not-surface" when the API says the address is not a
+ *  PND Surface collection, null on any other failure. */
+export async function fetchGateState(
+  collection: string,
+): Promise<GateApiState | "not-surface" | null> {
   try {
     const res = await fetch(`/api/collections/${collection.toLowerCase()}/allowlist`, {
       cache: "no-store",
     })
+    const body = (await res.json().catch(() => null)) as unknown
+    if (isNotSurfaceResponse(res.status, body)) return "not-surface"
     if (!res.ok) return null
-    return (await res.json()) as GateApiState
+    return body as GateApiState
   } catch {
     return null
   }
