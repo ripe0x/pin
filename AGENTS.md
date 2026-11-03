@@ -114,7 +114,9 @@ Full notes: `docs/muri-integration.md`.
   the version (`ponder_v4` to `ponder_v5` is pending: the Surface v2
   primitive rebind, runbook in `docs/ponder-schema-cutover.md`), and the version
   must be flipped in Netlify's production context specifically (not just
-  local `.env.local`), followed by a redeploy. Confirm the flip actually
+  local `.env.local`) and on the Railway worker service (its scanners and
+  drift check read `INDEXER_SCHEMA` tables too), each followed by a
+  redeploy. Confirm the flip actually
   applied by hitting `/api/health/indexer` on the deployed site, do not
   assume the env var took effect from the Netlify UI alone.
 - **Railway indexer deploys are manual**, not on a git push trigger:
@@ -132,9 +134,13 @@ Full notes: `docs/muri-integration.md`.
   replay can land with a decayed watch set (Ponder indexing a clone's
   creation event but never adding the clone to `factory_addresses`), which
   silently drops every per-clone subscription for the missing addresses.
-  `apps/worker/src/tasks/ponder-drift-check.ts` runs this check and
-  repairs it hourly, but confirm it before cutover rather than relying on
-  the next scheduled tick.
+  `scripts/indexer-parity.mjs` (`pnpm indexer:parity --from ponder_vN
+  --to ponder_vM`, read-only) runs both checks in one command; run it
+  before cutover. `apps/worker/src/tasks/ponder-drift-check.ts` runs the
+  watch-set check hourly and fails its iteration on drift; it only writes
+  the missing rows with `PONDER_DRIFT_REPAIR=1`, and even then the fix is
+  partial (Ponder reads them at restart and never replays past events),
+  so a decayed watch set means another fresh replay.
 - **Dead stack, do not trust:** an OLD `switchback` Railway DB had its own
   `ponder_v2`/`ponder_v3` schemas and `lazy_*` public tables. That is the
   pre-rebuild stack and is unrelated to maglev's `ponder_v2`/`ponder_v3`
