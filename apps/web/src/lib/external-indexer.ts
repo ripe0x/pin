@@ -15,6 +15,28 @@ export type RefreshReport = {
   caughtUp: boolean
 }
 
+let warnedSecretFallback = false
+
+/**
+ * The bearer secret for worker job calls. `WORKER_SECRET` is the intended
+ * variable; `REVALIDATE_SECRET` is still accepted because the worker reads
+ * the same fallback (apps/worker/src/health.ts) and deployed environments
+ * may only set that one. Using the fallback logs a warning once per
+ * instance so the two secrets can be split deliberately.
+ */
+function workerSecret(): string | undefined {
+  const dedicated = process.env.WORKER_SECRET
+  if (dedicated) return dedicated
+  const fallback = process.env.REVALIDATE_SECRET
+  if (fallback && !warnedSecretFallback) {
+    warnedSecretFallback = true
+    console.warn(
+      "[worker] WORKER_SECRET is unset; using REVALIDATE_SECRET for worker job auth. Set a dedicated WORKER_SECRET on web and worker.",
+    )
+  }
+  return fallback
+}
+
 /**
  * Forward the "Refresh my work" button trigger to the worker. The web
  * app does NOT execute the scan itself — the worker is the only place
@@ -22,7 +44,7 @@ export type RefreshReport = {
  */
 export async function refreshArtist(address: string): Promise<RefreshReport> {
   const workerUrl = process.env.WORKER_URL
-  const secret = process.env.WORKER_SECRET ?? process.env.REVALIDATE_SECRET
+  const secret = workerSecret()
   if (!workerUrl || !secret) {
     console.error("[refresh-artist] WORKER_URL / WORKER_SECRET unset")
     return { caughtUp: false }
@@ -51,7 +73,7 @@ export async function refreshTokenMetadata(
   tokenId: string,
 ): Promise<{ ok: boolean }> {
   const workerUrl = process.env.WORKER_URL
-  const secret = process.env.WORKER_SECRET ?? process.env.REVALIDATE_SECRET
+  const secret = workerSecret()
   if (!workerUrl || !secret) {
     console.error("[refresh-token] WORKER_URL / WORKER_SECRET unset")
     return { ok: false }
