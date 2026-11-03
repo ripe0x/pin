@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { ipfsToHttp } from "@pin/shared"
 import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
-import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
+import { rateLimit } from "@/lib/rate-limit"
 import { isCrawlerUserAgent } from "@/lib/crawler"
 import { withRouteContext } from "@/lib/rpc-log"
 
@@ -45,8 +45,7 @@ export async function GET(
   // tokenURI eth_call + IPFS fetch on cache miss; without this an
   // address-iterating bot can amplify into hundreds of RPC calls a
   // minute under a single IP.
-  const ip = getClientIp(req)
-  const rl = checkRateLimit("meta", ip, 60_000, 120)
+  const rl = await rateLimit(req, { namespace: "meta", windowMs: 60_000, max: 120 })
   if (!rl.ok) {
     return NextResponse.json(
       { error: "rate-limited", retryAfter: rl.retryAfter },

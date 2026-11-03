@@ -3,7 +3,7 @@ import { unstable_cache } from "next/cache"
 import { createPublicClient, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { pgCache } from "@/lib/pg-cache"
-import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
+import { rateLimit } from "@/lib/rate-limit"
 import { loggingFallbackTransport } from "@/lib/rpc-log"
 import {
   readContractIdentity,
@@ -271,8 +271,7 @@ export async function GET(
     return NextResponse.json({ error: "invalid address" }, { status: 400 })
   }
 
-  const ip = getClientIp(req)
-  const rl = checkRateLimit("contract-info", ip, 60_000, 60)
+  const rl = await rateLimit(req, { namespace: "contract-info", windowMs: 60_000, max: 60 })
   if (!rl.ok) {
     return NextResponse.json(
       { error: "rate-limited" },

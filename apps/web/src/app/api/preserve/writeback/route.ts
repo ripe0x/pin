@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { verifyMessage } from "viem"
 import { sql } from "@/lib/db"
-import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
+import { rateLimit } from "@/lib/rate-limit"
 import { extractBareCid } from "@/lib/metadata-host"
 import {
   buildWritebackMessage,
@@ -43,8 +43,7 @@ type Body = {
 export async function POST(
   req: NextRequest,
 ): Promise<NextResponse<{ ok: true; written: number } | { error: string }>> {
-  const ip = getClientIp(req)
-  const rl = checkRateLimit("preserve-writeback", ip, 60_000, 10)
+  const rl = await rateLimit(req, { namespace: "preserve-writeback", windowMs: 60_000, max: 10 })
   if (!rl.ok) {
     return NextResponse.json(
       { error: "rate-limited" },

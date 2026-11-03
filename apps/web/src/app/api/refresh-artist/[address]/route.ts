@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { isKnownArtist } from "@/lib/known-artists"
 import { refreshArtist } from "@/lib/external-indexer"
+import { rateLimitResponse } from "@/lib/rate-limit"
 
 /**
  * "Refresh my work" button endpoint. In v2 this is a thin proxy — the
@@ -22,9 +23,18 @@ import { refreshArtist } from "@/lib/external-indexer"
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   context: { params: Promise<{ address: string }> },
 ) {
+  // Per-IP budget in front of the worker enqueue (the worker dedups per
+  // artist, but each call is still a DB read plus a worker round trip).
+  const limited = await rateLimitResponse(req, {
+    namespace: "refresh-artist",
+    windowMs: 60_000,
+    max: 10,
+  })
+  if (limited) return limited
+
   const { address: raw } = await context.params
   const decoded = decodeURIComponent(raw)
   if (!ADDRESS_RE.test(decoded)) {
