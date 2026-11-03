@@ -46,7 +46,7 @@ jobs:
         env:
           DATABASE_URL: postgres://127.0.0.1:1/pnd
           ALCHEMY_MAINNET_URL: http://127.0.0.1:8545
-          INDEXER_SCHEMA: ponder_v1
+          INDEXER_SCHEMA: ponder_v4
         run: node --import tsx -e "import('./apps/worker/src/scheduler.ts')"
 
       - name: Run unit tests

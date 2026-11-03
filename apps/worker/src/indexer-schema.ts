@@ -7,7 +7,7 @@
  * context; verify the production value matches the live schema before
  * relying on the default.
  */
-export const DEFAULT_INDEXER_SCHEMA = "ponder_v3"
+export const DEFAULT_INDEXER_SCHEMA = "ponder_v4"
 
 /**
  * Allowlist sanitizer: keeps only [A-Za-z0-9_], so the result is always a
