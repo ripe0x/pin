@@ -1,58 +1,38 @@
 import "server-only"
-import { StandardMerkleTree } from "@openzeppelin/merkle-tree"
-import { isAddress, type Address } from "viem"
+import { type Address } from "viem"
 import { sql } from "./db"
+import { buildTree, normalizeAddresses } from "./allowlist-tree"
+
+export { buildTree, normalizeAddresses }
 
 /**
  * Allowlist storage + proofs: the offchain half of a GateHook merkle gate.
  *
- * Trust model: storage is PERMISSIONLESS on purpose. A stored list grants
- * nothing by itself — proofs only verify against the root the collection's
- * owner/admin set onchain (GateHook.rootOf), and only they can set it. The
- * chain is the auth; this table is just where the mint page finds the
- * leaves for the active root. Publishing a list that never goes onchain is
- * inert, so the API needs no signature dance.
+ * Trust model: a stored list grants nothing by itself — proofs only verify
+ * against the root the collection's owner/admin set onchain, and only they
+ * can set it. The chain is the auth for minting; this table is just where
+ * the mint page finds the leaves for the active root. Writes are still
+ * bounded: the publish API requires a signature from the collection's owner
+ * or an admin (lib/allowlist-auth.ts), and each collection keeps at most
+ * MAX_LISTS_PER_COLLECTION lists (oldest pruned, the active root kept).
  *
- * Leaf format is the OZ standard-merkle-tree convention GateHook verifies:
- * keccak256(bytes.concat(keccak256(abi.encode(address)))) — produced here
- * by @openzeppelin/merkle-tree with the ["address"] leaf encoding.
+ * Tree construction and leaf format live in lib/allowlist-tree.ts.
  */
 
-const MAX_ADDRESSES = 10_000
+/** Lists kept per collection. Publishing past this prunes the oldest ones,
+ *  never the one being published or the root currently active onchain. */
+export const MAX_LISTS_PER_COLLECTION = 25
 
 export type PublishResult =
   | { ok: true; root: `0x${string}`; count: number }
   | { ok: false; error: string }
-
-/** Normalize, validate, dedupe, and sort a raw address list. Sorted so the
- *  same set of addresses always produces the same tree and root. */
-export function normalizeAddresses(raw: string[]): { list: Address[] } | { error: string } {
-  if (!Array.isArray(raw) || raw.length === 0) return { error: "No addresses provided." }
-  if (raw.length > MAX_ADDRESSES) {
-    return { error: `Too many addresses (max ${MAX_ADDRESSES}).` }
-  }
-  const seen = new Set<string>()
-  for (const a of raw) {
-    if (typeof a !== "string" || !isAddress(a.trim())) {
-      return { error: `Not an address: ${String(a).slice(0, 64)}` }
-    }
-    seen.add(a.trim().toLowerCase())
-  }
-  return { list: [...seen].sort() as Address[] }
-}
-
-export function buildTree(list: Address[]) {
-  return StandardMerkleTree.of(
-    list.map((a) => [a]),
-    ["address"],
-  )
-}
 
 /** Build the tree for `raw`, store the list keyed by (collection, root),
  *  and return the root the artist must set onchain via GateHook.setRoot. */
 export async function publishAllowlist(
   collection: Address,
   raw: string[],
+  opts: { activeRoot?: string | null } = {},
 ): Promise<PublishResult> {
   if (!sql) return { ok: false, error: "Storage is not available." }
   const norm = normalizeAddresses(raw)
@@ -66,6 +46,19 @@ export async function publishAllowlist(
     ON CONFLICT (collection, root)
     DO UPDATE SET addresses = EXCLUDED.addresses,
                   address_count = EXCLUDED.address_count
+  `
+  const keepRoot = (opts.activeRoot ?? "").toLowerCase()
+  await sql`
+    DELETE FROM collection_allowlists
+    WHERE collection = ${c}
+      AND root <> ${root.toLowerCase()}
+      AND root <> ${keepRoot}
+      AND root NOT IN (
+        SELECT root FROM collection_allowlists
+        WHERE collection = ${c}
+        ORDER BY created_at DESC
+        LIMIT ${MAX_LISTS_PER_COLLECTION}
+      )
   `
   return { ok: true, root, count: norm.list.length }
 }

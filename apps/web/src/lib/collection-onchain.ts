@@ -604,6 +604,21 @@ export async function collectionTokenExists(collection: Address, tokenId: bigint
   }
 }
 
+/** The collection's own isAdmin(account) (both Surface versions expose it).
+ *  False on any read failure. */
+export async function isCollectionAdmin(collection: Address, account: Address): Promise<boolean> {
+  try {
+    return (await getClient().readContract({
+      address: collection,
+      abi: surfaceAbi,
+      functionName: "isAdmin",
+      args: [account],
+    })) as boolean
+  } catch {
+    return false
+  }
+}
+
 export type CollectionTokenView = {
   tokenId: bigint
   owner: Address | null

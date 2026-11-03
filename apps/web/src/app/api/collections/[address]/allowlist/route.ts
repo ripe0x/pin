@@ -1,11 +1,14 @@
 /**
  * Allowlist publish + eligibility for a collection's canonical minter gate.
  *
- * POST { addresses: string[] } — build the OZ standard merkle tree, store
- *   the list keyed by (collection, root), return { root, count }. The
- *   artist then activates it onchain with FixedPriceMinter.setAllowlistRoot
- *   — storage is permissionless because only the onchain root grants
- *   anything (see lib/allowlist.ts for the trust model).
+ * POST { addresses, signer, signature, issuedAt, chainId } — build the OZ
+ *   standard merkle tree, store the list keyed by (collection, root), return
+ *   { root, count }. The collection must be a PND collection, and the body
+ *   must carry an EIP-191 signature by the collection's owner or an admin
+ *   over the chain, collection, root, and a recent issue time (see
+ *   lib/allowlist-auth.ts). The artist then activates the root onchain with
+ *   FixedPriceMinter.setAllowlistRoot; only the onchain root grants anything
+ *   (see lib/allowlist.ts for the trust model).
  *
  * GET ?wallet=0x… — eligibility of `wallet` against the root that is
  *   active onchain RIGHT NOW: { gated, eligible, proof?, root, cap }.
@@ -17,7 +20,16 @@
 import { NextResponse } from "next/server"
 import { isAddress, type Address } from "viem"
 import { allowlistCount, eligibilityFor, publishAllowlist } from "@/lib/allowlist"
-import { getMinterGate } from "@/lib/collection-onchain"
+import { verifyAllowlistPublish } from "@/lib/allowlist-auth"
+import { allowlistRoot } from "@/lib/allowlist-tree"
+import { PND_CHAIN_ID } from "@/lib/collection"
+import {
+  getClient,
+  getCollection,
+  getMinterGate,
+  isCollectionAdmin,
+} from "@/lib/collection-onchain"
+import { rateLimitResponse } from "@/lib/rate-limit"
 
 const ZERO_ROOT = "0x" + "0".repeat(64)
 
@@ -28,17 +40,64 @@ export async function POST(req: Request, { params }: Params) {
   if (!isAddress(address)) {
     return NextResponse.json({ error: "Bad collection address." }, { status: 400 })
   }
+  const limited = await rateLimitResponse(req, {
+    namespace: "allowlist-publish",
+    windowMs: 60_000,
+    max: 10,
+  })
+  if (limited) return limited
+
+  const collection = await getCollection(address as Address).catch(() => null)
+  if (!collection) {
+    return NextResponse.json({ error: "Not a PND collection." }, { status: 404 })
+  }
+
   let body: unknown
   try {
     body = await req.json()
   } catch {
     return NextResponse.json({ error: "Body must be JSON." }, { status: 400 })
   }
-  const addresses = (body as { addresses?: unknown })?.addresses
-  if (!Array.isArray(addresses)) {
+  const b = (body ?? {}) as {
+    addresses?: unknown
+    signer?: unknown
+    signature?: unknown
+    issuedAt?: unknown
+    chainId?: unknown
+  }
+  if (!Array.isArray(b.addresses)) {
     return NextResponse.json({ error: "Body needs an addresses array." }, { status: 400 })
   }
-  const result = await publishAllowlist(address as Address, addresses as string[])
+  const computed = allowlistRoot(b.addresses as string[])
+  if ("error" in computed) return NextResponse.json({ error: computed.error }, { status: 400 })
+
+  const client = getClient()
+  const auth = await verifyAllowlistPublish(
+    {
+      collection: address,
+      root: computed.root,
+      chainId: b.chainId,
+      issuedAt: b.issuedAt,
+      signer: b.signer,
+      signature: b.signature,
+    },
+    {
+      expectedChainId: PND_CHAIN_ID,
+      now: Date.now(),
+      // The read client's verifyMessage covers EOAs and contract wallets
+      // (ERC-1271), so a Safe-owned collection can publish too.
+      verify: (args) => client.verifyMessage(args),
+      isAuthorized: async (_c, signer) =>
+        signer.toLowerCase() === collection.owner.toLowerCase() ||
+        (await isCollectionAdmin(address as Address, signer)),
+    },
+  )
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+  const gate = await getMinterGate(address as Address).catch(() => null)
+  const result = await publishAllowlist(address as Address, computed.list, {
+    activeRoot: gate?.allowlistRoot ?? null,
+  })
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
   return NextResponse.json({ root: result.root, count: result.count })
 }
