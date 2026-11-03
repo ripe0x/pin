@@ -46,6 +46,7 @@ import {
   surfaceFactory,
   surfaceFactoryV2,
   surfaceTokenFactoryV2,
+  isPrimitiveV2Live,
   type Collection,
   type MinterSaleConfig,
   type MulticallEntry,
@@ -421,13 +422,20 @@ export async function readCollectionFullyLive(
 
   // A primitive-first v2 Surface shares name/symbol/owner/version with v1 but
   // has none of the lock getters, so its reads above fail. Read it through
-  // its own ABI instead.
-  if (
-    versionRes.status === "success" &&
-    Number(versionRes.result) === 2 &&
-    nameRes.status === "success" &&
-    symbolRes.status === "success"
-  ) {
+  // its own ABI instead. version() == 2 alone is not the test: the superseded
+  // Sepolia SurfaceV2 answers 2 too and decodes through the v1 path below.
+  // The token factory's isInstance is the proof of origin; it is asked only
+  // of a version-2 contract, so v1 reads pay nothing extra.
+  const version = versionRes.status === "success" ? Number(versionRes.result) : null
+  const tokenFactoryV2 = surfaceTokenFactoryV2()
+  const tokenFactoryInstance =
+    version === 2 && tokenFactoryV2
+      ? await client
+          .readContract({ address: tokenFactoryV2, abi: cloneFactoryAbi, functionName: "isInstance", args: [address] })
+          .catch(() => null)
+      : null
+  const primitiveV2 = isPrimitiveV2Live({ version, tokenFactoryInstance })
+  if (primitiveV2 && nameRes.status === "success" && symbolRes.status === "success") {
     return readCollectionV2(client, address, null, {
       name: nameRes.result as string,
       symbol: symbolRes.result as string,
@@ -480,6 +488,7 @@ export async function readCollectionFullyLive(
   return {
     address,
     protocolVersion,
+    primitiveV2: false,
     isMinterLocked: locks.isMinterLocked,
     isRoyaltyLocked: locks.isRoyaltyLocked,
     sealed: locks.sealed,
@@ -585,6 +594,7 @@ export async function readCollectionFromIndexerRow(
   return {
     address,
     protocolVersion,
+    primitiveV2: false,
     isMinterLocked: locks.isMinterLocked,
     isRoyaltyLocked: locks.isRoyaltyLocked,
     sealed: locks.sealed,
@@ -653,17 +663,22 @@ async function readCollectionV2(
   }
 
   const owner = ownerRes.result as Address
+  // No lock getters: every setter is onlyOwner, so a renounced owner fixes
+  // all of them at once. Report each lock as that one fact, so the page's
+  // "Locked forever / Swappable" facts stay true for a sealed collection.
+  const sealed = owner.toLowerCase() === ZERO_ADDRESS
   return {
     address,
     protocolVersion: 2,
+    primitiveV2: true,
     name: identity?.name ?? ((nameRes as { result: string }).result),
     symbol: identity?.symbol ?? ((symbolRes as { result: string }).result),
     owner,
-    isRendererLocked: false,
-    isSupplyLocked: false,
-    isMinterLocked: false,
-    isRoyaltyLocked: false,
-    sealed: owner.toLowerCase() === ZERO_ADDRESS,
+    isRendererLocked: sealed,
+    isSupplyLocked: sealed,
+    isMinterLocked: sealed,
+    isRoyaltyLocked: sealed,
+    sealed,
     renderer,
     cfg: { supplyCap, royaltyBps: Number(royaltyBps), royaltyReceiver, renderer, idMode: IdMode.Sequential },
     primaryMinter: minter,
@@ -691,7 +706,10 @@ export async function getCollection(address: Address): Promise<Collection | null
       if (!FORK_MODE && !USE_SEPOLIA) {
         const id = await getCollectionRowFromIndexer(address)
         if (id && id.name !== null && id.symbol !== null && id.idMode !== null) {
-          if (id.protocolVersion === 2) {
+          // Only a token-factory row takes the primitive v2 read; a
+          // protocol_version 2 row from an older schema is the superseded
+          // SurfaceV2, which the v1-ABI read below decodes.
+          if (id.primitiveV2) {
             const hint =
               id.primaryMinter && id.primaryMinter.toLowerCase() !== ZERO_ADDRESS ? (id.primaryMinter as Address) : null
             return await readCollectionV2(client, address, hint, { name: id.name, symbol: id.symbol })

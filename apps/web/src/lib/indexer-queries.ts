@@ -1,7 +1,7 @@
 import "server-only"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { sql } from "./db"
-import { surfaceFactory } from "./collection"
+import { isPrimitiveV2IndexedRow, surfaceFactory } from "./collection"
 import { INDEXER_SCHEMA } from "./indexer-schema"
 
 /** Foundation NFTMarket address — used as the `[house]` segment for FND auctions. */
@@ -1646,9 +1646,13 @@ export type IndexedCollectionIdentity = {
   symbol: string | null
   idMode: number | null
   primaryMinter: string | null
-  /** 1 or 2 (see IndexedCollectionRow.protocolVersion). Picks the ABI the
-   *  live read uses. */
+  /** 1 or 2 (see IndexedCollectionRow.protocolVersion). */
   protocolVersion: number
+  /** The row is a primitive-first v2 Surface's (see
+   *  lib/collection.ts:isPrimitiveV2IndexedRow), which picks the v2 read.
+   *  protocolVersion 2 alone is not enough: older schemas used 2 for the
+   *  superseded SurfaceFactoryV2. */
+  primitiveV2: boolean
 }
 
 /**
@@ -1669,9 +1673,12 @@ export async function getCollectionRowFromIndexer(
   const db = sql
   const schema = indexerSchema()
   const hasVersion = await collectionsColumnExists(db, schema, "protocol_version")
+  const hasConfirmed = await collectionsColumnExists(db, schema, "owner_confirmed")
   return withTimeout(async () => {
     const rows = (await db.unsafe(
-      `SELECT name, symbol, id_mode, primary_minter${hasVersion ? ", protocol_version" : ""}
+      `SELECT name, symbol, id_mode, primary_minter${hasVersion ? ", protocol_version" : ""}${
+        hasConfirmed ? ", owner_confirmed" : ""
+      }
        FROM ${schema}.collections WHERE collection = $1 LIMIT 1`,
       [collection.toLowerCase()],
     )) as Array<{
@@ -1680,15 +1687,18 @@ export async function getCollectionRowFromIndexer(
       id_mode: number | null
       primary_minter: string | null
       protocol_version?: number | null
+      owner_confirmed?: boolean | null
     }>
     if (rows.length === 0) return null
     const r = rows[0]
+    const protocolVersion = r.protocol_version ?? 1
     return {
       name: r.name,
       symbol: r.symbol,
       idMode: r.id_mode,
       primaryMinter: r.primary_minter,
-      protocolVersion: r.protocol_version ?? 1,
+      protocolVersion,
+      primitiveV2: isPrimitiveV2IndexedRow({ protocolVersion, ownerConfirmed: r.owner_confirmed }),
     }
   })
 }

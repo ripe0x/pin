@@ -20,6 +20,7 @@ import {
   SURFACE_TOKEN_FACTORY_V2,
   getAddressOrNull,
 } from "@pin/addresses"
+import { isNoReferralCollection } from "./referral-exemptions"
 
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
@@ -95,24 +96,14 @@ export function pndReferrerAddress(): Address {
 }
 
 /**
- * Collections whose mints on PND pass no referrer, keyed by lowercase
- * address. Every other PND mint pays the referral share to PND. An entry here
- * is a deal-specific exception, not a setting: PND is already paid through
- * the collection's payout split.
- */
-const NO_REFERRAL_COLLECTIONS: ReadonlySet<string> = new Set([
-  // Form of Solitude (Anton Dubrovin): PND takes 20% through the 80/20 payout split.
-  "0x4490f1dadefa3234961404f5cc58056296eb4a89",
-])
-
-/**
  * The referrer a PND-hosted mint of `collection` passes. Zero for the
- * exempt collections above; otherwise PND's configured referrer, falling
+ * exempt collections (lib/referral-exemptions.ts, the one list both mint
+ * surfaces read); otherwise PND's configured referrer, falling
  * back to the sale's own defaultReferrer (a v2 FixedPriceSale carries PND's
  * address there) so an unset env var never silently drops PND's share.
  */
 export function mintReferrerFor(collection: Address, saleDefaultReferrer?: Address | null): Address {
-  if (NO_REFERRAL_COLLECTIONS.has(collection.toLowerCase())) return ZERO_ADDRESS
+  if (isNoReferralCollection(collection)) return ZERO_ADDRESS
   const pnd = pndReferrerAddress()
   if (pnd !== ZERO_ADDRESS) return pnd
   return saleDefaultReferrer ?? ZERO_ADDRESS
@@ -220,8 +211,16 @@ export type Collection = {
    *  v2 Surface. Read live off the collection itself (a bytecode constant,
    *  free of the indexer), never inferred from which factory deployed it.
    *  Selects which factory/ABI a write flow (mint gate, sale settings)
-   *  targets for this collection. */
+   *  targets for this collection. 2 alone does NOT mean the
+   *  primitive-first contracts: the superseded Sepolia-only SurfaceV2 also
+   *  answers 2. Branch on `primitiveV2` for those. */
   protocolVersion: number
+  /** A primitive-first v2 Surface (contracts/src/surface/v2/Surface.sol):
+   *  made by the v2 token CloneFactory, sold by a FixedPriceSale, no lock
+   *  getters, permanence = renounced ownership. Proven by origin (the
+   *  indexed token-factory row or the factory's isInstance), never by
+   *  version() alone; see isPrimitiveV2IndexedRow / isPrimitiveV2Live. */
+  primitiveV2: boolean
   name: string
   symbol: string
   owner: Address
@@ -572,8 +571,11 @@ export function formatBps(bps: number): string {
  * minter's window (mintStart/mintEnd, via saleWindowOf) plus the token's own
  * cap state — never from stored state. */
 export function lifecycleStatus(cfg: SaleWindow, minted: bigint, nowSec: number): SurfaceStatus {
-  if (cfg.mintStart !== 0n && BigInt(nowSec) < cfg.mintStart) return SurfaceStatus.Scheduled
+  // An ended window is Closed even when mintStart is still ahead: it can
+  // never open. That is how a closed v2 FixedPriceSale reads (decoded as
+  // mintEnd 1, see decodeSaleV2Config), whatever start it was scheduled for.
   if (cfg.mintEnd !== 0n && BigInt(nowSec) >= cfg.mintEnd) return SurfaceStatus.Closed
+  if (cfg.mintStart !== 0n && BigInt(nowSec) < cfg.mintStart) return SurfaceStatus.Scheduled
   if (cfg.supplyCap !== 0n && minted >= cfg.supplyCap) return SurfaceStatus.Closed
   return SurfaceStatus.Open
 }
@@ -583,6 +585,67 @@ export function isMintable(cfg: SaleWindow, minted: bigint, nowSec: number): boo
   if (cfg.mintEnd !== 0n && BigInt(nowSec) >= cfg.mintEnd) return false
   if (cfg.supplyCap !== 0n && minted >= cfg.supplyCap) return false
   return true
+}
+
+// ── Surface v2 (primitive-first) gates ──────────────────────────────────────
+
+/**
+ * Does an indexed `collections` row describe a primitive-first v2 Surface?
+ * protocol_version 2 means the v2 token CloneFactory only in the schema
+ * the primitive-first rebind writes (ponder_v5 on); an older schema (ponder_v4 and before) used 2 for
+ * the superseded SurfaceFactoryV2. The token-factory handler is the only
+ * writer of owner_confirmed (non-null for its rows, null for v1, absent as a
+ * column before that schema), so 2 plus a boolean owner_confirmed is the
+ * row's proof of origin.
+ */
+export function isPrimitiveV2IndexedRow(row: {
+  protocolVersion: number
+  ownerConfirmed?: boolean | null
+}): boolean {
+  return row.protocolVersion === 2 && typeof row.ownerConfirmed === "boolean"
+}
+
+/**
+ * The fully live equivalent: the v2 token CloneFactory's isInstance(address)
+ * is the proof of origin (that factory only clones the primitive v2 Surface
+ * implementation). version() == 2 is required too, but is not enough alone:
+ * the superseded Sepolia SurfaceV2 also answers 2 and reads through the v1
+ * path. A failed or skipped isInstance read (null: no token factory
+ * configured) keeps the v1 path.
+ */
+export function isPrimitiveV2Live(reads: { version: number | null; tokenFactoryInstance: boolean | null }): boolean {
+  return reads.version === 2 && reads.tokenFactoryInstance === true
+}
+
+/**
+ * The minter the collection page's mint CTA gets. A primitive v2 collection
+ * mints only when its FixedPriceSale decoded (a failed or gated sale read
+ * gets the "mints through its minter" notice instead of a buy button that
+ * would revert). Every other collection keeps its primary minter whatever
+ * the sale read returned, as before v2.
+ */
+export function mintCtaMinter(c: Pick<Collection, "primitiveV2" | "primaryMinter" | "sale">): Address | null {
+  if (c.primitiveV2 && !c.sale) return null
+  return c.primaryMinter
+}
+
+/**
+ * The renderer-permanence note under a collection's hero. v1 (and the
+ * superseded SurfaceV2) pin the renderer with a lock; a primitive v2 Surface
+ * has no locks, so its renderer is fixed only once the owner renounces
+ * (owner() == 0, reported as `sealed`).
+ */
+export function rendererPermanenceCopy(
+  c: Pick<Collection, "primitiveV2" | "isRendererLocked" | "sealed">,
+): string {
+  if (c.primitiveV2) {
+    return c.sealed
+      ? "Ownership is renounced: the renderer can no longer change."
+      : "The artist can change the renderer until they renounce ownership of the collection."
+  }
+  return c.isRendererLocked
+    ? "The renderer is locked: this collection renders through its current contract forever. The contract itself has had no upgrade path since deploy."
+    : "The contract is immutable from deploy. The renderer can change until the artist locks it."
 }
 
 /** True when the collection sells exclusively through an authorized minter
