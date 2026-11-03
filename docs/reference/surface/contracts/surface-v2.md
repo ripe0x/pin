@@ -2,7 +2,7 @@
 
 # SurfaceV2
 
-Implementation not yet deployed to Ethereum mainnet; the address lands here at launch.
+Implementation `0x9E90a7dbE576f23d909B81d90ff939b5041930e4` · [view on evm.now](https://evm.now/address/0x9E90a7dbE576f23d909B81d90ff939b5041930e4?chainId=1) · Ethereum mainnet
 
 > The v2 token, deployed per artist as an EIP-1167 clone of the implementation above through the token [CloneFactory](/docs/surface/contracts/clone-factory), usually by the [Launcher](/docs/surface/contracts/launcher). A collection has no canonical address of its own; substitute your collection address for `<COLLECTION_ADDRESS>` in the examples below. This is a separate deployment from [Surface](/docs/surface/contracts/surface); the two coexist and neither depends on the other.
 

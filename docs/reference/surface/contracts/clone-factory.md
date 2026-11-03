@@ -5,8 +5,8 @@
 > Two deployments share this ABI: the token factory (record key `surfaceFactoryV2`) and the sale factory (record key `saleFactoryV2`). Both addresses are in the summary below.
 
 Plumbing, deployed once per implementation: the token factory
-(`<SURFACE_FACTORY_V2_ADDRESS>`) clones [Surface (v2)](/docs/surface/contracts/surface-v2)
-and the sale factory (`<SALE_FACTORY_V2_ADDRESS>`) clones
+(`0xA104803fc2151BE0BFF18da7bb31938a5fdEd83c`) clones [Surface (v2)](/docs/surface/contracts/surface-v2)
+and the sale factory (`0xc474809F9cDB51A01d757aA90fbfC245Ca8A5B66`) clones
 [FixedPriceSale](/docs/surface/contracts/fixed-price-sale). Each call clones the
 implementation as an EIP-1167 proxy, calls it with the caller's encoded
 `initialize` in the same transaction, and records the instance. `initData`
