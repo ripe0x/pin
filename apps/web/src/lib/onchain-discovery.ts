@@ -19,6 +19,7 @@ import { sql } from "./db"
 import { pgCache } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
 import { INDEXER_SCHEMA } from "./indexer-schema"
+import { artistTokenSourcesSql, dedupeArtistTokenRefs } from "./artist-token-refs"
 
 export type TokenRef = {
   contract: `0x${string}`
@@ -302,22 +303,15 @@ export async function discoverArtistTokenRefs(
   if (!sql) return []
   const artist = artistAddress.toLowerCase()
 
-  // UNION across worker-owned + Ponder-owned per-artist token sources.
-  // Each source contributes (contract, tokenId, platform). The reader
-  // attaches creator = artist (the address whose page is being viewed)
-  // — same convention v1 used.
-  const rows = (await sql.unsafe(
-    `SELECT lower(contract) AS contract, token_id, platform, mint_block, mint_log_index
-     FROM artist_tokens WHERE artist = $1
-     UNION ALL
-     SELECT lower(contract), token_id::text, 'fnd-shared' AS platform,
-            block_number AS mint_block, log_index AS mint_log_index
-     FROM ${INDEXER_SCHEMA}.fnd_artist_tokens WHERE lower(creator) = $1
-     UNION ALL
-     SELECT lower(contract), token_id::text, 'srv2-shared' AS platform,
-            block_number AS mint_block, log_index AS mint_log_index
-     FROM ${INDEXER_SCHEMA}.srv2_artist_tokens WHERE lower(creator) = $1
-     ORDER BY mint_block DESC, mint_log_index DESC`,
+  // Worker-owned + Ponder-owned per-artist token sources. Each source
+  // contributes (contract, tokenId, platform). The reader attaches
+  // creator = artist (the address whose page is being viewed) — same
+  // convention v1 used. The sources overlap (worker fnd-shared rows vs
+  // Ponder's fnd_artist_tokens), so dedupe to one row per
+  // (contract, token_id) before anything counts or paginates them.
+  const rows = dedupeArtistTokenRefs((await sql.unsafe(
+    `SELECT * FROM (${artistTokenSourcesSql(INDEXER_SCHEMA)}) s
+     ORDER BY s.mint_block DESC, s.mint_log_index DESC`,
     [artist],
   )) as Array<{
     contract: string
@@ -325,7 +319,8 @@ export async function discoverArtistTokenRefs(
     platform: string
     mint_block: string
     mint_log_index: number
-  }>
+    src_rank: number
+  }>)
 
   const indexed = rows.map((r) => ({
     contract: r.contract as `0x${string}`,
