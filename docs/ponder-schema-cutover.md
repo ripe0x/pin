@@ -192,6 +192,42 @@ current file's mainnet-mode output against the `origin/main` version.
 The script sets `INDEX_SEPOLIA=1`, so it compares the full config
 including the sepolia entries.
 
+## Repoint known_artists (every cutover)
+
+`public.known_artists`, the worker's spend ceiling, is a view that
+names a Ponder schema directly. Migration 011 pinned it to whichever
+schema existed when it first ran, and nothing re-ran it on later
+cutovers, so after a flip it keeps reading the old (eventually frozen)
+schema: artists who join afterwards never enter the set and are never
+scanned, with no error. Migration 028 makes it rebuildable.
+
+1. Make sure migration 028 is applied (`pnpm db:migrate` with the maglev
+   `DATABASE_URL`; see AGENTS.md "Migrations" for the 016 note).
+2. Set `INDEXER_SCHEMA=ponder_v4` on the **worker** Railway service as
+   well as on Netlify, and redeploy the worker. On startup it compares
+   `pnd_known_artists_schema()` with `INDEXER_SCHEMA` and, if they
+   differ, runs `pnd_rebuild_known_artists(INDEXER_SCHEMA)`. Look for
+   `[worker.startup] known_artists rebuilt against ponder_v4: N addresses`
+   in the worker log. A line starting `[worker.startup] !!!` means the
+   rebuild did not happen (the worker still starts); fix the cause and
+   use step 3. The same startup pass warns if `INDEXER_SCHEMA` has not
+   been written to in `INDEXER_STALE_HOURS` (default 6) hours.
+3. To do it by hand instead, or to confirm:
+
+   ```sql
+   select pnd_known_artists_schema();             -- expect ponder_v4
+   select pnd_rebuild_known_artists('ponder_v4'); -- only if it is not
+   select count(*) from known_artists;            -- compare with before
+   ```
+
+   `pnd_rebuild_known_artists` raises, leaving the view untouched, if
+   the schema does not exist or has no `pnd_houses`/`fnd_collections`
+   yet. The view's owner must run it (`CREATE OR REPLACE VIEW` needs
+   ownership), which is the same role the worker and `db:migrate` use.
+
+Rolling back: point `INDEXER_SCHEMA` back at `ponder_v3` and redeploy the
+worker (or run `select pnd_rebuild_known_artists('ponder_v3')`).
+
 ## Readiness check
 
 After the parity checks pass, flip `INDEXER_SCHEMA=ponder_v4` in
