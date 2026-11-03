@@ -26,10 +26,12 @@ import { ipfsToHttp } from "@pin/shared"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
 import { useArtistHouseV2 } from "@/components/auction/useArtistHouseV2"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
-import { useChainNowSec } from "@/components/tx/tx-ui"
+import { PREFERRED_CHAIN, useChainNowSec } from "@/components/tx/tx-ui"
 import { parseListingExpiry } from "@/lib/listing-expiry"
 import { TxLink, StatusChip } from "@/components/auction/tx"
 import { useBatchedCalls, type PreparedCall } from "@/lib/useBatchedCalls"
+import { listingBlockReason } from "@/lib/auction-policy"
+import { ListingBlockedNotice } from "@/components/auction/ListingBlockedNotice"
 
 const DURATION_OPTIONS = [
   { label: "24 hours", seconds: 24 * 60 * 60 },
@@ -107,14 +109,23 @@ function PanelInner({
   v1HouseAddress: Address | null
   v2HouseAddress: Address | null
 }) {
+  // Bulk listing is ERC721-only; on a V1-only owner the policy blocks it
+  // and the owner is pointed at the upgrade flow instead.
+  const listBlockReason = listingBlockReason(listHouseVersion, "erc721")
   return (
     <div className="space-y-4">
-      <BulkListSection
-        artistAddress={artistAddress}
-        connectedAddress={connectedAddress}
-        houseAddress={listHouseAddress}
-        houseVersion={listHouseVersion}
-      />
+      {listBlockReason ? (
+        <Section>
+          <ListingBlockedNotice reason={listBlockReason} ownerAddress={artistAddress} />
+        </Section>
+      ) : (
+        <BulkListSection
+          artistAddress={artistAddress}
+          connectedAddress={connectedAddress}
+          houseAddress={listHouseAddress}
+          houseVersion={listHouseVersion}
+        />
+      )}
       {v1HouseAddress && (
         <BulkCancelSection
           connectedAddress={connectedAddress}
@@ -324,6 +335,7 @@ function BulkListSection({
 
         if (!isApproved) {
           const approveHash = await writeContractAction(wagmiConfig, {
+            chainId: PREFERRED_CHAIN.id,
             address: contract,
             abi: erc721Abi,
             functionName: "setApprovalForAll",
@@ -342,12 +354,14 @@ function BulkListSection({
         const createHash =
           houseVersion === 2
             ? await writeContractAction(wagmiConfig, {
+                chainId: PREFERRED_CHAIN.id,
                 address: houseAddress,
                 abi: sovereignAuctionHouseV2Abi,
                 functionName: "bulkCreateAuctions",
                 args: [contract, tokenIds, reserveWei, BigInt(durationSec), listingExpirySeconds],
               })
             : await writeContractAction(wagmiConfig, {
+                chainId: PREFERRED_CHAIN.id,
                 address: houseAddress,
                 abi: sovereignAuctionHouseAbi,
                 functionName: "bulkCreateAuctions",
@@ -651,6 +665,7 @@ function BulkCancelSection({
     }
 
     writeContract({
+      chainId: PREFERRED_CHAIN.id,
       address: houseAddress,
       abi: sovereignAuctionHouseAbi,
       functionName: "bulkCancelAuctions",

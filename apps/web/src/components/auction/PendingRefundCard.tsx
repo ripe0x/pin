@@ -74,6 +74,7 @@ function Card({
 
   function handleWithdraw() {
     writeContract({
+      chainId: PREFERRED_CHAIN.id,
       address: houseAddress,
       abi,
       functionName: "withdrawRefund",
@@ -84,6 +85,7 @@ function Card({
   function handleWithdrawTo() {
     if (!isAddress(redirectTo)) return
     writeContract({
+      chainId: PREFERRED_CHAIN.id,
       address: houseAddress,
       abi: sovereignAuctionHouseV2Abi,
       functionName: "withdrawRefundTo",

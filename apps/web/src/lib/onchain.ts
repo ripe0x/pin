@@ -5,9 +5,10 @@ import { sovereignAuctionHouseAbi, sovereignAuctionHouseV2Abi } from "@pin/abi"
 import { pgCache } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
 import { sql } from "./db"
+import { classifyAccountCode, type AccountCodeKind } from "./auction-policy"
 
 /**
- * The ONLY surface in v2 where the web app reaches to chain. Six
+ * The ONLY surface in v2 where the web app reaches to chain. A handful of
  * functions, each pgCache-wrapped, each used by a specific user-facing
  * surface that needs sub-30s freshness.
  *
@@ -229,4 +230,23 @@ export async function getCurrentOwner(
       }
     },
   )
+}
+
+/**
+ * Whether an address carries code: a plain account, a contract, or an
+ * EIP-7702 delegated account. One `eth_getCode`, 5-minute cache. Used by
+ * the auction detail page to flag a deferred V2 lot whose winning bidder
+ * runs its own code on delivery. Null when the read fails.
+ */
+export async function getAccountCodeKind(
+  address: Address,
+): Promise<AccountCodeKind | null> {
+  return pgCache(`account-code:${address.toLowerCase()}`, 300, async () => {
+    try {
+      const code = await getClient().getCode({ address })
+      return classifyAccountCode(code)
+    } catch {
+      return null
+    }
+  })
 }
