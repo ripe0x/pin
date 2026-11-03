@@ -59,6 +59,26 @@ export type TaskResult = {
   rpcCalls?: number
   rowsWritten?: number
   scopeCount?: number
+  /**
+   * Per-scope failures a task survived (it kept going for other scopes)
+   * but must not hide. Non-empty marks the iteration `ok = false` in
+   * worker_iterations while still recording the counts, so a scanner that
+   * stopped short on an RPC error shows up as failed instead of as a
+   * quiet success.
+   */
+  errors?: string[]
+}
+
+// worker_iterations.error is TEXT; keep one bad tick from writing a
+// megabyte of repeated stack text.
+const MAX_ERROR_CHARS = 4_000
+
+export function summarizeTaskErrors(errors: string[]): string {
+  const head = errors.length === 1 ? "" : `${errors.length} errors: `
+  const joined = head + errors.join(" | ")
+  return joined.length > MAX_ERROR_CHARS
+    ? `${joined.slice(0, MAX_ERROR_CHARS - 1)}…`
+    : joined
 }
 
 type Task = {
@@ -187,6 +207,11 @@ async function runTask(task: Task): Promise<void> {
 
   try {
     result = await task.fn()
+    if (result.errors && result.errors.length > 0) {
+      ok = false
+      error = summarizeTaskErrors(result.errors)
+      console.error(`[worker.${task.name}] finished with errors: ${error}`)
+    }
   } catch (err) {
     ok = false
     error = (err as Error).message

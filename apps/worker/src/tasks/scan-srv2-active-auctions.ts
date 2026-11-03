@@ -16,7 +16,10 @@
  *   4. Multicall `auctionBids(contract, tokenId)` for every still-active
  *      to read current bid amount.
  *   5. UPSERT into `srv2_active_auctions` with the merged state.
- *   6. Advance cursor.
+ *   6. Advance cursor, but only through ranges whose getLogs succeeded
+ *      (scan-range.ts) and never past the log of a NEW candidate whose
+ *      state read failed, so a failed multicall leg is retried next
+ *      tick instead of silently dropping that auction.
  *
  * Cadence: every 5 min. Page-load freshness: up to 5 min stale, which
  * is acceptable because the bid button reads fresh chain state at
@@ -29,6 +32,7 @@ import {
   getAddress, parseAbiItem, type Address,
 } from "viem"
 import type { TaskResult } from "../scheduler.ts"
+import { describeScanError, scanRange } from "../scan-range.ts"
 
 const SR_BAZAAR = "0x6d7c44773c52d396f43c2d511b81aa168e9a7a42" as const
 const SR_BAZAAR_DEPLOY_BLOCK = 14_100_000n
@@ -80,24 +84,27 @@ export async function scanSrv2ActiveAuctions(): Promise<TaskResult> {
   const head = await client.getBlockNumber()
   let rpcCalls = 1
   let rowsWritten = 0
+  const errors: string[] = []
 
   for (const { address } of artists) {
     try {
       const r = await scanOneArtist(address, head)
       rpcCalls += r.rpcCalls
       rowsWritten += r.rowsWritten
+      errors.push(...r.errors)
     } catch (err) {
       console.error(`[${TASK}] ${address}:`, err)
+      errors.push(describeScanError(address, err))
     }
   }
 
-  return { scopeCount: artists.length, rpcCalls, rowsWritten }
+  return { scopeCount: artists.length, rpcCalls, rowsWritten, errors }
 }
 
 async function scanOneArtist(
   artist: string, head: bigint,
-): Promise<{ rpcCalls: number; rowsWritten: number }> {
-  if (!sql) return { rpcCalls: 0, rowsWritten: 0 }
+): Promise<{ rpcCalls: number; rowsWritten: number; errors: string[] }> {
+  if (!sql) return { rpcCalls: 0, rowsWritten: 0, errors: [] }
   const lower = artist.toLowerCase()
   const scope = `srv2:${lower}`
 
@@ -106,43 +113,60 @@ async function scanOneArtist(
     SELECT last_block::text AS last_block FROM worker_cursors
     WHERE task = ${TASK} AND scope = ${scope} LIMIT 1
   `) as Array<{ last_block: string }>
-  let cursor = cursorRow[0]
+  const fromBlock = cursorRow[0]
     ? BigInt(cursorRow[0].last_block) + 1n
     : SR_BAZAAR_DEPLOY_BLOCK
 
   let rpcCalls = 0
+  const errors: string[] = []
 
   // 1. Walk forward in 10K chunks, collecting new NewAuction candidates.
-  const candidates = new Map<string, { contract: Address; tokenId: bigint; reserveWei: bigint }>()
-  let chunks = 0
-  while (cursor <= head && chunks < MAX_CHUNKS_PER_TICK) {
-    const toBlock = cursor + CHUNK_SIZE - 1n > head ? head : cursor + CHUNK_SIZE - 1n
-    await throttleRpc()
-    const logs = await client.getLogs({
-      address: SR_BAZAAR,
-      event: newAuctionEvent,
-      args: { _auctionCreator: getAddress(lower) as Address },
-      fromBlock: cursor,
-      toBlock,
-    })
-    rpcCalls += 1
-    for (const l of logs) {
-      const c = l.args._contractAddress as Address
-      const t = l.args._tokenId as bigint
-      // Filter non-ETH at the event level: skip currencyAddress != 0x0.
-      if (
-        l.args._currencyAddress &&
-        l.args._currencyAddress.toLowerCase() !== ETH_CURRENCY
-      ) continue
-      candidates.set(`${c.toLowerCase()}:${t.toString()}`, {
-        contract: c,
-        tokenId: t,
-        reserveWei: l.args._minimumBid ?? 0n,
+  //    `block` is the block of the log that introduced a NEW candidate
+  //    (null for rows re-checked from the table): if its state read
+  //    fails below, the cursor must not pass that block, or the auction
+  //    is never seen again.
+  const candidates = new Map<string, {
+    contract: Address; tokenId: bigint; reserveWei: bigint; block: bigint | null
+  }>()
+  const scan = await scanRange({
+    from: fromBlock,
+    to: head,
+    chunkSize: CHUNK_SIZE,
+    maxChunks: MAX_CHUNKS_PER_TICK,
+    label: `${TASK} ${scope}`,
+    fetch: async (a, b) => {
+      await throttleRpc()
+      return client.getLogs({
+        address: SR_BAZAAR,
+        event: newAuctionEvent,
+        args: { _auctionCreator: getAddress(lower) as Address },
+        fromBlock: a,
+        toBlock: b,
       })
-    }
-    cursor = toBlock + 1n
-    chunks++
-  }
+    },
+    process: (logs) => {
+      for (const l of logs) {
+        const c = l.args._contractAddress as Address
+        const t = l.args._tokenId as bigint
+        // Filter non-ETH at the event level: skip currencyAddress != 0x0.
+        if (
+          l.args._currencyAddress &&
+          l.args._currencyAddress.toLowerCase() !== ETH_CURRENCY
+        ) continue
+        candidates.set(`${c.toLowerCase()}:${t.toString()}`, {
+          contract: c,
+          tokenId: t,
+          reserveWei: l.args._minimumBid ?? 0n,
+          block: l.blockNumber ?? null,
+        })
+      }
+    },
+  })
+  rpcCalls += scan.calls
+  if (scan.error) errors.push(describeScanError(scope, scan.error))
+  // Last block whose logs were all fetched; may be lowered below if a
+  // new candidate's state read fails.
+  let safeTo = scan.scannedTo
 
   // 2. Also re-check rows we previously marked active (state may have
   //    changed since last scan even if no new NewAuction landed).
@@ -157,15 +181,15 @@ async function scanOneArtist(
         contract: getAddress(e.contract) as Address,
         tokenId: BigInt(e.token_id),
         reserveWei: 0n, // unknown without re-fetching the event; refresh below
+        block: null,
       })
     }
   }
 
   if (candidates.size === 0) {
     // Still advance the cursor so we don't re-scan the same range.
-    const scanned = chunks > 0 ? cursor - 1n : head
-    await advanceCursor(scope, scanned)
-    return { rpcCalls, rowsWritten: 0 }
+    if (safeTo >= fromBlock) await advanceCursor(scope, safeTo)
+    return { rpcCalls, rowsWritten: 0, errors }
   }
 
   // 3. Multicall tokenAuctions + auctionBids for every candidate.
@@ -189,11 +213,21 @@ async function scanOneArtist(
   rpcCalls += Math.ceil(calls.length / 250) // multicall3 batches; rough estimate
 
   let rowsWritten = 0
+  let failedLegs = 0
   for (let i = 0; i < list.length; i++) {
     const c = list[i]
     const aRes = results[i * 2]
     const bRes = results[i * 2 + 1]
-    if (aRes.status !== "success" || bRes.status !== "success") continue
+    if (aRes.status !== "success" || bRes.status !== "success") {
+      // A new auction isn't in the table yet, so skipping it while the
+      // cursor moves past its NewAuction log would lose it for good.
+      // Hold the cursor just before that log; the next tick re-reads it.
+      // (A row already tracked as active is re-checked every tick from
+      // the table, so it doesn't constrain the cursor.)
+      failedLegs++
+      if (c.block !== null && c.block - 1n < safeTo) safeTo = c.block - 1n
+      continue
+    }
     const auction = aRes.result as readonly [
       string, bigint, bigint, bigint, string, bigint, `0x${string}`,
     ]
@@ -232,14 +266,19 @@ async function scanOneArtist(
     rowsWritten++
   }
 
-  // Advance cursor to the last block we actually scanned via getLogs.
-  // If we didn't make any getLogs calls (no new chunks left), don't
-  // touch the cursor — the multicall refresh above doesn't extend it.
-  if (chunks > 0) {
-    await advanceCursor(scope, cursor - 1n)
+  if (failedLegs > 0) {
+    errors.push(`${scope}: ${failedLegs} of ${list.length} auction state read(s) failed; cursor held at ${safeTo}`)
   }
 
-  return { rpcCalls, rowsWritten }
+  // Advance cursor to the last block we actually scanned via getLogs
+  // (lowered to just before any new candidate whose state read failed).
+  // If no getLogs range succeeded, don't touch the cursor — the
+  // multicall refresh above doesn't extend it.
+  if (safeTo >= fromBlock) {
+    await advanceCursor(scope, safeTo)
+  }
+
+  return { rpcCalls, rowsWritten, errors }
 }
 
 async function advanceCursor(scope: string, lastBlock: bigint): Promise<void> {

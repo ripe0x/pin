@@ -32,6 +32,7 @@ import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
 import { throttleRpc } from "../throttle.ts"
 import { resolveNewTokenOwner } from "../scanners/resolve-owner.ts"
+import { describeScanError, scanRange } from "../scan-range.ts"
 import { parseAbiItem, type Address } from "viem"
 import type { TaskResult } from "../scheduler.ts"
 
@@ -40,7 +41,7 @@ const FOUNDATION_NFT = "0x3b3ee1931dc30c1957379fac9aba94d1c48a5405"
 // floor just means a few empty leading chunks; harmless.
 const FND_NFT_DEPLOY_BLOCK = 11_648_000n
 const CHUNK_SIZE = 9_500n // drpc free-tier eth_getLogs cap
-const MAX_CHUNKS_PER_TICK = 50n
+const MAX_CHUNKS_PER_TICK = 50
 const TASK = "scan-fnd-shared"
 const SCOPE = "fnd-shared"
 
@@ -92,67 +93,79 @@ export async function scanFndShared(): Promise<TaskResult> {
     SELECT last_block::text AS last_block FROM worker_cursors
     WHERE task = ${TASK} AND scope = ${SCOPE} LIMIT 1
   `) as Array<{ last_block: string }>
-  let cursor = cursorRow[0]
+  const fromBlock = cursorRow[0]
     ? BigInt(cursorRow[0].last_block) + 1n
     : FND_NFT_DEPLOY_BLOCK
 
   let rowsWritten = 0
-  let chunks = 0n
-  while (cursor <= head && chunks < MAX_CHUNKS_PER_TICK) {
-    const toBlock =
-      cursor + CHUNK_SIZE - 1n > head ? head : cursor + CHUNK_SIZE - 1n
-
-    await throttleRpc()
-    let logs: Awaited<
-      ReturnType<typeof client.getLogs<typeof mintedEvent>>
-    > = []
-    try {
-      logs = await client.getLogs({
+  // A failed getLogs used to be logged and then treated as "no logs",
+  // with the cursor advanced past the chunk anyway: a permanent hole.
+  // scanRange splits a failing chunk, and stops at the first range that
+  // still fails; the cursor is committed only through the last range
+  // that was fetched AND written.
+  const scan = await scanRange({
+    from: fromBlock,
+    to: head,
+    chunkSize: CHUNK_SIZE,
+    maxChunks: MAX_CHUNKS_PER_TICK,
+    label: TASK,
+    fetch: async (a, b) => {
+      await throttleRpc()
+      return client.getLogs({
         address: FOUNDATION_NFT as Address,
         event: mintedEvent,
-        fromBlock: cursor,
-        toBlock,
+        fromBlock: a,
+        toBlock: b,
       })
-    } catch (err) {
-      console.error(`[${TASK}] getLogs ${cursor}-${toBlock}:`, err)
-    }
-    rpcCalls += 1
-
-    for (const log of logs) {
-      const creator = log.args.creator?.toLowerCase()
-      if (!creator || !knownArtists.has(creator)) continue
-      if (log.args.tokenId === undefined) continue
-      const tokenId = log.args.tokenId.toString()
+    },
+    process: async (logs) => {
+      for (const log of logs) {
+        const creator = log.args.creator?.toLowerCase()
+        if (!creator || !knownArtists.has(creator)) continue
+        if (log.args.tokenId === undefined) continue
+        const tokenId = log.args.tokenId.toString()
+        await sql`
+          INSERT INTO artist_tokens
+            (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
+          VALUES
+            (${creator}, ${FOUNDATION_NFT}, ${tokenId}, 'fnd-shared',
+             ${log.blockNumber!.toString()}::bigint, ${log.logIndex!}, NOW())
+          ON CONFLICT (contract, token_id) DO NOTHING
+        `
+        rowsWritten += 1
+        await resolveNewTokenOwner({
+          sql,
+          client,
+          contract: FOUNDATION_NFT,
+          tokenId,
+        }).catch(() => undefined)
+      }
+    },
+    // Persist after every successful range so a long backfill that dies
+    // mid-tick keeps its progress.
+    commit: async (scannedTo) => {
       await sql`
-        INSERT INTO artist_tokens
-          (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
-        VALUES
-          (${creator}, ${FOUNDATION_NFT}, ${tokenId}, 'fnd-shared',
-           ${log.blockNumber!.toString()}::bigint, ${log.logIndex!}, NOW())
-        ON CONFLICT (contract, token_id) DO NOTHING
+        INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
+        VALUES (${TASK}, ${SCOPE}, ${scannedTo.toString()}::bigint, NOW())
+        ON CONFLICT (task, scope) DO UPDATE SET
+          last_block = EXCLUDED.last_block, last_run_at = NOW()
       `
-      rowsWritten += 1
-      await resolveNewTokenOwner({
-        sql,
-        client,
-        contract: FOUNDATION_NFT,
-        tokenId,
-      }).catch(() => undefined)
-    }
+    },
+    onSplit: (a, b, err) =>
+      console.warn(`[${TASK}] getLogs ${a}-${b} failed, splitting: ${err}`),
+  })
+  rpcCalls += scan.calls
 
-    cursor = toBlock + 1n
-    await sql`
-      INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
-      VALUES (${TASK}, ${SCOPE}, ${(cursor - 1n).toString()}::bigint, NOW())
-      ON CONFLICT (task, scope) DO UPDATE SET
-        last_block = EXCLUDED.last_block, last_run_at = NOW()
-    `
-    chunks += 1n
+  const errors: string[] = []
+  if (scan.error) {
+    console.error(`[${TASK}] stopped at a failing range, cursor held at ${scan.scannedTo}:`, scan.error)
+    errors.push(describeScanError(SCOPE, scan.error))
   }
 
   return {
     scopeCount: knownArtists.size,
     rpcCalls,
     rowsWritten: rowsWritten + seededRows,
+    errors,
   }
 }
