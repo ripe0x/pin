@@ -116,11 +116,10 @@ Consequences:
   factory, (3) re-approve collections, (4) `bulkCreateAuctions` to
   re-list. Owners with an empty or unused old house just get the normal
   deploy CTA against the v2 factory.
-- Old-house listings remain biddable until their owner migrates; the
-  listing page for a v1 house shows a migration notice to the owner only.
-  (Suppressing the bid box fleet-wide is an option; not recommended, since
-  the hazard needs a bid plus a collection-side refusal, unchanged from
-  the risk accepted at v1 launch.)
+- Superseded 2026-11 (see "Web UI policy" below): PND no longer offers
+  the bid box on v1 listings. The earlier plan kept them biddable with an
+  owner-only notice; that changed once V2 was live and the upgrade flow
+  shipped.
 
 ### Standalone artist-site template
 
@@ -143,6 +142,42 @@ is in progress in a separate PR, not part of #308.
 - Regenerate reference docs (`pnpm generate:docs`) and
   `protocol-manifest.json`; the SovereignAuctionHouse prose must describe
   the two-step settle/claim flow.
+
+## Web UI policy (2026-11)
+
+V2 is live on mainnet (phase 1 below) and the in-app upgrade flow at
+`/studio/[address]/migrate` has shipped (phase 3). The rules below are
+enforced in the PND web UI only, from `apps/web/src/lib/auction-policy.ts`;
+the contracts are unchanged and anyone can still call a house directly.
+
+- **V1 listings: new bids paused on PND.** A v1 house delivers the lot
+  inside `endAuction`, so once a bid lands, a lot whose transfer later
+  fails (paused or upgraded collection, blocklisted bidder, changed
+  transfer rules) keeps the winning bid in the house with no unwind path
+  (issue #289). V1 clones cannot be patched, so the listing page shows a
+  notice in place of the bid box, and the house owner gets a link to the
+  upgrade flow to cancel and relist on a V2 house. This reverses the
+  earlier "keep v1 listings biddable" default. Settlement (`endAuction`),
+  pre-bid cancel and refund withdrawal stay available on v1, so any v1
+  listing that already has a bid still settles as before.
+- **V1 houses: new listings paused on PND.** `/auction/new`, the token
+  page "Start auction" CTA and studio bulk listing point a v1-only owner
+  at the upgrade flow instead of creating a v1 listing.
+- **V2 ERC1155 lots: new listings paused pending a house update.** ERC1155
+  delivery runs the winner's `onERC1155Received` hook, which the winner
+  controls. If it rejects delivery, `endAuction` defers the lot, retries
+  fail the same way, and after `PENDING_DELIVERY_TIMEOUT` the sale unwinds
+  with the winner's bid refunded in full. Settlement of this lot type can
+  therefore be held up for 30 days, and the winner effectively decides
+  whether the sale completes. Closing that needs a new implementation and
+  factory (V2 clones are immutable). Until then PND does not create new
+  ERC1155 listings. Existing live ERC1155 listings stay biddable and carry
+  a note that settlement for this lot type can be delayed.
+- **Deferred V2 lots** show when the winning bidder address has code (a
+  contract account or an EIP-7702 delegated account), from one
+  `eth_getCode` read on the auction page.
+- Every auction write pins `chainId` to the configured chain, and bids are
+  simulated from the connected account before the wallet prompt.
 
 ## Sequencing
 
@@ -213,8 +248,11 @@ indefinitely.
 ## Open decisions
 
 - Carry v1 fee terms into the v2 factory, or change them (phase 0.3).
-- Whether the web should suppress bidding on not-yet-migrated v1 listings
-  (default: no, owner-facing notice only).
+- Decided 2026-11: the web suppresses bidding on not-yet-migrated v1
+  listings (see "Web UI policy").
+- When to re-enable ERC1155 listings: after a house implementation whose
+  unwind path no longer lets a winner refuse delivery and still be
+  refunded, deployed behind a new factory.
 - Whether anything should auto-call `claimLot` / `unwindStuckLot` for
   deferred lots (a keeper would need a funded tx path PND does not
   currently run; default: UI-only, permissionless retry and unwind cover

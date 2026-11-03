@@ -8,11 +8,13 @@ import {
   useAccount,
   useBalance,
   useChainId,
+  useConfig,
   useReadContract,
   useSwitchChain,
   useWriteContract,
   useWaitForTransactionReceipt,
 } from "wagmi"
+import { simulateContract } from "wagmi/actions"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import {
   nftMarketAbi,
@@ -32,6 +34,13 @@ import {
 } from "@/components/tx/tx-ui"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import { parseListingExpiry } from "@/lib/listing-expiry"
+import { usePreflight } from "@/lib/use-preflight"
+import {
+  ERC1155_SETTLEMENT_NOTE,
+  V1_BIDS_PAUSED_NOTICE,
+  canBid,
+  showsSettlementDelayNote,
+} from "@/lib/auction-policy"
 import type {
   AuctionFees,
   AuctionState,
@@ -348,13 +357,24 @@ export function AuctionPanel({
           </div>
         </div>
 
+        {/* Settlement stays available on every house generation: a V1
+            listing that already has a bid must still be settle-able. Only
+            the bid box is withheld on V1 (see lib/auction-policy.ts). */}
         {phase === "ended-unsettled" ? (
           <SettleSection
             auction={auction}
             onSettled={() => setPostWriteState("settled")}
           />
-        ) : phase === "settled" ? null : (
+        ) : phase === "settled" ? null : canBid(auction) ? (
           <BidSection auction={auction} bid={bid} />
+        ) : (
+          <V1BidsPausedNotice auction={auction} />
+        )}
+
+        {phase !== "settled" && showsSettlementDelayNote(auction) && (
+          <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
+            {ERC1155_SETTLEMENT_NOTE}
+          </p>
         )}
 
         {auction.awaitingFirstBid && phase !== "settled" && (
@@ -585,71 +605,100 @@ function BidSection({
     if (isSuccess) bid.reset()
   }, [isSuccess, bid])
 
-  const isPending = isWritePending || isTxPending
+  const config = useConfig()
+  const preflight = usePreflight()
+  const isPending = isWritePending || isTxPending || preflight.checking
   const isSelfOutbidding =
     !!address && address.toLowerCase() === auction.bidder.toLowerCase()
 
+  // Every bid carries ETH, so it is simulated from the connected account
+  // on PREFERRED_CHAIN first; a bid that would revert (outbid since the
+  // page loaded, below the minimum raise, auction already ended) shows its
+  // reason inline instead of opening the wallet. The simulated request
+  // (with its pinned chainId) is what gets signed.
   function handleBid() {
-    if (!bid.isValid || bid.wei == null) return
-    if (auction.source === "foundation") {
-      writeContract({
-        address: auction.marketAddress,
-        abi: nftMarketAbi,
-        functionName: "placeBidV2",
-        args: [
-          BigInt(auction.auctionId),
-          bid.wei,
-          ZERO_ADDRESS as `0x${string}`,
-        ],
-        value: bid.wei,
-      })
-    } else if (auction.source === "superrareV2") {
-      // SR Bazaar enforces a buyer's premium on top of the bid: the
-      // total `msg.value` must equal `bid + (bid * marketplaceFee%)`.
-      // Verified on a mainnet fork — submitting `value: bid` reverts
-      // with "not enough eth sent." The fee is currently 3% (read from
-      // MarketplaceSettings; stable for years). The bid amount the
-      // contract records is still `bid.wei`; the extra 3% goes to SR.
-      const value = bid.wei + (bid.wei * SR_MARKETPLACE_FEE_BPS) / 10000n
-      writeContract({
-        address: auction.marketAddress,
-        abi: superrareBazaarAbi,
-        functionName: "bid",
-        args: [
-          auction.nftContract,
-          BigInt(auction.tokenId),
-          ZERO_ADDRESS as `0x${string}`,
-          bid.wei,
-        ],
-        value,
-      })
-    } else if (auction.source === "transient") {
-      // TL Auction House: msg.value carries the full bid amount; no
-      // buyer's premium (the protocol fee is deducted from the seller
-      // proceeds on settle, not added on top). `recipient` is who
-      // receives the NFT if the bidder wins — usually the bidder
-      // themselves (`address`).
-      writeContract({
-        address: auction.marketAddress,
-        abi: transientAuctionHouseAbi,
-        functionName: "bid",
-        args: [
-          auction.nftContract,
-          BigInt(auction.tokenId),
-          (address ?? ZERO_ADDRESS) as `0x${string}`,
-          bid.wei,
-        ],
-        value: bid.wei,
-      })
-    } else {
-      writeContract({
-        address: auction.marketAddress,
-        abi: sovereignAbiFor(auction),
-        functionName: "createBid",
-        args: [BigInt(auction.auctionId)],
-        value: bid.wei,
-      })
-    }
+    if (!bid.isValid || bid.wei == null || !address) return
+    const bidWei = bid.wei
+    const chainId = PREFERRED_CHAIN.id
+    reset()
+    void preflight.run(async () => {
+      if (auction.source === "foundation") {
+        const { request } = await simulateContract(config, {
+          account: address,
+          chainId,
+          address: auction.marketAddress,
+          abi: nftMarketAbi,
+          functionName: "placeBidV2",
+          args: [
+            BigInt(auction.auctionId),
+            bidWei,
+            ZERO_ADDRESS as `0x${string}`,
+          ],
+          value: bidWei,
+        })
+        writeContract(request)
+      } else if (auction.source === "superrareV2") {
+        // SR Bazaar enforces a buyer's premium on top of the bid: the
+        // total `msg.value` must equal `bid + (bid * marketplaceFee%)`.
+        // Verified on a mainnet fork — submitting `value: bid` reverts
+        // with "not enough eth sent." The fee is currently 3% (read from
+        // MarketplaceSettings; stable for years). The bid amount the
+        // contract records is still `bid.wei`; the extra 3% goes to SR.
+        // A changed fee now fails the simulation rather than the tx.
+        const value = bidWei + (bidWei * SR_MARKETPLACE_FEE_BPS) / 10000n
+        const { request } = await simulateContract(config, {
+          account: address,
+          chainId,
+          address: auction.marketAddress,
+          abi: superrareBazaarAbi,
+          functionName: "bid",
+          args: [
+            auction.nftContract,
+            BigInt(auction.tokenId),
+            ZERO_ADDRESS as `0x${string}`,
+            bidWei,
+          ],
+          value,
+        })
+        writeContract(request)
+      } else if (auction.source === "transient") {
+        // TL Auction House: msg.value carries the full bid amount; no
+        // buyer's premium (the protocol fee is deducted from the seller
+        // proceeds on settle, not added on top). `recipient` is who
+        // receives the NFT if the bidder wins — usually the bidder
+        // themselves (`address`).
+        const { request } = await simulateContract(config, {
+          account: address,
+          chainId,
+          address: auction.marketAddress,
+          abi: transientAuctionHouseAbi,
+          functionName: "bid",
+          args: [
+            auction.nftContract,
+            BigInt(auction.tokenId),
+            address,
+            bidWei,
+          ],
+          value: bidWei,
+        })
+        writeContract(request)
+      } else {
+        // Sovereign. AuctionPanel only renders BidSection when canBid()
+        // allows it (V2 houses); the guard here keeps a V1 house from
+        // ever receiving a bid through this component.
+        if (!canBid(auction)) return
+        const { request } = await simulateContract(config, {
+          account: address,
+          chainId,
+          address: auction.marketAddress,
+          abi: sovereignAbiFor(auction),
+          functionName: "createBid",
+          args: [BigInt(auction.auctionId)],
+          value: bidWei,
+        })
+        writeContract(request)
+      }
+    })
   }
 
   if (!address) {
@@ -732,21 +781,61 @@ function BidSection({
         disabled={isPending || !bid.isValid || isSelfOutbidding}
         className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        {isWritePending
-          ? "Confirm in wallet…"
-          : isTxPending
-            ? "Placing bid…"
-            : isSelfOutbidding
-              ? "You're already the highest bidder"
-              : "Place bid"}
+        {preflight.checking
+          ? "Checking bid…"
+          : isWritePending
+            ? "Confirm in wallet…"
+            : isTxPending
+              ? "Placing bid…"
+              : isSelfOutbidding
+                ? "You're already the highest bidder"
+                : "Place bid"}
       </button>
 
       {bid.error && (
         <p className="text-[11px] font-mono text-red-500">{bid.error}</p>
       )}
+      {preflight.error != null && !writeError && (
+        <p className="text-[11px] font-mono text-red-500 break-words">
+          {formatWriteError(preflight.error, "Bid")}
+        </p>
+      )}
       {writeError && (
         <p className="text-[11px] font-mono text-red-500 break-words">
           {formatWriteError(writeError, "Bid")}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Replaces the bid box on Sovereign V1 listings (canBid() is false). The
+ * seller additionally gets a pointer to the V1-to-V2 upgrade flow, which
+ * cancels the V1 listings and relists them on a V2 house. Pre-bid listings
+ * keep the seller's cancel action below (SellerActions); a listing that
+ * already has a bid still settles through SettleSection once it ends.
+ */
+function V1BidsPausedNotice({ auction }: { auction: AuctionState }) {
+  const { address } = useAccount()
+  const isSeller =
+    !!address && address.toLowerCase() === auction.seller.toLowerCase()
+  return (
+    <div className="space-y-2 rounded border border-gray-200 bg-surface-muted p-3">
+      <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+        {V1_BIDS_PAUSED_NOTICE}
+      </p>
+      {isSeller && (
+        <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+          {auction.awaitingFirstBid
+            ? "This is your listing. Cancel it and relist on a V2 house to take bids on PND."
+            : "This is your listing. It already has a bid, so it settles here as usual once it ends. List future work on a V2 house."}{" "}
+          <Link
+            href={`/studio/${auction.seller}/migrate`}
+            className="text-fg underline underline-offset-2 hover:opacity-70"
+          >
+            Upgrade your house →
+          </Link>
         </p>
       )}
     </div>
@@ -798,6 +887,7 @@ function SettleSection({
   function handleSettle() {
     if (auction.source === "foundation") {
       writeContract({
+        chainId: PREFERRED_CHAIN.id,
         address: auction.marketAddress,
         abi: nftMarketAbi,
         functionName: "finalizeReserveAuction",
@@ -805,6 +895,7 @@ function SettleSection({
       })
     } else if (auction.source === "superrareV2") {
       writeContract({
+        chainId: PREFERRED_CHAIN.id,
         address: auction.marketAddress,
         abi: superrareBazaarAbi,
         functionName: "settleAuction",
@@ -812,6 +903,7 @@ function SettleSection({
       })
     } else if (auction.source === "transient") {
       writeContract({
+        chainId: PREFERRED_CHAIN.id,
         address: auction.marketAddress,
         abi: transientAuctionHouseAbi,
         functionName: "settleAuction",
@@ -819,6 +911,7 @@ function SettleSection({
       })
     } else {
       writeContract({
+        chainId: PREFERRED_CHAIN.id,
         address: auction.marketAddress,
         abi: sovereignAbiFor(auction),
         functionName: "endAuction",
@@ -944,6 +1037,7 @@ function ExpireListingAction({
       <button
         onClick={() =>
           writeContract({
+            chainId: PREFERRED_CHAIN.id,
             address: auction.marketAddress,
             abi: sovereignAbiFor(auction),
             functionName: "expireAuction",
@@ -1062,6 +1156,7 @@ function SellerActions({
   function handleCancel() {
     if (auction.source === "foundation") {
       writeCancel({
+        chainId: PREFERRED_CHAIN.id,
         address: auction.marketAddress,
         abi: nftMarketAbi,
         functionName: "cancelReserveAuction",
@@ -1069,6 +1164,7 @@ function SellerActions({
       })
     } else if (auction.source === "superrareV2") {
       writeCancel({
+        chainId: PREFERRED_CHAIN.id,
         address: auction.marketAddress,
         abi: superrareBazaarAbi,
         functionName: "cancelAuction",
@@ -1078,6 +1174,7 @@ function SellerActions({
       // TL exposes the cancel-listing call as `delist` (covers
       // auction + buy-now). Same (nftAddress, tokenId) signature.
       writeCancel({
+        chainId: PREFERRED_CHAIN.id,
         address: auction.marketAddress,
         abi: transientAuctionHouseAbi,
         functionName: "delist",
@@ -1085,6 +1182,7 @@ function SellerActions({
       })
     } else {
       writeCancel({
+        chainId: PREFERRED_CHAIN.id,
         address: auction.marketAddress,
         abi: sovereignAbiFor(auction),
         functionName: "cancelAuction",
@@ -1097,6 +1195,7 @@ function SellerActions({
     if (!reserve.isValid || reserve.wei == null || reserve.wei === 0n) return
     if (auction.source === "foundation") {
       writeUpdate({
+        chainId: PREFERRED_CHAIN.id,
         address: auction.marketAddress,
         abi: nftMarketAbi,
         functionName: "updateReserveAuction",
@@ -1104,6 +1203,7 @@ function SellerActions({
       })
     } else {
       writeUpdate({
+        chainId: PREFERRED_CHAIN.id,
         address: auction.marketAddress,
         abi: sovereignAbiFor(auction),
         functionName: "setAuctionReservePrice",
@@ -1331,6 +1431,7 @@ function V2ListingControls({ auction }: { auction: AuctionState }) {
           <button
             onClick={() =>
               writeDuration({
+                chainId: PREFERRED_CHAIN.id,
                 address: auction.marketAddress,
                 abi: sovereignAuctionHouseV2Abi,
                 functionName: "setAuctionDuration",
@@ -1368,6 +1469,7 @@ function V2ListingControls({ auction }: { auction: AuctionState }) {
           <button
             onClick={() =>
               writeRecipient({
+                chainId: PREFERRED_CHAIN.id,
                 address: auction.marketAddress,
                 abi: sovereignAuctionHouseV2Abi,
                 functionName: "setAuctionFundsRecipient",
@@ -1408,6 +1510,7 @@ function V2ListingControls({ auction }: { auction: AuctionState }) {
           <button
             onClick={() =>
               writeExpiry({
+                chainId: PREFERRED_CHAIN.id,
                 address: auction.marketAddress,
                 abi: sovereignAuctionHouseV2Abi,
                 functionName: "setAuctionListingExpiry",

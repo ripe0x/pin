@@ -4,7 +4,9 @@ import { useEffect, useState } from "react"
 import { parseAbi } from "viem"
 import { useAccount, useReadContract } from "wagmi"
 import { erc721Abi } from "@pin/abi"
+import { listingBlockReason } from "@/lib/auction-policy"
 import { useResolvedArtistHouse } from "./useResolvedArtistHouse"
+import { ListingBlockedNotice } from "./ListingBlockedNotice"
 import { CreateAuctionModal } from "./CreateAuctionModal"
 
 const erc1155BalanceAbi = parseAbi([
@@ -15,8 +17,11 @@ const erc1155BalanceAbi = parseAbi([
  * Start-auction CTA for token detail pages. Renders only when:
  *   - The connected wallet currently owns the token (live ownerOf check for
  *     ERC721, balanceOf for ERC1155)
- *   - That wallet has a deployed sovereign auction house (a V2 house is
- *     required for ERC1155 lots)
+ *   - That wallet has a deployed sovereign auction house
+ *
+ * When lib/auction-policy.ts blocks the listing (a V1 house, or an ERC1155
+ * lot while those are paused) the owner sees the reason instead of the
+ * button.
  *
  * Caller is responsible for not rendering this when an active auction already
  * exists for the token (the page already gates on `auction === null`).
@@ -90,9 +95,14 @@ function StartAuctionCTAClient({
   const { houseAddress, version } = useResolvedArtistHouse(address)
 
   if (!isCurrentOwner || !houseAddress) return null
-  // create1155Auction only exists on V2 houses; the upgrade banner on the
-  // studio auction-house tab is the path to one.
-  if (is1155 && version !== 2) return null
+  const blockReason = listingBlockReason(version ?? 1, tokenStandard)
+  if (blockReason) {
+    return (
+      <section className="py-5 border-b border-gray-100">
+        <ListingBlockedNotice reason={blockReason} ownerAddress={address} />
+      </section>
+    )
+  }
 
   // Own the section chrome here rather than in the page. The component
   // returns null in every non-owner / pre-mount case, so wrapping the

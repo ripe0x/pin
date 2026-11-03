@@ -15,7 +15,9 @@ import {
 } from "@pin/abi"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import { parseListingExpiry } from "@/lib/listing-expiry"
-import { useChainNowSec } from "@/components/tx/tx-ui"
+import { PREFERRED_CHAIN, useChainNowSec } from "@/components/tx/tx-ui"
+import { listingBlockReason } from "@/lib/auction-policy"
+import { ListingBlockedNotice } from "./ListingBlockedNotice"
 import { TxLink } from "./tx"
 
 const DURATION_OPTIONS = [
@@ -151,6 +153,7 @@ export function AuctionTermsForm({
     const auctionId = (log?.args as { auctionId?: bigint } | undefined)?.auctionId
     if (auctionId === undefined) return
     writeRecipient({
+      chainId: PREFERRED_CHAIN.id,
       address: houseAddress,
       abi: sovereignAuctionHouseV2Abi,
       functionName: "setAuctionFundsRecipient",
@@ -166,6 +169,7 @@ export function AuctionTermsForm({
 
   function handleApprove() {
     writeApprove({
+      chainId: PREFERRED_CHAIN.id,
       address: nftContract,
       abi: erc721Abi,
       functionName: "setApprovalForAll",
@@ -175,10 +179,12 @@ export function AuctionTermsForm({
 
   function handleCreate() {
     if (!reserveValid || reserve.wei == null || !quantityValid || !listingTermsValid) return
+    if (listingBlockReason(houseVersion, tokenStandard)) return
     const listingExpirySeconds = houseVersion === 2 ? listingExpiry.seconds ?? 0n : 0n
     if (is1155) {
       if (quantity === null) return
       writeCreate({
+        chainId: PREFERRED_CHAIN.id,
         address: houseAddress,
         abi: sovereignAuctionHouseV2Abi,
         functionName: "create1155Auction",
@@ -195,6 +201,7 @@ export function AuctionTermsForm({
     }
     if (houseVersion === 2) {
       writeCreate({
+        chainId: PREFERRED_CHAIN.id,
         address: houseAddress,
         abi: sovereignAuctionHouseV2Abi,
         functionName: "createAuction",
@@ -209,6 +216,7 @@ export function AuctionTermsForm({
       return
     }
     writeCreate({
+      chainId: PREFERRED_CHAIN.id,
       address: houseAddress,
       abi: sovereignAuctionHouseAbi,
       functionName: "createAuction",
@@ -225,14 +233,12 @@ export function AuctionTermsForm({
   const approveBusy = isApprovePending || isApproveMining
   const createBusy = isCreatePending || isCreateMining
 
-  // create1155Auction only exists on V2 houses.
-  if (is1155 && houseVersion !== 2) {
-    return (
-      <p className="text-sm text-gray-600">
-        ERC-1155 lots need a V2 auction house. Upgrade your house from the
-        studio migrate page, then list this token.
-      </p>
-    )
+  // New listings go to V2 houses only, and V2 ERC-1155 lots are paused
+  // (lib/auction-policy.ts). A blocked form renders the reason instead of
+  // the approve/create steps.
+  const blockReason = listingBlockReason(houseVersion, tokenStandard)
+  if (blockReason) {
+    return <ListingBlockedNotice reason={blockReason} ownerAddress={address} />
   }
 
   if (isCreateSuccess && createHash) {

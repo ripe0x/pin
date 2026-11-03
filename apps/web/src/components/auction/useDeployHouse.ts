@@ -11,6 +11,7 @@ import {
   MAINNET_CHAIN_ID,
   getAddressOrNull,
 } from "@pin/addresses"
+import { PREFERRED_CHAIN } from "@/components/tx/tx-ui"
 import { useArtistHouse } from "./useArtistHouse"
 import { useResolvedArtistHouse } from "./useResolvedArtistHouse"
 
@@ -58,6 +59,7 @@ export function useDeployHouse(artistAddress: string | undefined) {
   function deploy() {
     if (!factoryAddress) return
     writeContract({
+      chainId: PREFERRED_CHAIN.id,
       address: factoryAddress,
       abi:
         deployVersion === 2
