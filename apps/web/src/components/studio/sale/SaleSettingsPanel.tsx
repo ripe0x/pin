@@ -14,7 +14,7 @@ import { useCallback, useEffect, useState } from "react"
 import { formatEther, parseEther, isAddress, type Address } from "viem"
 import { useWaitForTransactionReceipt, useWriteContract } from "wagmi"
 import { fixedPriceMinterAbi } from "@pin/abi"
-import { formatWriteError } from "@/components/tx/tx-ui"
+import { PREFERRED_CHAIN, formatWriteError } from "@/components/tx/tx-ui"
 import { BTN_SECONDARY, ERROR, HELP, INPUT, LABEL } from "@/components/studio/create/wizard-ui"
 import { NOT_SURFACE_SALE_MESSAGE } from "@/lib/not-surface"
 import { fetchSaleState, type SaleState } from "./sale-api"
@@ -43,8 +43,15 @@ function useSetter(minter: Address | null, onConfirmed: () => void) {
   const label = write.isPending ? "Confirm in wallet…" : receipt.isLoading ? "Saving…" : "Save"
   const run = (functionName: string, args: readonly unknown[]) => {
     if (!minter) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    write.writeContract({ address: minter, abi: fixedPriceMinterAbi, functionName: functionName as any, args: args as any })
+    write.writeContract({
+      chainId: PREFERRED_CHAIN.id,
+      address: minter,
+      abi: fixedPriceMinterAbi,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      functionName: functionName as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      args: args as any,
+    })
   }
   return { run, busy, label, error: write.error }
 }
