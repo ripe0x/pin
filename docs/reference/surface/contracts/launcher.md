@@ -2,7 +2,7 @@
 
 # Launcher
 
-> Not yet deployed to Ethereum mainnet. The address lands here at launch; until then, examples use an `<LAUNCHER_V2_ADDRESS>` placeholder.
+`0x924d16cDCB9037cE159D82923406Be161a6BCD1B` · [view on evm.now](https://evm.now/address/0x924d16cDCB9037cE159D82923406Be161a6BCD1B?chainId=1) · Ethereum mainnet
 
 The common wiring: one `launch` call deploys a
 [Surface (v2)](/docs/surface/contracts/surface-v2) collection and its
@@ -10,7 +10,7 @@ The common wiring: one `launch` call deploys a
 each other, through the two [CloneFactory](/docs/surface/contracts/clone-factory)
 instances. The launcher holds the product defaults: the owner as royalty and
 payout fallback, PND's default referrer, one sale per collection. It holds no
-authority over anything it launches. Deployed at `<LAUNCHER_V2_ADDRESS>`.
+authority over anything it launches. Deployed at `0x924d16cDCB9037cE159D82923406Be161a6BCD1B`.
 
 The launcher is replaceable without touching anything deployed. A bespoke
 project skips it and calls the token factory directly with its own minter.

@@ -2,7 +2,7 @@
 
 # AllowlistGate
 
-> Not yet deployed to Ethereum mainnet. The address lands here at launch; until then, examples use an `<ALLOWLIST_GATE_ADDRESS>` placeholder.
+`0xb3b0aBfeb588ab905f984a20e05784be8a35eF4f` · [view on evm.now](https://evm.now/address/0xb3b0aBfeb588ab905f984a20e05784be8a35eF4f?chainId=1) · Ethereum mainnet
 
 One ownerless singleton gate serving every collection: a Merkle root per
 collection, set by that collection's owner. A
@@ -14,7 +14,7 @@ tree over `abi.encode(address)`, so a list built with
 
 An allowlist phase then a public phase is `setGate` to this contract plus
 `setRoot`, and later `setGate(0)` on the sale. Deployed at
-`<ALLOWLIST_GATE_ADDRESS>`.
+`0xb3b0aBfeb588ab905f984a20e05784be8a35eF4f`.
 
 ## Write functions
 

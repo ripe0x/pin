@@ -9,8 +9,8 @@ The shared singletons of each PND onchain protocol on Ethereum mainnet (chain id
 | Contract | Address | Docs |
 | --- | --- | --- |
 | SurfaceFactory | [`0xdB81d3F33EF3D84685486916E0d372E247558094`](https://evm.now/address/0xdB81d3F33EF3D84685486916E0d372E247558094?chainId=1) | [reference](/docs/surface/contracts/factory) |
-| AllowlistGate | _pending deploy_ | [reference](/docs/surface/contracts/allowlist-gate) |
-| Launcher | _pending deploy_ | [reference](/docs/surface/contracts/launcher) |
+| AllowlistGate | [`0xb3b0aBfeb588ab905f984a20e05784be8a35eF4f`](https://evm.now/address/0xb3b0aBfeb588ab905f984a20e05784be8a35eF4f?chainId=1) | [reference](/docs/surface/contracts/allowlist-gate) |
+| Launcher | [`0x924d16cDCB9037cE159D82923406Be161a6BCD1B`](https://evm.now/address/0x924d16cDCB9037cE159D82923406Be161a6BCD1B?chainId=1) | [reference](/docs/surface/contracts/launcher) |
 
 ## Auctions
 
