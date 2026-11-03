@@ -26,7 +26,7 @@
 --     missing view; comma-joined if the view somehow spans schemas.
 --
 -- The worker calls the pair on startup (apps/worker/src/
--- known-artists-schema.ts): if the view's schema differs from
+-- startup-checks.ts): if the view's schema differs from
 -- INDEXER_SCHEMA it rebuilds against INDEXER_SCHEMA. A cutover can also
 -- run it by hand, see docs/ponder-schema-cutover.md:
 --   SELECT pnd_known_artists_schema();
