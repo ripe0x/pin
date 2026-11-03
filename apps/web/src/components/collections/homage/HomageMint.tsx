@@ -18,6 +18,7 @@ import {
   useAccount,
   useBalance,
   useChainId,
+  useConfig,
   usePublicClient,
   useReadContract,
   useReadContracts,
@@ -25,6 +26,7 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi"
+import {simulateContract} from "wagmi/actions"
 import {ConnectButton} from "@rainbow-me/rainbowkit"
 import {
   Countdown,
@@ -56,6 +58,7 @@ import {HomageSchedule} from "./HomageSchedule"
 import {ALLOWLIST_SNAPSHOT_CAPTION, HomageAllowlistLookup} from "./HomageAllowlistLookup"
 import {HomageMintLog} from "./HomageMintLog"
 import type {HomageMintEntry} from "@/lib/homage/collection.server"
+import {usePreflight} from "@/lib/use-preflight"
 
 const SUPPLY = 10_000
 const QUOTE_POLL_MS = 30_000 // paid RPC path in prod — never tighten below this
@@ -216,7 +219,38 @@ export function HomageMint({
   // ── write / receipt (mint family: mint | allowlistMint | claim) ────────────────
   const {writeContract, data: txHash, isPending: isWritePending, error: writeError, reset} = useWriteContract()
   const {isLoading: isTxPending, isSuccess, data: receipt} = useWaitForTransactionReceipt({hash: txHash})
-  const isPending = isWritePending || isTxPending
+  const config = useConfig()
+  const preflight = usePreflight()
+  const runPreflight = preflight.run
+  const isPending = isWritePending || isTxPending || preflight.checking
+  type WriteParams = Parameters<typeof writeContract>[0]
+  type SimWrite = {
+    address: Address
+    abi: readonly unknown[]
+    functionName: string
+    args?: readonly unknown[]
+    value?: bigint
+    chainId?: number
+  }
+  // Every mint-family write carries ETH: simulate it from the connected
+  // account on the pinned chain first, then sign the simulated request. A
+  // rejection shows inline next to the write error instead of opening the
+  // wallet.
+  const sendSimulated = useCallback(
+    (params: SimWrite) => {
+      if (!address) return
+      reset()
+      void runPreflight(async () => {
+        const {request} = await simulateContract(config, {
+          ...(params as unknown as Parameters<typeof simulateContract>[1]),
+          account: address,
+          chainId: PREFERRED_CHAIN.id,
+        })
+        writeContract(request as unknown as WriteParams)
+      })
+    },
+    [address, config, reset, runPreflight, writeContract],
+  )
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
@@ -287,7 +321,7 @@ export function HomageMint({
     }
     setPriceConfirmPending(false)
     if (batchQty <= 1) {
-      writeContract({...homageFlows(minter).mint(q.totalValue), chainId: PREFERRED_CHAIN.id})
+      sendSimulated({...homageFlows(minter).mint(q.totalValue), chainId: PREFERRED_CHAIN.id})
       return
     }
     // Batch: exact fee leg from the contract + a per-swap budget with headroom for the
@@ -299,11 +333,11 @@ export function HomageMint({
       args: [address ?? ZERO, BigInt(batchQty)],
     })) as bigint
     const swapBudget = (BigInt(batchQty) * q.ethForSwap * 112n) / 100n
-    writeContract({
+    sendSimulated({
       ...homageFlows(minter).mintBatch(BigInt(batchQty), batchFee + swapBudget),
       chainId: PREFERRED_CHAIN.id,
     })
-  }, [publicClient, quote, publicFee, minter, writeContract, batchQty, address, priceConfirmPending, priceMovedTooMuch])
+  }, [publicClient, quote, publicFee, minter, sendSimulated, batchQty, address, priceConfirmPending, priceMovedTooMuch])
 
   const doAllowlistMint = useCallback(async () => {
     if (!publicClient || !allowlistProof) return
@@ -322,7 +356,7 @@ export function HomageMint({
     }
     setPriceConfirmPending(false)
     if (batchQty <= 1) {
-      writeContract({...homageFlows(minter).allowlistMint(allowlistProof, q.ethForSwap + publicFee), chainId: PREFERRED_CHAIN.id})
+      sendSimulated({...homageFlows(minter).allowlistMint(allowlistProof, q.ethForSwap + publicFee), chainId: PREFERRED_CHAIN.id})
       return
     }
     // Allowlist batch: same escalating fee leg as the public batch (quoteBatchFee
@@ -335,11 +369,11 @@ export function HomageMint({
       args: [address ?? ZERO, BigInt(batchQty)],
     })) as bigint
     const swapBudget = (BigInt(batchQty) * q.ethForSwap * 112n) / 100n
-    writeContract({
+    sendSimulated({
       ...homageFlows(minter).allowlistMintBatch(BigInt(batchQty), allowlistProof, batchFee + swapBudget),
       chainId: PREFERRED_CHAIN.id,
     })
-  }, [publicClient, quote, publicFee, allowlistProof, minter, writeContract, batchQty, address, priceConfirmPending, priceMovedTooMuch])
+  }, [publicClient, quote, publicFee, allowlistProof, minter, sendSimulated, batchQty, address, priceConfirmPending, priceMovedTooMuch])
 
   // claim routes are driven from HomageClaim. The escalating fee is keyed on the RECIPIENT
   // (the wallet the homage mints to): the connected wallet for a direct claim, the vault for
@@ -760,16 +794,16 @@ export function HomageMint({
                     hidePunksWhenEmpty={phase === "allowlist" || phase === "public"}
                     getClaimValue={claimValue}
                     onClaim={(args) =>
-                      // The claim routes are a union of payable write configs; wagmi's writeContract
-                      // param can't unify the union, so cast through unknown (valid at runtime).
-                      writeContract({...args, chainId: PREFERRED_CHAIN.id} as unknown as Parameters<typeof writeContract>[0])
+                      // The claim routes are a union of payable write configs that the
+                      // simulate/write params can't unify, so cast through unknown (valid at runtime).
+                      sendSimulated({...args, chainId: PREFERRED_CHAIN.id} as unknown as SimWrite)
                     }
                   />
                 </div>
               )}
 
-              {writeError && (
-                <p className="text-[10px] font-mono text-status-sold leading-relaxed">{formatWriteError(writeError, "mint")}</p>
+              {(writeError || preflight.error != null) && (
+                <p className="text-[10px] font-mono text-status-sold leading-relaxed">{formatWriteError(writeError ?? preflight.error, "mint")}</p>
               )}
             </div>
           )}

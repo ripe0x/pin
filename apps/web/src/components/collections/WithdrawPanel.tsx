@@ -68,6 +68,7 @@ export function WithdrawPanel({ minter }: { minter: `0x${string}` | null }) {
           <button
             onClick={() =>
               writeContract({
+                chainId: PREFERRED_CHAIN.id,
                 address: minter,
                 abi: fixedPriceMinterAbi,
                 functionName: "withdraw",

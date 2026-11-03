@@ -17,7 +17,7 @@ import { useCallback, useEffect, useState } from "react"
 import { isAddress, type Address } from "viem"
 import { useAccount, useBytecode, useWaitForTransactionReceipt, useWriteContract } from "wagmi"
 import { surfaceAbi, surfaceV2Abi, renderAssetsAbi } from "@pin/abi"
-import { formatWriteError } from "@/components/tx/tx-ui"
+import { PREFERRED_CHAIN, formatWriteError } from "@/components/tx/tx-ui"
 import { BTN, BTN_SECONDARY, ERROR, HELP, INPUT, LABEL } from "@/components/studio/create/wizard-ui"
 import { shortAddress } from "@/lib/collection"
 
@@ -75,6 +75,7 @@ function useSetter(target: Address | null, abi: unknown, onConfirmed: () => void
   const run = (functionName: string, args: readonly unknown[]) => {
     if (!target) return
     write.writeContract({
+      chainId: PREFERRED_CHAIN.id,
       address: target,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       abi: abi as any,

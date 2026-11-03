@@ -31,11 +31,13 @@ import {
   useAccount,
   useBalance,
   useChainId,
+  useConfig,
   useReadContract,
   useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi"
+import { simulateContract } from "wagmi/actions"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { surfaceAbi, fixedPriceMinterAbi } from "@pin/abi"
 import {
@@ -52,6 +54,7 @@ import {
   useChainNowSec,
 } from "@/components/tx/tx-ui"
 import { MintReveal } from "@/components/collections/MintReveal"
+import { usePreflight } from "@/lib/use-preflight"
 import {
   SurfaceStatus,
   COLLECTION_STATUS_LABEL,
@@ -232,7 +235,9 @@ export function MintCollectionCTA({
     isSuccess,
     data: receipt,
   } = useWaitForTransactionReceipt({ hash: txHash })
-  const isPending = isWritePending || isTxPending
+  const config = useConfig()
+  const preflight = usePreflight()
+  const isPending = isWritePending || isTxPending || preflight.checking
 
   // Reveal polish (§7): the moment the receipt lands, refresh the server
   // component tree so the minted-count header stops showing the pre-mint
@@ -284,12 +289,21 @@ export function MintCollectionCTA({
       allowlisted && proof
         ? encodeAbiParameters([{ type: "bytes32[]" }], [proof])
         : "0x"
-    writeContract({
-      address: minter,
-      abi: fixedPriceMinterAbi,
-      functionName: "mint",
-      args: [address, BigInt(amount), referrerAddr, data],
-      value: sendValue,
+    // Value-bearing: simulate from the connected account on PREFERRED_CHAIN
+    // first (a closed window, a cap or a gate rejection surfaces inline with
+    // the decoded reason), then sign the simulated request (chainId pinned).
+    reset()
+    await preflight.run(async () => {
+      const { request } = await simulateContract(config, {
+        account: address,
+        chainId: PREFERRED_CHAIN.id,
+        address: minter,
+        abi: fixedPriceMinterAbi,
+        functionName: "mint",
+        args: [address, BigInt(amount), referrerAddr, data],
+        value: sendValue,
+      })
+      writeContract(request)
     })
   }
 
@@ -549,7 +563,9 @@ export function MintCollectionCTA({
                     }
                     className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {isWritePending
+                    {preflight.checking
+                      ? "Checking…"
+                      : isWritePending
                       ? "Confirm in wallet…"
                       : isTxPending
                         ? "Minting…"
@@ -582,9 +598,9 @@ export function MintCollectionCTA({
                 </>
               )}
 
-              {writeError && (
+              {(writeError || preflight.error != null) && (
                 <p className="text-[11px] font-mono text-red-500 break-words">
-                  {formatWriteError(writeError, "Mint")}
+                  {formatWriteError(writeError ?? preflight.error, "Mint")}
                 </p>
               )}
             </>
