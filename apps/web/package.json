@@ -11,7 +11,8 @@
     "check:abi": "node --experimental-strip-types scripts/check-abi-vs-bytecode.mjs",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "test:e2e": "playwright test",
-    "test:e2e:install": "playwright install chromium"
+    "test:e2e:install": "playwright install chromium",
+    "test:smoke": "playwright test --config playwright.smoke.config.ts"
   },
   "dependencies": {
     "@networked-art/punks-sdk": "^0.1.0",

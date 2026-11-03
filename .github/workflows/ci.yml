@@ -11,6 +11,14 @@ on:
 permissions:
   contents: read
 
+env:
+  # One pinned Foundry for every job. Unpinned "stable" moved under us
+  # before (forge 1.8 changed script/test nonce accounting; see
+  # contracts/test/surface/reference/PooledBacked.t.sol, which needs >=1.8).
+  # v1.8.7 is the release that ran the 668-test suite green on main
+  # (run 41527141212). Bump deliberately, in its own PR.
+  FOUNDRY_VERSION: v1.8.7
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -46,7 +54,7 @@ jobs:
         env:
           DATABASE_URL: postgres://127.0.0.1:1/pnd
           ALCHEMY_MAINNET_URL: http://127.0.0.1:8545
-          INDEXER_SCHEMA: ponder_v1
+          INDEXER_SCHEMA: ponder_v4
         run: node --import tsx -e "import('./apps/worker/src/scheduler.ts')"
 
       - name: Run unit tests
@@ -65,8 +73,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      # The full mutation run is weekly; this catches a source edit that
+      # strands a mutant anchor on the PR that makes it (seconds, no forge).
+      - name: Check Surface v2 mutant anchors
+        run: python3 script/test/mutate-surface-v2.py --check-anchors
+
       - name: Set up Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
 
       - name: Install contract dependencies
         run: |
@@ -90,6 +105,8 @@ jobs:
 
       - name: Set up Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
 
       - name: Install contract dependencies
         run: |
@@ -118,6 +135,8 @@ jobs:
 
       - name: Set up Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -155,6 +174,8 @@ jobs:
 
       - name: Set up Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
 
       - name: Install contract dependencies
         run: |
@@ -188,6 +209,8 @@ jobs:
 
       - name: Set up Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
 
       - name: Install contract dependencies
         run: |
@@ -199,10 +222,12 @@ jobs:
       - name: Mutate Surface v2 in an isolated copy
         run: python3 script/test/mutate-surface-v2.py --output /tmp/surface-v2-mutations.json
 
-  deployment-drift:
+  # Browser flow on an Anvil mainnet fork. Its own job so a Playwright
+  # failure can never hide the deployed-contract checks below.
+  web-e2e:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ubuntu-24.04  # the locked Playwright release cannot install browsers on ubuntu-latest (26.04)
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -220,6 +245,8 @@ jobs:
 
       - name: Set up Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
 
       - name: Install contract dependencies
         working-directory: contracts
@@ -240,19 +267,75 @@ jobs:
           E2E_FORK_RPC: https://ethereum-rpc.publicnode.com
         run: pnpm --filter @pin/web test:e2e
 
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-e2e-test-results
+          path: apps/web/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # Deployed-contract drift: ABI vs bytecode, and the mainnet fork suites.
+  # Each check runs even when an earlier one fails, so one red check never
+  # hides the others.
+  deployment-drift:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.14.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Set up Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+
+      - name: Install contract dependencies
+        id: forge-deps
+        working-directory: contracts
+        run: |
+          forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 --no-git
+          forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v5.1.0 --no-git
+          forge install foundry-rs/forge-std@v1.16.1 --no-git
+          forge install Vectorized/solady@v0.1.26 --no-git
+
+      - name: Install dependencies
+        id: pnpm-deps
+        if: ${{ !cancelled() }}
+        run: pnpm install --frozen-lockfile
+
       - name: Check deployed ABIs
+        if: ${{ !cancelled() && steps.pnpm-deps.outcome == 'success' }}
         run: pnpm --filter @pin/web check:abi
 
+      # The fork suites fork publicnode at "latest", whose load balancer
+      # occasionally answers "block not found" for the newest block. One
+      # retry absorbs that; a real failure fails both attempts.
       - name: Check mainnet Surface wiring
+        if: ${{ !cancelled() && steps.forge-deps.outcome == 'success' }}
         working-directory: contracts
         env:
           RUN_MAINNET_FORK_TESTS: "true"
           MAINNET_RPC_URL: https://ethereum-rpc.publicnode.com
-        run: forge test --match-contract SurfaceMainnetDeploymentTest
+        run: forge test --match-contract SurfaceMainnetDeploymentTest || { sleep 20; forge test --match-contract SurfaceMainnetDeploymentTest; }
 
       - name: Exercise auction house on a mainnet fork
+        if: ${{ !cancelled() && steps.forge-deps.outcome == 'success' }}
         working-directory: contracts
         env:
           RUN_MAINNET_FORK_TESTS: "true"
           MAINNET_RPC_URL: https://ethereum-rpc.publicnode.com
-        run: forge test --match-contract SovereignAuctionHouseForkTest
+        run: forge test --match-contract SovereignAuctionHouseForkTest || { sleep 20; forge test --match-contract SovereignAuctionHouseForkTest; }
