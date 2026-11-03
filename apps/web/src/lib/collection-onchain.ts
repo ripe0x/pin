@@ -26,6 +26,7 @@ import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache, pgCacheHas } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
 import { buildEscapeArtwork, isEscapeRenderer } from "./escape-render"
+import { escapeArtworkPath } from "./escape-resolve"
 import { decodeContractURI, decodePreviewURI, type ContractMetadata, type PreviewDecodeResult } from "./collection-preview"
 import {
   getCollectionAddressesFromIndexer,
@@ -587,6 +588,22 @@ export async function getCollection(address: Address): Promise<Collection | null
   })
 }
 
+/** Whether `tokenId` was ever minted on `collection`: tokenSeed reverts for
+ *  an id that never was. One plain eth_call, uncached. */
+export async function collectionTokenExists(collection: Address, tokenId: bigint): Promise<boolean> {
+  try {
+    await getClient().readContract({
+      address: collection,
+      abi: surfaceAbi,
+      functionName: "tokenSeed",
+      args: [tokenId],
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export type CollectionTokenView = {
   tokenId: bigint
   owner: Address | null
@@ -610,6 +627,9 @@ export async function getCollectionToken(
   address: Address,
   tokenId: bigint,
 ): Promise<CollectionTokenView | null> {
+  // Same membership gate as getCollection: only a PND collection's tokens
+  // are read (and cached) here, never an arbitrary contract's.
+  if (!(await isFactoryCollection(address))) return null
   return pgCache(`sc-token:${lc(address)}:${tokenId.toString()}`, 60, async () => {
     const client = getClient()
     const base = { address, abi: surfaceAbi } as const
@@ -661,7 +681,7 @@ export async function getCollectionToken(
             artwork: artwork || art.image,
             tokenURI: null,
             image: art.image,
-            animationUrl: `/api/escape/${tokenId.toString()}?renderer=${collection.renderer}`,
+            animationUrl: escapeArtworkPath(tokenId, address),
           }
         }
       }
@@ -1110,7 +1130,7 @@ export async function getRendererTokenPreview(
   if (await isEscapeRenderer(renderer)) {
     const art = await buildEscapeArtwork(renderer, tokenId)
     if (!art) return null
-    return { image: art.image, animationUrl: `/api/escape/${tokenId.toString()}?renderer=${renderer}` }
+    return { image: art.image, animationUrl: escapeArtworkPath(tokenId, collection) }
   }
   return pgCache(`sc-rtok:${lc(collection)}:${lc(renderer)}:${tokenId.toString()}`, 300, async () => {
     const client = getClient()
