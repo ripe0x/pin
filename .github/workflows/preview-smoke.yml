@@ -50,7 +50,7 @@ jobs:
         github.event.check_run.app.slug == 'netlify' &&
         startsWith(github.event.check_run.name, 'Pages changed') &&
         (github.event.check_run.conclusion == 'success' || github.event.check_run.conclusion == 'neutral'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # the locked Playwright release cannot install browsers on ubuntu-latest (26.04)
     timeout-minutes: 15
     # Job-level, and keyed on the check name too, so the sibling Netlify
     # checks ("Redirect rules", "Header rules") that complete alongside

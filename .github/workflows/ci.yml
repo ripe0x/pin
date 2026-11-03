@@ -226,7 +226,7 @@ jobs:
   # failure can never hide the deployed-contract checks below.
   web-e2e:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # the locked Playwright release cannot install browsers on ubuntu-latest (26.04)
     timeout-minutes: 20
     steps:
       - name: Check out repository
