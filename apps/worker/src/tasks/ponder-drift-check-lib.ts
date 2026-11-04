@@ -89,6 +89,34 @@ export function resolveFactoryStream(
   return { kind: "resolved", id: scored[0]!.id }
 }
 
+/**
+ * pnd_houses.version per house generation, as apps/indexer writes it
+ * (apps/indexer/src/sovereignV2Status.ts HOUSE_VERSION): each version's
+ * houses are the children of exactly one factory stream.
+ */
+export const HOUSE_VERSION = { V1: 1, V2: 2, V2_1: 21 } as const
+
+export type HouseStream = { label: string; version: number; factory: string }
+
+/**
+ * The auction-house factory streams to check, one per house generation
+ * whose factory is configured. A null factory (V2.1 before its deploy, or
+ * any factory absent for the chain) contributes no stream at all, so its
+ * houses are never compared against some other factory's watch set.
+ */
+export function auctionHouseStreams(factories: {
+  v1: string | null
+  v2: string | null
+  v2_1: string | null
+}): HouseStream[] {
+  const all: Array<{ label: string; version: number; factory: string | null }> = [
+    { label: "PND V1 houses", version: HOUSE_VERSION.V1, factory: factories.v1 },
+    { label: "PND V2 houses", version: HOUSE_VERSION.V2, factory: factories.v2 },
+    { label: "PND V2.1 houses", version: HOUSE_VERSION.V2_1, factory: factories.v2_1 },
+  ]
+  return all.filter((s): s is HouseStream => s.factory !== null)
+}
+
 /** Repair is opt-in: PONDER_DRIFT_REPAIR=1 (or "true"). Anything else is detect-and-alert. */
 export function repairEnabled(raw: string | undefined): boolean {
   return raw === "1" || raw?.toLowerCase() === "true"

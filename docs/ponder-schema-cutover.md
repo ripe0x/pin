@@ -111,6 +111,24 @@ match.
   then best overlap with that schema's rows), not first match in the
   shared `ponder_sync`.
 
+- **Sovereign Auction House V2.1 (inert until deployed).**
+  `SovereignAuctionHouseV2_1Factory` + `SovereignAuctionHouseV2_1`
+  (factory() children via `AuctionHouseCreated.house`) are declared with
+  an empty `chain: {}` map while `contracts/deployments.mainnet.json`
+  `auctionHouseV2_1Factory` / `auctionHouseV2_1FactoryDeployBlock` are
+  empty: zero sources, no `ponder_sync.factories` row, no zero-address
+  watch. Handlers are the V2 set plus `LotHeldForWinner`
+  (status `held_for_winner`: seller paid, lot escrowed for the winner's
+  `claimLot`; a later `LotClaimed` moves it to `settled`). Houses and
+  auctions write `version = 21`. Recording the V2.1 deploy in the JSON
+  changes the indexed contract set, so it ships as its own schema bump
+  (or rides a replay that has not cut over yet), never as a redeploy
+  onto a live schema. The worker drift check and `indexer-parity` add a
+  "PND V2.1 houses" stream once the factory is recorded
+  (`@pin/addresses` `SOVEREIGN_AUCTION_HOUSE_V2_1_FACTORY` for the
+  worker, the JSON for the parity script). Web must map version 21 to
+  the V2 UI before any V2.1 row exists.
+
 RPC cost: two `eth_call`s per v2 launch (one multicall on the token, one
 read on the sale), at the creation block, cached in `ponder_sync`. No
 per-mint reads. The Transfer handlers add log filters only: Surface
