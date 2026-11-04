@@ -18,6 +18,7 @@ import {
   getAddress, parseAbiItem, type Address,
 } from "viem"
 import type { TaskResult } from "../scheduler.ts"
+import { describeScanError, scanRange } from "../scan-range.ts"
 
 const TL_AUCTION_HOUSE = "0x6f66b95a0C512f3497FB46660E0BC3B94B989F8d" as const
 const TL_AH_DEPLOY_BLOCK = 24_500_000n
@@ -67,23 +68,26 @@ export async function scanTlActiveAuctions(): Promise<TaskResult> {
   const head = await client.getBlockNumber()
   let rpcCalls = 1
   let rowsWritten = 0
+  const errors: string[] = []
 
   for (const { address } of artists) {
     try {
       const r = await scanOneArtist(address, head)
       rpcCalls += r.rpcCalls
       rowsWritten += r.rowsWritten
+      errors.push(...r.errors)
     } catch (err) {
       console.error(`[${TASK}] ${address}:`, err)
+      errors.push(describeScanError(address, err))
     }
   }
-  return { scopeCount: artists.length, rpcCalls, rowsWritten }
+  return { scopeCount: artists.length, rpcCalls, rowsWritten, errors }
 }
 
 async function scanOneArtist(
   artist: string, head: bigint,
-): Promise<{ rpcCalls: number; rowsWritten: number }> {
-  if (!sql) return { rpcCalls: 0, rowsWritten: 0 }
+): Promise<{ rpcCalls: number; rowsWritten: number; errors: string[] }> {
+  if (!sql) return { rpcCalls: 0, rowsWritten: 0, errors: [] }
   const lower = artist.toLowerCase()
   const scope = `tl:${lower}`
 
@@ -91,34 +95,47 @@ async function scanOneArtist(
     SELECT last_block::text AS last_block FROM worker_cursors
     WHERE task = ${TASK} AND scope = ${scope} LIMIT 1
   `) as Array<{ last_block: string }>
-  let cursor = cursorRow[0]
+  const fromBlock = cursorRow[0]
     ? BigInt(cursorRow[0].last_block) + 1n
     : TL_AH_DEPLOY_BLOCK
 
   let rpcCalls = 0
+  const errors: string[] = []
 
   // Walk forward in 10K chunks collecting ListingConfigured candidates.
-  const candidates = new Map<string, { contract: Address; tokenId: bigint }>()
-  let chunks = 0
-  while (cursor <= head && chunks < MAX_CHUNKS_PER_TICK) {
-    const toBlock = cursor + CHUNK_SIZE - 1n > head ? head : cursor + CHUNK_SIZE - 1n
-    await throttleRpc()
-    const logs = await client.getLogs({
-      address: TL_AUCTION_HOUSE,
-      event: listingConfiguredEvent,
-      args: { sender: getAddress(lower) as Address },
-      fromBlock: cursor,
-      toBlock,
-    })
-    rpcCalls += 1
-    for (const l of logs) {
-      const c = l.args.nftAddress as Address
-      const t = l.args.tokenId as bigint
-      candidates.set(`${c.toLowerCase()}:${t.toString()}`, { contract: c, tokenId: t })
-    }
-    cursor = toBlock + 1n
-    chunks++
-  }
+  // `block` is the block of the log that introduced a NEW candidate
+  // (null for rows re-checked from the table); see the failed-leg
+  // handling below.
+  const candidates = new Map<string, { contract: Address; tokenId: bigint; block: bigint | null }>()
+  const scan = await scanRange({
+    from: fromBlock,
+    to: head,
+    chunkSize: CHUNK_SIZE,
+    maxChunks: MAX_CHUNKS_PER_TICK,
+    label: `${TASK} ${scope}`,
+    fetch: async (a, b) => {
+      await throttleRpc()
+      return client.getLogs({
+        address: TL_AUCTION_HOUSE,
+        event: listingConfiguredEvent,
+        args: { sender: getAddress(lower) as Address },
+        fromBlock: a,
+        toBlock: b,
+      })
+    },
+    process: (logs) => {
+      for (const l of logs) {
+        const c = l.args.nftAddress as Address
+        const t = l.args.tokenId as bigint
+        candidates.set(`${c.toLowerCase()}:${t.toString()}`, {
+          contract: c, tokenId: t, block: l.blockNumber ?? null,
+        })
+      }
+    },
+  })
+  rpcCalls += scan.calls
+  if (scan.error) errors.push(describeScanError(scope, scan.error))
+  let safeTo = scan.scannedTo
 
   // Re-check previously-active rows for state changes.
   const existing = (await sql`
@@ -131,13 +148,14 @@ async function scanOneArtist(
       candidates.set(key, {
         contract: getAddress(e.contract) as Address,
         tokenId: BigInt(e.token_id),
+        block: null,
       })
     }
   }
 
   if (candidates.size === 0) {
-    if (chunks > 0) await advanceCursor(scope, cursor - 1n)
-    return { rpcCalls, rowsWritten: 0 }
+    if (safeTo >= fromBlock) await advanceCursor(scope, safeTo)
+    return { rpcCalls, rowsWritten: 0, errors }
   }
 
   // Multicall getListing for every candidate.
@@ -154,10 +172,19 @@ async function scanOneArtist(
   rpcCalls += Math.ceil(calls.length / 250)
 
   let rowsWritten = 0
+  let failedLegs = 0
   for (let i = 0; i < list.length; i++) {
     const c = list[i]
     const r = results[i]
-    if (r.status !== "success") continue
+    if (r.status !== "success") {
+      // A new listing isn't in the table yet: skipping it while the
+      // cursor passes its ListingConfigured log would lose it for good.
+      // Hold the cursor just before that log so the next tick re-reads
+      // it. Already-tracked rows are re-checked from the table anyway.
+      failedLegs++
+      if (c.block !== null && c.block - 1n < safeTo) safeTo = c.block - 1n
+      continue
+    }
     const listing = r.result as {
       type_: number; seller: string; currencyAddress: string;
       reservePrice: bigint; highestBid: bigint;
@@ -200,8 +227,11 @@ async function scanOneArtist(
     rowsWritten++
   }
 
-  if (chunks > 0) await advanceCursor(scope, cursor - 1n)
-  return { rpcCalls, rowsWritten }
+  if (failedLegs > 0) {
+    errors.push(`${scope}: ${failedLegs} of ${list.length} listing read(s) failed; cursor held at ${safeTo}`)
+  }
+  if (safeTo >= fromBlock) await advanceCursor(scope, safeTo)
+  return { rpcCalls, rowsWritten, errors }
 }
 
 async function advanceCursor(scope: string, lastBlock: bigint): Promise<void> {

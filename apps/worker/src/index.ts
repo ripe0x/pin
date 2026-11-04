@@ -15,6 +15,8 @@
 import { startHealthServer } from "./health.ts"
 import { startScheduler } from "./scheduler.ts"
 import { sql } from "./db.ts"
+import { INDEXER_SCHEMA } from "./indexer-schema.ts"
+import { runStartupChecks } from "./startup-checks.ts"
 
 const PORT = Number(process.env.PORT ?? "8080")
 
@@ -27,6 +29,13 @@ async function main(): Promise<void> {
   }
 
   await startHealthServer(PORT)
+
+  // Non-fatal: warn if INDEXER_SCHEMA is frozen, and point the
+  // known_artists spend ceiling at INDEXER_SCHEMA before any scanner
+  // reads it (see startup-checks.ts). Runs before the scheduler so the
+  // first tick already uses the rebuilt view.
+  await runStartupChecks(sql, INDEXER_SCHEMA)
+
   await startScheduler()
 
   // Graceful shutdown — Railway sends SIGTERM on redeploy.
