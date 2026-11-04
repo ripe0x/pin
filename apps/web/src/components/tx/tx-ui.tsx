@@ -103,6 +103,29 @@ const SOVEREIGN_ERROR_COPY: Record<string, string> = {
 }
 
 /**
+ * Surface v2 primitive errors (contracts/src/surface/v2: Surface,
+ * FixedPriceSale, AllowlistGate, CloneFactory, and OZ Ownable's), matched
+ * the same way, for the studio's v2 writes and the v2 mint flow.
+ */
+const SURFACE_V2_ERROR_COPY: Record<string, string> = {
+  NotMinter: "Only the collection's minter can mint. The minter slot changed.",
+  SaleClosed: "This sale is closed.",
+  GateRejected: "This wallet is not on the allowlist for this mint.",
+  MaxMintsExceeded: "This sale has reached its max mints.",
+  NotAuthorized: "Only the collection owner can make this change.",
+  OwnableUnauthorizedAccount: "Only the collection owner can make this change.",
+  BadSupplyCap: "The supply cap cannot be below the number already minted.",
+  RoyaltyTooHigh: "The royalty cannot exceed 50%.",
+  RoyaltyReceiverRequired: "The royalty needs a receiver address.",
+  RendererNotContract: "The renderer address has no contract code.",
+  BadMintWindow: "The mint end must be after its start.",
+  PayoutRecipientRequired: "The payout recipient cannot be the zero address.",
+  SelfCustodyRejected: "The collection's own address cannot hold its tokens.",
+  FactoryPaused: "Launches are paused right now.",
+  FactoryDeprecated: "This launcher's factory is retired.",
+}
+
+/**
  * Format a wagmi/viem write error for display. viem attaches the actual revert
  * reason on the error's `cause.cause...` chain (and a friendlier `shortMessage`
  * on the top-level error). The default Error.message is a multi-line block
@@ -148,6 +171,7 @@ export function formatWriteError(err: unknown, action: string): string {
     ...COLLECTION_ERROR_COPY,
     ...HOOK_REVERT_COPY,
     ...SOVEREIGN_ERROR_COPY,
+    ...SURFACE_V2_ERROR_COPY,
   })) {
     const nameBoundary = new RegExp(`\\b${name}\\b`)
     if (seen.some((s) => s === name || nameBoundary.test(s))) return copy

@@ -20,6 +20,8 @@ import {
   fixedPriceSaleAbi,
   surfaceTokenV2Abi,
   cloneFactoryAbi,
+  allowlistGateAbi,
+  launcherAbi,
   renderAssetsAbi,
   iBatchRenderRouterAbi,
   BATCH_RENDER_ROUTER_INTERFACE_ID,
@@ -30,6 +32,7 @@ import { pgCache, pgCacheHas } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
 import { buildEscapeArtwork, isEscapeRenderer } from "./escape-render"
 import { decodeContractURI, decodePreviewURI, type ContractMetadata, type PreviewDecodeResult } from "./collection-preview"
+import type { NotV2State, SaleV2State, SurfaceV2State } from "./surface-v2-studio"
 import {
   getCollectionAddressesFromIndexer,
   getCollectionPrimaryMinterFromIndexer,
@@ -46,6 +49,9 @@ import {
   surfaceFactory,
   surfaceFactoryV2,
   surfaceTokenFactoryV2,
+  saleFactoryV2,
+  launcherV2,
+  allowlistGateV2,
   isPrimitiveV2Live,
   type Collection,
   type MinterSaleConfig,
@@ -176,9 +182,11 @@ export type FactoryStatus = {
  * infrequent deployer action, not something needing sub-30s freshness.
  */
 export async function getFactoryStatus(): Promise<FactoryStatus> {
-  // v2 wins when configured for this chain, matching DeployStep's choice.
-  // The wizard's top-level block screen must agree with what it actually
-  // deploys through.
+  // The primitive v2 Launcher wins when configured, then the superseded
+  // SurfaceFactoryV2, then v1, matching DeployStep's choice. The wizard's
+  // top-level block screen must agree with what it actually deploys through.
+  const launcher = launcherV2()
+  if (launcher) return getLauncherStatus(launcher)
   const factoryV2 = surfaceFactoryV2()
   const factory = factoryV2 ?? surfaceFactory()
   const abi = factoryV2 ? surfaceFactoryV2Abi : surfaceFactoryAbi
@@ -205,6 +213,41 @@ export async function getFactoryStatus(): Promise<FactoryStatus> {
   })
   if (!read) return { configured: true, paused: true, deprecated: false, defaultRendererSet: false }
   return { configured: true, ...read }
+}
+
+/**
+ * Launcher.launch clones through two CloneFactories (token, sale); it can
+ * launch only while both are open. v2 has no default renderer (the artist
+ * always brings one), so defaultRendererSet is reported true: nothing to
+ * gate. Fails closed like the factory read.
+ */
+async function getLauncherStatus(launcher: Address): Promise<FactoryStatus> {
+  const read = await pgCache(`sc-launcher-status:${lc(launcher)}`, 60, async () => {
+    const client = getClient()
+    try {
+      const [tokenFactory, saleFactory] = await client.multicall({
+        allowFailure: false,
+        contracts: [
+          { address: launcher, abi: launcherAbi, functionName: "tokenFactory" },
+          { address: launcher, abi: launcherAbi, functionName: "saleFactory" },
+        ],
+      })
+      const [tp, td, sp, sd] = await client.multicall({
+        allowFailure: false,
+        contracts: [
+          { address: tokenFactory as Address, abi: cloneFactoryAbi, functionName: "paused" },
+          { address: tokenFactory as Address, abi: cloneFactoryAbi, functionName: "deprecated" },
+          { address: saleFactory as Address, abi: cloneFactoryAbi, functionName: "paused" },
+          { address: saleFactory as Address, abi: cloneFactoryAbi, functionName: "deprecated" },
+        ],
+      })
+      return { paused: (tp as boolean) || (sp as boolean), deprecated: (td as boolean) || (sd as boolean) }
+    } catch {
+      return null
+    }
+  })
+  if (!read) return { configured: true, paused: true, deprecated: false, defaultRendererSet: true }
+  return { configured: true, ...read, defaultRendererSet: true }
 }
 
 /**
@@ -630,11 +673,15 @@ async function readCollectionV2(
 ): Promise<Collection | null> {
   const base = { address, abi: surfaceTokenV2Abi } as const
   const assets = renderAssetsAddress()
+  const gateV2 = allowlistGateV2()
   const contracts: ContractFunctionParameters[] = [
     { ...base, functionName: "owner" },
     { ...base, functionName: "config" },
     ...(identity ? [] : [{ ...base, functionName: "name" }, { ...base, functionName: "symbol" }]),
     ...(assets ? [{ address: assets, abi: renderAssetsAbi, functionName: "coverOf", args: [address] }] : []),
+    // The AllowlistGate root, so a sale gated by it decodes with that root
+    // and the mint CTA serves proofs (decodeSaleV2Config).
+    ...(gateV2 ? [{ address: gateV2, abi: allowlistGateAbi, functionName: "root", args: [address] }] : []),
     ...(saleHint ? buildSaleV2Contracts(saleHint) : []),
   ]
   const results = (await client.multicall({ allowFailure: true, contracts })) as readonly MulticallEntry<unknown>[]
@@ -644,7 +691,12 @@ async function readCollectionV2(
   const nameRes = identity ? null : results[idx++]
   const symbolRes = identity ? null : results[idx++]
   const coverRes = assets ? results[idx++] : undefined
+  const gateRootRes = gateV2 ? results[idx++] : undefined
   const hintResults = saleHint ? results.slice(idx, idx + SALE_V2_READS) : null
+  const allowlist = {
+    gate: gateV2,
+    root: gateRootRes?.status === "success" ? (gateRootRes.result as `0x${string}`) : null,
+  }
 
   if (ownerRes?.status !== "success" || cfgRes?.status !== "success") return null
   if (nameRes && nameRes.status !== "success") return null
@@ -654,12 +706,12 @@ async function readCollectionV2(
   const minter = minterRaw.toLowerCase() !== ZERO_ADDRESS ? minterRaw : null
   let sale: MinterSaleConfig | null = null
   if (minter && hintResults && saleHint && lc(saleHint) === lc(minter)) {
-    sale = decodeSaleV2Config(hintResults)
+    sale = decodeSaleV2Config(hintResults, allowlist)
   } else if (minter) {
     const live = (await client
       .multicall({ allowFailure: true, contracts: [...buildSaleV2Contracts(minter)] })
       .catch(() => [])) as readonly MulticallEntry<unknown>[]
-    sale = decodeSaleV2Config(live)
+    sale = decodeSaleV2Config(live, allowlist)
   }
 
   const owner = ownerRes.result as Address
@@ -1059,6 +1111,38 @@ export type MinterGate = {
 }
 
 export async function getMinterGate(address: Address): Promise<MinterGate | null> {
+  const v1 = await getMinterGateV1(address)
+  if (v1) return v1
+  // A primitive v2 collection: its sale has no allowlistRoot(); the root
+  // lives in the AllowlistGate singleton, keyed by collection. Asked only
+  // when the v1 read found nothing, so v1 collections pay nothing extra.
+  return getMinterGateV2(address)
+}
+
+/**
+ * The v2 equivalent of a minter gate: the current minter as a
+ * FixedPriceSale, its wallet cap, and AllowlistGate.root(collection) when the
+ * sale is gated by PND's AllowlistGate. Any other gate reports the zero root
+ * (proofs cannot be served for it). Null for anything that is not a primitive
+ * v2 collection with a readable sale.
+ */
+async function getMinterGateV2(address: Address): Promise<MinterGate | null> {
+  if (!surfaceTokenFactoryV2()) return null
+  return pgCache(`sc-gate-v2:${lc(address)}`, 20, async () => {
+    const state = await readSurfaceV2State(address).catch(() => null)
+    if (!state || !state.primitiveV2 || !state.sale) return null
+    const gate = state.sale.gate
+    const allowlist =
+      !!state.allowlistGate && gate.toLowerCase() === state.allowlistGate.toLowerCase()
+    return {
+      minter: state.sale.address,
+      allowlistRoot: allowlist ? state.gateRoot : (("0x" + "0".repeat(64)) as `0x${string}`),
+      walletCap: state.sale.walletCap,
+    }
+  })
+}
+
+async function getMinterGateV1(address: Address): Promise<MinterGate | null> {
   const minterAddr = await getCollectionPrimaryMinterFromIndexer(address)
   if (!minterAddr || minterAddr.toLowerCase() === ZERO_ADDRESS) return null
   const minter = minterAddr as Address
@@ -1081,6 +1165,134 @@ export async function getMinterGate(address: Address): Promise<MinterGate | null
       return null
     }
   })
+}
+
+/**
+ * Everything the studio's v2 panels show and gate on, read live (no cache:
+ * the panels re-read right after each confirmed write, and only an owner
+ * opens them). Null for an address outside the Surface set; a v1 or
+ * superseded-v2 Surface answers `{ primitiveV2: false, protocolVersion }` so
+ * the studio routes it to the existing tools.
+ */
+export async function getSurfaceV2State(address: Address): Promise<SurfaceV2State | NotV2State | null> {
+  if (!(await isFactoryCollection(address))) return null
+  return readSurfaceV2State(address)
+}
+
+const SALE_V2_STATE_READS = [
+  "collection",
+  "price",
+  "mintStart",
+  "mintEnd",
+  "maxMints",
+  "walletCap",
+  "payoutRecipient",
+  "gate",
+  "closed",
+  "totalMinted",
+  "defaultReferrer",
+  "REFERRAL_SHARE_BPS",
+] as const
+
+async function readSurfaceV2State(address: Address): Promise<SurfaceV2State | NotV2State | null> {
+  const client = getClient()
+  const base = { address, abi: surfaceTokenV2Abi } as const
+  const tokenFactory = surfaceTokenFactoryV2()
+  const gateV2 = allowlistGateV2()
+  const contracts: ContractFunctionParameters[] = [
+    { ...base, functionName: "version" },
+    { ...base, functionName: "owner" },
+    { ...base, functionName: "config" },
+    { ...base, functionName: "name" },
+    { ...base, functionName: "symbol" },
+    ...(tokenFactory
+      ? [{ address: tokenFactory, abi: cloneFactoryAbi, functionName: "isInstance", args: [address] }]
+      : []),
+    ...(gateV2 ? [{ address: gateV2, abi: allowlistGateAbi, functionName: "root", args: [address] }] : []),
+  ]
+  const r = (await client.multicall({ allowFailure: true, contracts })) as readonly MulticallEntry<unknown>[]
+  const [versionRes, ownerRes, cfgRes, nameRes, symbolRes] = r
+  let idx = 5
+  const instanceRes = tokenFactory ? r[idx++] : undefined
+  const rootRes = gateV2 ? r[idx++] : undefined
+
+  const version = versionRes.status === "success" ? Number(versionRes.result) : null
+  const tokenFactoryInstance = instanceRes?.status === "success" ? (instanceRes.result as boolean) : null
+  if (!isPrimitiveV2Live({ version, tokenFactoryInstance })) {
+    return { primitiveV2: false, protocolVersion: version ?? 1 }
+  }
+  if (
+    ownerRes.status !== "success" ||
+    cfgRes.status !== "success" ||
+    nameRes.status !== "success" ||
+    symbolRes.status !== "success"
+  ) {
+    return null
+  }
+  const [renderer, minterRaw, supplyCap, royaltyBps, royaltyReceiver, minted] = cfgRes.result as SurfaceV2ConfigTuple
+  const owner = ownerRes.result as Address
+  const minter = minterRaw.toLowerCase() === ZERO_ADDRESS ? null : minterRaw
+
+  let sale: SaleV2State | null = null
+  if (minter) {
+    const saleFactory = saleFactoryV2()
+    const saleBase = { address: minter, abi: fixedPriceSaleAbi } as const
+    const sr = (await client
+      .multicall({
+        allowFailure: true,
+        contracts: [
+          ...SALE_V2_STATE_READS.map((functionName) => ({ ...saleBase, functionName })),
+          ...(saleFactory
+            ? [{ address: saleFactory, abi: cloneFactoryAbi, functionName: "isInstance" as const, args: [minter] as const }]
+            : []),
+        ],
+      })
+      .catch(() => [])) as readonly MulticallEntry<unknown>[]
+    const reads = sr.slice(0, SALE_V2_STATE_READS.length)
+    const ok =
+      reads.length === SALE_V2_STATE_READS.length &&
+      reads.every((x) => x?.status === "success") &&
+      lc((reads[0] as { result: Address }).result) === lc(address)
+    if (ok) {
+      const v = reads.map((x) => (x as { result: unknown }).result)
+      const canonicalRes = saleFactory ? sr[SALE_V2_STATE_READS.length] : undefined
+      sale = {
+        address: minter,
+        canonical: canonicalRes ? canonicalRes.status === "success" && canonicalRes.result === true : null,
+        price: (v[1] as bigint).toString(),
+        mintStart: BigInt(v[2] as bigint).toString(),
+        mintEnd: BigInt(v[3] as bigint).toString(),
+        maxMints: (v[4] as bigint).toString(),
+        walletCap: (v[5] as bigint).toString(),
+        payoutRecipient: v[6] as Address,
+        gate: v[7] as Address,
+        closed: v[8] as boolean,
+        totalMinted: (v[9] as bigint).toString(),
+        defaultReferrer: v[10] as Address,
+        referralShareBps: Number(v[11]),
+      }
+    }
+  }
+
+  return {
+    primitiveV2: true,
+    collection: address,
+    name: nameRes.result as string,
+    symbol: symbolRes.result as string,
+    owner,
+    renounced: owner.toLowerCase() === ZERO_ADDRESS,
+    renderer,
+    minter,
+    supplyCap: supplyCap.toString(),
+    minted: minted.toString(),
+    royaltyBps: Number(royaltyBps),
+    royaltyReceiver,
+    sale,
+    allowlistGate: gateV2,
+    gateRoot:
+      rootRes?.status === "success" ? (rootRes.result as `0x${string}`) : (("0x" + "0".repeat(64)) as `0x${string}`),
+    gateListCount: null,
+  }
 }
 
 /** Minimal ABI for the OPTIONAL IPreviewRenderer extension — declared

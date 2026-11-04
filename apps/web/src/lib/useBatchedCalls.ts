@@ -19,6 +19,11 @@
  *     calls in the same run (deploy-then-list, cancel-then-relist). The
  *     eth_estimateGas preflight runs against current chain state, so it
  *     would falsely condemn them.
+ *
+ * Options: `chainId` pins every preflight, transaction and bundle to that
+ * chain, so a wallet on another network is refused instead of sending the
+ * call to the same address there. Omitted, calls go to the wallet's
+ * current chain (the callers that predate the option).
  */
 "use client"
 
@@ -115,7 +120,8 @@ function isRevertError(err: unknown): boolean {
 
 const DEFAULT_SKIP_REASON = "Already resolved on-chain — nothing to send"
 
-export function useBatchedCalls() {
+export function useBatchedCalls(options: { chainId?: number } = {}) {
+  const pinnedChainId = options.chainId
   const config = useConfig()
   const { address, isConnected, chainId, connector } = useAccount()
   const { data: capabilities, isLoading: capabilitiesLoading } = useCapabilities({
@@ -183,6 +189,7 @@ export function useBatchedCalls() {
       try {
         await estimateGas(config, {
           account: address,
+          chainId: pinnedChainId,
           to: item.to,
           data: item.data,
           value: item.value,
@@ -194,7 +201,7 @@ export function useBatchedCalls() {
         return isRevertError(err) ? "stale" : "unknown"
       }
     },
-    [config, address],
+    [config, address, pinnedChainId],
   )
 
   const runSequential = useCallback(
@@ -217,6 +224,7 @@ export function useBatchedCalls() {
         try {
           const txHash = item.write
             ? await writeContract(config, {
+                chainId: pinnedChainId,
                 address: item.write.address,
                 abi: item.write.abi,
                 functionName: item.write.functionName,
@@ -224,13 +232,14 @@ export function useBatchedCalls() {
                 value: item.write.value,
               })
             : await sendTransaction(config, {
+                chainId: pinnedChainId,
                 to: item.to,
                 data: item.data,
                 value: item.value,
               })
 
           updateItem(item.id, { state: "mining", txHash })
-          await waitForTransactionReceipt(config, { hash: txHash })
+          await waitForTransactionReceipt(config, { hash: txHash, chainId: pinnedChainId })
           updateItem(item.id, { state: "done", txHash })
         } catch (err) {
           updateItem(item.id, { state: "failed", error: friendlyError(err) })
@@ -244,7 +253,7 @@ export function useBatchedCalls() {
         }
       }
     },
-    [config, preflight],
+    [config, preflight, pinnedChainId],
   )
 
   const runBatched = useCallback(
@@ -291,7 +300,7 @@ export function useBatchedCalls() {
             data: c.data,
             value: c.value,
           }))
-          const result = await sendCalls(config, { calls })
+          const result = await sendCalls(config, { calls, chainId: pinnedChainId })
           bundleId = result.id
         } catch (err) {
           const reason = friendlyError(err)
@@ -351,7 +360,7 @@ export function useBatchedCalls() {
         }
       }
     },
-    [config, preflight],
+    [config, preflight, pinnedChainId],
   )
 
   /**

@@ -18,6 +18,9 @@ import {
   SURFACE_FACTORY,
   SURFACE_FACTORY_V2,
   SURFACE_TOKEN_FACTORY_V2,
+  SALE_FACTORY_V2,
+  LAUNCHER_V2,
+  ALLOWLIST_GATE,
   getAddressOrNull,
 } from "@pin/addresses"
 import { isNoReferralCollection } from "./referral-exemptions"
@@ -63,6 +66,31 @@ export function surfaceTokenFactoryV2(chainId: number = PND_CHAIN_ID): Address |
   const env = process.env.NEXT_PUBLIC_SURFACE_TOKEN_FACTORY_V2
   if (env && isAddress(env)) return env as Address
   return getAddressOrNull(SURFACE_TOKEN_FACTORY_V2, chainId)
+}
+
+/** The Surface v2 sale CloneFactory (FixedPriceSale clones; env override
+ *  for local dev wins). */
+export function saleFactoryV2(chainId: number = PND_CHAIN_ID): Address | null {
+  const env = process.env.NEXT_PUBLIC_SALE_FACTORY_V2
+  if (env && isAddress(env)) return env as Address
+  return getAddressOrNull(SALE_FACTORY_V2, chainId)
+}
+
+/** The Surface v2 Launcher: the create wizard's one-call collection + sale
+ *  deploy (env override for local dev wins). When it resolves, the wizard
+ *  launches primitive v2 collections instead of calling a SurfaceFactory. */
+export function launcherV2(chainId: number = PND_CHAIN_ID): Address | null {
+  const env = process.env.NEXT_PUBLIC_LAUNCHER_V2
+  if (env && isAddress(env)) return env as Address
+  return getAddressOrNull(LAUNCHER_V2, chainId)
+}
+
+/** The Surface v2 AllowlistGate singleton (one Merkle root per collection;
+ *  env override for local dev wins). */
+export function allowlistGateV2(chainId: number = PND_CHAIN_ID): Address | null {
+  const env = process.env.NEXT_PUBLIC_ALLOWLIST_GATE
+  if (env && isAddress(env)) return env as Address
+  return getAddressOrNull(ALLOWLIST_GATE, chainId)
 }
 
 /** The RenderAssets registry address (env override for local dev wins). */
@@ -435,16 +463,33 @@ export type SurfaceV2ConfigTuple = readonly [Address, Address, bigint, number, A
  * lib/collection-onchain.ts:buildSaleV2Contracts issues them) into a
  * MinterSaleConfig. A v2 sale has no price strategy and no built-in
  * allowlist, and its referral share is a fixed constant. Null when any read
- * failed, and when a gate is set: gate proofs are not wired into the PND
- * mint flow yet, so a gated sale gets the "mints through its minter" notice
- * rather than a buy button that would revert GateRejected. A closed sale
+ * failed, and when a gate other than PND's AllowlistGate (with a root set)
+ * is set: the mint flow cannot serve proofs for it, so that sale gets the
+ * "mints through its minter" notice rather than a buy button that would
+ * revert GateRejected. An AllowlistGate sale reports the gate's root as
+ * allowlistRoot, which routes the CTA through its proof flow. A closed sale
  * reports mintEnd 1 (long past), so every window check reads it as Closed.
  */
-export function decodeSaleV2Config(results: readonly MulticallEntry<unknown>[]): MinterSaleConfig | null {
-  if (results.length < 10 || results.some((r) => r?.status !== "success")) return null
+export function decodeSaleV2Config(
+  results: readonly MulticallEntry<unknown>[],
+  allowlist?: { gate: Address | null; root: `0x${string}` | null },
+): MinterSaleConfig | null {
+  if (results.length < 10 || results.slice(0, 10).some((r) => r?.status !== "success")) return null
   const v = results.map((r) => (r as { result: unknown }).result)
   const [price, mintStart, mintEnd, payout, maxMints, walletCap, referralShareBps, gate, closed, defaultReferrer] = v
-  if ((gate as Address).toLowerCase() !== ZERO_ADDRESS) return null
+  let allowlistRoot = ("0x" + "0".repeat(64)) as `0x${string}`
+  if ((gate as Address).toLowerCase() !== ZERO_ADDRESS) {
+    // The one gate the mint flow can serve proofs for: PND's AllowlistGate
+    // with a root set. Its proof format (abi-encoded bytes32[] over the OZ
+    // standard leaf) is the v1 minter's, so the CTA's allowlist path applies
+    // unchanged. Any other gate (or an unset root, which fails every check)
+    // keeps the "mints through its minter" notice.
+    const isAllowlistGate =
+      !!allowlist?.gate && (gate as Address).toLowerCase() === allowlist.gate.toLowerCase()
+    const root = allowlist?.root ?? null
+    if (!isAllowlistGate || !root || /^0x0{64}$/i.test(root)) return null
+    allowlistRoot = root
+  }
   return {
     price: price as bigint,
     priceStrategy: ZERO_ADDRESS,
@@ -452,7 +497,7 @@ export function decodeSaleV2Config(results: readonly MulticallEntry<unknown>[]):
     mintEnd: closed ? 1n : BigInt(mintEnd as bigint),
     payout: payout as Address,
     maxMints: maxMints as bigint,
-    allowlistRoot: ("0x" + "0".repeat(64)) as `0x${string}`,
+    allowlistRoot,
     walletCap: walletCap as bigint,
     referralShareBps: Number(referralShareBps),
     defaultReferrer: defaultReferrer as Address,
