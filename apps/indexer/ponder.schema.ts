@@ -385,6 +385,8 @@ export const tokenOwnership = onchainTable(
   (table) => ({
     ownerIdx: index().on(table.owner),
     contractTokenIdx: index().on(table.contract, table.tokenId),
+    // The worker's mirror-shared-owners task reads incrementally by block.
+    lastBlockIdx: index().on(table.lastBlock),
   }),
 )
 
