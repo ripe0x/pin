@@ -478,6 +478,10 @@ export const collections = onchainTable(
     // The deployed Collection clone address.
     collection: t.hex().primaryKey(),
     owner: t.hex().notNull(),
+    // The owner named at creation. Written once and never updated, so it
+    // survives transfers and renounce (owner then reads 0x0). Attribution
+    // uses it to credit a renounced collection's launching owner.
+    launchOwner: t.hex(),
     // Which Surface generation created this collection: 1 (SurfaceFactory)
     // or 2 (the v2 token CloneFactory).
     protocolVersion: t.integer().notNull(),

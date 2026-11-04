@@ -61,6 +61,7 @@ ponder.on("SurfaceFactory:SurfaceCreated", async ({ event, context }) => {
     .values({
       collection,
       owner,
+      launchOwner: owner,
       protocolVersion: 1,
       ownerRenounced: false,
       name,
@@ -331,6 +332,7 @@ ponder.on("SurfaceTokenFactoryV2:Created", async ({ event, context }) => {
     .values({
       collection,
       owner,
+      launchOwner: owner,
       protocolVersion: 2,
       ownerRenounced: owner.toLowerCase() === ZERO_ADDRESS,
       // Anyone can create or launch naming any owner; only the owner sending
