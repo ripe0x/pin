@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation"
 import type { Address } from "viem"
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
 import { sovereignAuctionHouseV2Abi } from "@/lib/abi"
+import { AUCTION_CHAIN_ID } from "@/lib/bid-transaction"
 import { ZERO_ADDRESS } from "@/lib/config"
 import { displayFor, formatEth } from "@/lib/format"
 import type { AuctionStatus } from "@/lib/auctions"
@@ -55,6 +56,7 @@ export function DeferredLotCard({
   const { writeContract, data: txHash, isPending, error } = useWriteContract()
   const { isLoading: isMining, isSuccess } = useWaitForTransactionReceipt({
     hash: txHash,
+    chainId: AUCTION_CHAIN_ID,
   })
 
   useEffect(() => {
@@ -104,6 +106,7 @@ export function DeferredLotCard({
             <button
               onClick={() =>
                 writeContract({
+                  chainId: AUCTION_CHAIN_ID,
                   address: houseAddress,
                   abi: sovereignAuctionHouseV2Abi,
                   functionName: "returnUnwoundLot",
@@ -144,6 +147,7 @@ export function DeferredLotCard({
           <button
             onClick={() =>
               writeContract({
+                chainId: AUCTION_CHAIN_ID,
                 address: houseAddress,
                 abi: sovereignAuctionHouseV2Abi,
                 functionName: "claimLot",
@@ -178,6 +182,7 @@ export function DeferredLotCard({
                 <button
                   onClick={() =>
                     writeContract({
+                      chainId: AUCTION_CHAIN_ID,
                       address: houseAddress,
                       abi: sovereignAuctionHouseV2Abi,
                       functionName: "claimLot",
@@ -201,6 +206,7 @@ export function DeferredLotCard({
           <button
             onClick={() =>
               writeContract({
+                chainId: AUCTION_CHAIN_ID,
                 address: houseAddress,
                 abi: sovereignAuctionHouseV2Abi,
                 functionName: "unwindStuckLot",
@@ -231,12 +237,14 @@ function WithdrawRefundButton({ houseAddress }: { houseAddress: Address }) {
   const { writeContract, data: txHash, isPending, error } = useWriteContract()
   const { isLoading: isMining, isSuccess } = useWaitForTransactionReceipt({
     hash: txHash,
+    chainId: AUCTION_CHAIN_ID,
   })
   return (
     <div className="pt-1">
       <button
         onClick={() =>
           writeContract({
+            chainId: AUCTION_CHAIN_ID,
             address: houseAddress,
             abi: sovereignAuctionHouseV2Abi,
             functionName: "withdrawRefund",
