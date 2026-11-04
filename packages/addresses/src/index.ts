@@ -241,7 +241,13 @@ export const LAUNCHER_V2: Record<number, Address> = {
 // RenderAssets — renderer-land registry of static display assets (cover +
 // per-token captures). Its source was removed from the repo with the v2
 // redesign (docs/pnd-surface-v2-design.md section 5); kept for the existing
-// Sepolia deploy the web app reads. Never deployed to mainnet.
+// Sepolia deploy the web app reads. PND's own render modules were never
+// deployed to mainnet, so the mainnet entry stays zero. An independent
+// RenderAssets instance does exist on mainnet at
+// 0x34D384646a44EbeA51f07C1Fa888E469483e25fB, deployed from an external repo
+// and used by Form of Solitude's renderer (apps/web/src/lib/mint-modules/
+// form-of-solitude.ts reads it directly). It is not PND's registry, so it is
+// deliberately not wired here.
 export const RENDER_ASSETS: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
   [SEPOLIA_CHAIN_ID]: "0xB9B5B2A6763901430B85ca00480E15Ed50065e60",
@@ -251,7 +257,8 @@ export const RENDER_ASSETS: Record<number, Address> = {
 // factory ships with no default renderer; a collection opts in by passing
 // this address as cfg.renderer at create (or via setRenderer later).
 // Its source and DeployRenderModules.s.sol were removed from the repo with the
-// v2 redesign; kept for the existing Sepolia deploy. Never deployed to mainnet.
+// v2 redesign; kept for the existing Sepolia deploy. Never deployed to mainnet
+// (PND's own render modules never were; see RENDER_ASSETS above).
 export const DEFAULT_RENDERER: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
   [SEPOLIA_CHAIN_ID]: "0x29Ed24f394a794415A5545481842f0bb37a3bB93",

@@ -100,24 +100,6 @@
               "description": "Fixed-price minter for a sequential [Surface](/docs/surface/contracts/surface) collection, deployed as one EIP-1167 clone per collection."
             },
             {
-              "title": "DefaultRenderer",
-              "slug": "default-renderer",
-              "path": "/docs/surface/contracts/default-renderer",
-              "description": "The built-in renderer for [Surface](/docs/surface/contracts/surface)."
-            },
-            {
-              "title": "RenderAssets",
-              "slug": "render-assets",
-              "path": "/docs/surface/contracts/render-assets",
-              "description": "Registry of static display assets for renderers: each collection's cover image, per-token captures (thumbnails of rendered output), and a capture template resolved per token id."
-            },
-            {
-              "title": "ScriptyRenderer",
-              "slug": "scripty-renderer",
-              "path": "/docs/surface/contracts/scripty-renderer",
-              "description": "A forkable [IRenderer](/docs/surface/contracts/i-renderer) template for script-based generative work."
-            },
-            {
               "title": "IPriceStrategy",
               "slug": "i-price-strategy",
               "path": "/docs/surface/contracts/i-price-strategy",
@@ -142,22 +124,34 @@
               "description": "An optional extension a renderer implements to render the output for a caller-supplied seed with no token existing."
             },
             {
-              "title": "SurfaceV2",
+              "title": "Surface (v2)",
               "slug": "surface-v2",
               "path": "/docs/surface/contracts/surface-v2",
-              "description": "Second generation of the sequential-id ERC721 collection: the token core of the Surface v2 art protocol."
+              "description": "The v2 token primitive: an ERC721 collection deployed per artist as an EIP-1167 clone through the token [CloneFactory](/docs/surface/contracts/clone-factory), usually by the [Launcher](/docs/surface/contracts/launcher)."
             },
             {
-              "title": "SurfaceFactoryV2",
-              "slug": "factory-v2",
-              "path": "/docs/surface/contracts/factory-v2",
-              "description": "Deploys one [SurfaceV2](/docs/surface/contracts/surface-v2) collection per call as an EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, and one collection form (sequential ids)."
+              "title": "FixedPriceSale",
+              "slug": "fixed-price-sale",
+              "path": "/docs/surface/contracts/fixed-price-sale",
+              "description": "The v2 sale primitive: one EIP-1167 clone per sale through the sale [CloneFactory](/docs/surface/contracts/clone-factory), bound to one [Surface (v2)](/docs/surface/contracts/surface-v2) collection at initialize."
             },
             {
-              "title": "FixedPriceMinterV2",
-              "slug": "fixed-price-minter-v2",
-              "path": "/docs/surface/contracts/fixed-price-minter-v2",
-              "description": "Exact-payment fixed-price minter for a [SurfaceV2](/docs/surface/contracts/surface-v2) collection, deployed as one EIP-1167 clone per collection."
+              "title": "AllowlistGate",
+              "slug": "allowlist-gate",
+              "path": "/docs/surface/contracts/allowlist-gate",
+              "description": "One ownerless singleton gate serving every collection: a Merkle root per collection, set by that collection's owner."
+            },
+            {
+              "title": "CloneFactory",
+              "slug": "clone-factory",
+              "path": "/docs/surface/contracts/clone-factory",
+              "description": "Plumbing, deployed once per implementation: the token factory (`{{addr:surfaceFactoryV2}}`) clones [Surface (v2)](/docs/surface/contracts/surface-v2) and the sale factory (`{{addr:saleFactoryV2}}`) clones [FixedPriceSale](/docs/surface/contracts/fixed-price-sale)."
+            },
+            {
+              "title": "Launcher",
+              "slug": "launcher",
+              "path": "/docs/surface/contracts/launcher",
+              "description": "The common wiring: one `launch` call deploys a [Surface (v2)](/docs/surface/contracts/surface-v2) collection and its [FixedPriceSale](/docs/surface/contracts/fixed-price-sale), already pointed at each other, through the two [CloneFactory](/docs/surface/contracts/clone-factory) instances."
             }
           ]
         },
@@ -193,7 +187,7 @@
               "title": "Write a renderer",
               "slug": "write-a-renderer",
               "path": "/docs/surface/guides/write-a-renderer",
-              "description": "Implement IRenderer against ISurfaceView, the bundled renderers, and how renderer locking works."
+              "description": "Implement IRenderer for your collection, what the renderer owns (image, cover, traits), reading the seed, and how the renderer pointer is changed and made permanent."
             }
           ]
         },
