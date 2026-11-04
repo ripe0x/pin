@@ -12,7 +12,7 @@ test("retention days default to 30", () => {
 
 test("every retention step is a bounded, batched DELETE", () => {
   const names = RETENTION_STEPS.map((s) => s.name)
-  assert.deepEqual(names, ["cache_entries", "worker_iterations", "rate_limits", "scan_backoff"])
+  assert.deepEqual(names, ["cache_entries", "worker_iterations", "rate_limits", "scan_backoff", "refresh_jobs"])
   for (const s of RETENTION_STEPS) {
     assert.match(s.sql, /^DELETE FROM \w+ WHERE .* IN \(SELECT .* LIMIT \$1::int\)$/)
     assert.ok(s.batchSize > 0 && s.maxBatches > 0)

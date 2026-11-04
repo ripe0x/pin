@@ -17,6 +17,8 @@
  *     so this runs fine before 029 is applied.
  *   - scan_backoff: rows untouched for 30 days (a scope that stopped being
  *     scanned; an active failing scope is updated at least daily).
+ *   - refresh_jobs: finished on-demand refresh jobs older than 30 days
+ *     (migration 035; guarded the same way).
  *
  * Each step is independent: one failing doesn't skip the others, and its
  * error is surfaced in TaskResult.errors.
