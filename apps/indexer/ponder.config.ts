@@ -4,6 +4,8 @@ import { sovereignAuctionHouseAbi } from "./abis/SovereignAuctionHouse"
 import { sovereignAuctionHouseFactoryAbi } from "./abis/SovereignAuctionHouseFactory"
 import { sovereignAuctionHouseV2Abi } from "./abis/SovereignAuctionHouseV2"
 import { sovereignAuctionHouseV2FactoryAbi } from "./abis/SovereignAuctionHouseV2Factory"
+import { sovereignAuctionHouseV2_1Abi } from "./abis/SovereignAuctionHouseV2_1"
+import { sovereignAuctionHouseV2_1FactoryAbi } from "./abis/SovereignAuctionHouseV2_1Factory"
 import { foundationNftAbi, nftCollectionFactoryAbi } from "./abis/FoundationNFT"
 import { nftMarketAbi } from "./abis/NFTMarket"
 import { catalogAbi } from "./abis/Catalog"
@@ -21,12 +23,14 @@ import { launcherAbi } from "./abis/Launcher"
 import { homageCollectionAbi } from "./abis/HomageCollection"
 import { homageMinterAbi } from "./abis/HomageMinter"
 import { readSurfaceV2Deployment, type SurfaceV2Deployment } from "./src/surfaceV2Deployment"
+import { readAuctionV2_1Deployment, type AuctionV2_1Deployment } from "./src/auctionV2_1Deployment"
 
 /**
  * PND v2 Ponder scope: REDUCED from v1.
  *
  * Indexed (state-machine):
- *   - SovereignAuctionHouseFactory + every clone (PND product)
+ *   - SovereignAuctionHouseFactory + every clone (PND product), plus the
+ *     V2 (env-gated) and V2.1 (deploy-record-gated) factory/clone pairs
  *   - NFTMarket (Foundation marketplace: legacy weight)
  *   - FoundationNFT shared 1/1 contract
  *   - SuperRareNFT shared 1/1 contract
@@ -184,6 +188,31 @@ function surfaceV2Chain<A>(address: (d: SurfaceV2Deployment) => A) {
   }
   return chain
 }
+
+// Sovereign Auction House V2.1 (contracts/src/SovereignAuctionHouseV2_1.sol,
+// docs/auction-house-migration-plan.md "V2.1"): DEPLOY-GATED on the deploy
+// record, not env. The factory address and its deploy block come from
+// contracts/deployments.mainnet.json (`auctionHouseV2_1Factory`,
+// `auctionHouseV2_1FactoryDeployBlock`). While either is empty, both V2.1
+// contracts keep their key with an empty `chain: {}` map (the Surface v2
+// pattern above): zero sources, no eth_getLogs, no ponder_sync.factories
+// row, never a zero-address watch, and the handlers in src/SovereignV2.ts
+// stay type-checked against the real ABI. Mainnet only: there is no sepolia
+// deploy, and sepolia-only mode never indexes auction houses.
+const auctionV2_1Deployment = SEPOLIA_ONLY_MODE ? null : readAuctionV2_1Deployment()
+
+function auctionV2_1Chain<A>(address: (d: AuctionV2_1Deployment) => A) {
+  const chain: Partial<Record<"mainnet", { address: A; startBlock: number }>> = {}
+  const d = auctionV2_1Deployment
+  if (d) chain.mainnet = { address: address(d), startBlock: d.factoryDeployBlock }
+  return chain
+}
+
+// The house factories' discovery event, identical across V1, V2 and V2.1
+// (SovereignAuctionHouseV2_1Factory keeps the V2 factory's interface).
+const auctionHouseCreatedEvent = parseAbiItem(
+  "event AuctionHouseCreated(address indexed owner, address indexed house, address feeRecipient, uint16 protocolFeeBps)",
+)
 
 // v1 SurfaceFactory's discovery event (Surface/FixedPriceMinter below).
 const surfaceCreatedEvent = parseAbiItem(
@@ -458,6 +487,22 @@ export default createConfig({
           },
         }
       : {}),
+
+    // ── Sovereign Auction House V2.1 (DEPLOY-GATED: auctionV2_1Chain) ──
+    // Same factory + factory() clone pattern as V1/V2. V2.1 houses keep the
+    // V2 ABI and events and add LotHeldForWinner (sale settled, lot escrowed
+    // for the winner's claimLot). Handlers are V2's plus that one, written
+    // with version 21: see src/SovereignV2.ts.
+    SovereignAuctionHouseV2_1Factory: {
+      abi: sovereignAuctionHouseV2_1FactoryAbi,
+      chain: auctionV2_1Chain((d) => d.factory),
+    },
+    SovereignAuctionHouseV2_1: {
+      abi: sovereignAuctionHouseV2_1Abi,
+      chain: auctionV2_1Chain((d) =>
+        factory({ address: d.factory, event: auctionHouseCreatedEvent, parameter: "house" }),
+      ),
+    },
 
     // ── Homage singleton pair (ENV-GATED: see HOMAGE_WIRED above) ────
     ...(HOMAGE_WIRED
