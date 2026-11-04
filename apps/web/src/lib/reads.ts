@@ -2,6 +2,11 @@ import "server-only"
 import { sql } from "./db"
 import { INDEXER_SCHEMA } from "./indexer-schema"
 import { artistTokenRefsSql } from "./artist-token-refs"
+import {
+  DEFAULT_HOLDINGS_LIMIT, HOLDINGS_PROBE_SQL, ZERO_ADDRESS, clampHoldingsLimit,
+  collectorHoldingsParams, collectorHoldingsSql, decodeHoldingCursor, encodeHoldingCursor,
+  type HoldingRow, type HoldingSource,
+} from "./collector-holdings"
 
 /**
  * The entire data-fetching surface for the v2 web app.
@@ -389,17 +394,103 @@ export async function getMuriEligibleContracts(
 
 // ─── Collector (inverse query) ───────────────────────────────────────────
 
+export type CollectorHolding = {
+  contract: string
+  tokenId: string
+  standard: "erc721" | "erc1155"
+  /** Decimal string; 1 for ERC-721. */
+  balance: string
+  /** Block the holding last changed (0 = only an ownerOf snapshot). */
+  acquiredBlock: bigint
+  source: HoldingSource
+}
+
+export type CollectorTokensPage = {
+  items: CollectorHolding[]
+  /** Distinct holdings for the wallet across every page. */
+  total: number
+  /** Pass back as `cursor` for the next page; null on the last page. */
+  nextCursor: string | null
+  /** Holdings are among the works PND indexes, not the whole wallet. */
+  coverage: "pnd-indexed-works"
+}
+
+// Which optional sources exist (Surface owner columns arrive with
+// ponder_v5, the 1155 tables with migration 034). Sticky once both are
+// present; re-probed at most once a minute until then.
+let holdingsSources: { surface: boolean; erc1155: boolean; at: number } | null = null
+async function probeHoldingSources(
+  db: NonNullable<typeof sql>,
+): Promise<{ surface: boolean; erc1155: boolean }> {
+  const cached = holdingsSources
+  if (cached && ((cached.surface && cached.erc1155) || Date.now() - cached.at < 60_000)) {
+    return cached
+  }
+  try {
+    const rows = (await db.unsafe(HOLDINGS_PROBE_SQL, [INDEXER_SCHEMA])) as Array<{
+      surface: boolean; erc1155: boolean
+    }>
+    holdingsSources = {
+      surface: rows[0]?.surface === true,
+      erc1155: rows[0]?.erc1155 === true,
+      at: Date.now(),
+    }
+  } catch {
+    holdingsSources = { surface: false, erc1155: false, at: Date.now() }
+  }
+  return holdingsSources
+}
+
+/**
+ * A wallet's current holdings among the works PND indexes: ERC-721
+ * owners (token_owners, incl. the shared FND/SR 1/1s mirrored from
+ * Ponder; Surface collection_tokens.owner once ponder_v5 is live) and
+ * ERC-1155 balances > 0, one row per token, newest first, keyset
+ * paginated (collector-holdings.ts has the rules). Replaces a silent
+ * LIMIT 200. Pure Postgres.
+ */
 export async function getCollectorTokens(
   wallet: string,
-): Promise<Array<{ contract: string; tokenId: string }>> {
-  if (!sql) return []
+  opts: { cursor?: string | null; limit?: number } = {},
+): Promise<CollectorTokensPage> {
+  const empty: CollectorTokensPage = {
+    items: [], total: 0, nextCursor: null, coverage: "pnd-indexed-works",
+  }
   const lower = wallet.toLowerCase()
-  const rows = (await sql`
-    SELECT contract, token_id FROM token_owners WHERE owner = ${lower}
-    ORDER BY transferred_at_block DESC
-    LIMIT 200
-  `) as Array<{ contract: string; token_id: string }>
-  return rows.map((r) => ({ contract: r.contract, tokenId: r.token_id }))
+  if (!sql || !/^0x[0-9a-f]{40}$/.test(lower) || lower === ZERO_ADDRESS) return empty
+  const limit = clampHoldingsLimit(opts.limit ?? DEFAULT_HOLDINGS_LIMIT)
+  const cursor = decodeHoldingCursor(opts.cursor)
+  const sources = await probeHoldingSources(sql)
+
+  const rows = (await sql.unsafe(
+    collectorHoldingsSql(INDEXER_SCHEMA, sources),
+    // One extra row says whether another page exists.
+    collectorHoldingsParams(lower, cursor, limit + 1),
+  )) as Array<{ total: number } & ({ [K in keyof HoldingRow]: HoldingRow[K] | null })>
+
+  const items: CollectorHolding[] = []
+  for (const r of rows) {
+    if (r.contract === null || r.token_id === null) continue
+    items.push({
+      contract: r.contract,
+      tokenId: r.token_id,
+      standard: r.standard ?? "erc721",
+      balance: r.balance ?? "1",
+      acquiredBlock: BigInt(r.block ?? "0"),
+      source: r.source ?? "token_owners",
+    })
+  }
+  const hasMore = items.length > limit
+  if (hasMore) items.length = limit
+  const last = items[items.length - 1]
+  return {
+    items,
+    total: rows[0]?.total ?? 0,
+    nextCursor: hasMore && last
+      ? encodeHoldingCursor({ block: last.acquiredBlock, contract: last.contract, tokenId: last.tokenId })
+      : null,
+    coverage: "pnd-indexed-works",
+  }
 }
 
 // ─── Active auctions for an artist ───────────────────────────────────────

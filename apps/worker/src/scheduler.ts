@@ -35,6 +35,8 @@ import { probeCidAvailability } from "./tasks/probe-cid-availability.ts"
 import { captureCollectionMedia } from "./tasks/capture-collection-media.ts"
 import { deriveTokenMedia } from "./tasks/derive-token-media.ts"
 import { pruneRetention } from "./tasks/prune-retention.ts"
+import { mirrorSharedOwners } from "./tasks/mirror-shared-owners.ts"
+import { scan1155Balances } from "./tasks/scan-1155-balances.ts"
 import { defaultTaskTimeoutMs, type TaskHealthInput } from "./task-health.ts"
 
 type TaskName =
@@ -57,6 +59,8 @@ type TaskName =
   | "capture-collection-media"
   | "derive-token-media"
   | "prune-retention"
+  | "mirror-shared-owners"
+  | "scan-1155-balances"
 
 export type TaskResult = {
   rpcCalls?: number
@@ -129,6 +133,13 @@ const tasks: Task[] = [
   // worker_iterations, stale rate_limits / scan_backoff (#351 phase 0).
   // Pure SQL, bounded batches; no RPC.
   { name: "prune-retention", intervalMs: 60 * MIN, fn: pruneRetention },
+  // Current owners of the Foundation shared / SR V2 1/1s, copied from
+  // Ponder's token_ownership (ponder_v5+; a no-op before). Postgres only,
+  // plus a one-time bounded ownerOf gap fill (#296).
+  { name: "mirror-shared-owners", intervalMs: 10 * MIN, fn: mirrorSharedOwners, dependsOnPonder: true },
+  // ERC-1155 holder balances over known artists' own 1155 contracts:
+  // batched getLogs of TransferSingle+TransferBatch to the finalized head.
+  { name: "scan-1155-balances", intervalMs: 15 * MIN, fn: scan1155Balances, dependsOnPonder: true },
 ]
 
 type RunState = {
