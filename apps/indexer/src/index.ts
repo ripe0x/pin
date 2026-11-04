@@ -10,6 +10,7 @@ import {
   fndCollections,
   fndSales,
 } from "ponder:schema"
+import { recordTransferOwner } from "./tokenOwnership"
 
 /**
  * Event handlers for the v2 Ponder scope. State-machine subscriptions
@@ -188,6 +189,14 @@ ponder.on("FoundationNFT:Minted", async ({ event, context }) => {
       blockTime: event.block.timestamp,
     })
     .onConflictDoNothing()
+})
+
+// Current owner into token_ownership (every Transfer, mint and burn
+// included). Coverage starts at FND_START_BLOCK, not the contract's deploy:
+// tokens minted since then are complete, older tokens appear once they move.
+// See ponder.schema.ts `token_ownership`.
+ponder.on("FoundationNFT:Transfer", async ({ event, context }) => {
+  await recordTransferOwner(context.db, "foundation-shared", event)
 })
 
 // ─── Foundation NFTMarket: reserve auctions ────────────────────────────

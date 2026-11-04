@@ -2,32 +2,76 @@ import { strict as assert } from "node:assert"
 import { test } from "node:test"
 import {
   buildFactoryAddressRows,
+  factoryCandidates,
   missingAddresses,
-  resolveFactoryId,
+  repairEnabled,
+  resolveFactoryStream,
   type FactoryRow,
+  type FactoryStream,
 } from "./ponder-drift-check-lib.ts"
 
+const SURFACE = "0xdb81d3f33ef3d84685486916e0d372e247558094"
+const SURFACE_CREATED = "0x1111111111111111111111111111111111111111111111111111111111111111"
+const OLD_SURFACE_CREATED = "0x2222222222222222222222222222222222222222222222222222222222222222"
+const HOUSE_CREATED = "0x3333333333333333333333333333333333333333333333333333333333333333"
+
 const FACTORIES: FactoryRow[] = [
-  { id: 1, address: "0xae712abca452901a74d1fbc0c3919f2cc060ef9f", childAddressLocation: "topic2" },
-  { id: 131, address: "0xdb81d3f33ef3d84685486916e0d372e247558094", childAddressLocation: "topic2" },
-  { id: 134, address: "0xdb81d3f33ef3d84685486916e0d372e247558094", childAddressLocation: "offset0" },
-  { id: 249, address: "0x77ab853543286c9cdd7dd6c01222a7cc4ac93d63", childAddressLocation: "topic2" },
+  { id: 1, address: "0xae712abca452901a74d1fbc0c3919f2cc060ef9f", childAddressLocation: "topic2", eventSelector: HOUSE_CREATED, chainId: 1 },
+  // A stale build that bound the pre-name/symbol SurfaceCreated signature.
+  { id: 90, address: SURFACE, childAddressLocation: "topic2", eventSelector: OLD_SURFACE_CREATED, chainId: 1 },
+  { id: 131, address: SURFACE, childAddressLocation: "topic2", eventSelector: SURFACE_CREATED, chainId: 1 },
+  { id: 134, address: SURFACE, childAddressLocation: "offset0", eventSelector: SURFACE_CREATED, chainId: 1 },
+  // Same stream on another chain.
+  { id: 200, address: SURFACE, childAddressLocation: "topic2", eventSelector: SURFACE_CREATED, chainId: 11155111 },
 ]
 
-test("resolveFactoryId matches on address alone, case-insensitively", () => {
-  assert.equal(
-    resolveFactoryId(FACTORIES, "0xAE712abcA452901A74D1FBC0c3919F2cc060EF9f"),
-    1,
+const surfaceCollections: FactoryStream = {
+  address: "0xdB81d3F33EF3D84685486916E0d372E247558094",
+  childAddressLocation: "topic2",
+  eventSelector: SURFACE_CREATED,
+  chainId: 1,
+}
+
+test("factoryCandidates matches address case-insensitively and filters event, location and chain", () => {
+  assert.deepEqual(factoryCandidates(FACTORIES, surfaceCollections).map((f) => f.id), [131])
+  assert.deepEqual(
+    factoryCandidates(FACTORIES, { ...surfaceCollections, childAddressLocation: "offset0" }).map((f) => f.id),
+    [134],
   )
 })
 
-test("resolveFactoryId disambiguates two watches on the same factory address by childAddressLocation", () => {
-  assert.equal(resolveFactoryId(FACTORIES, "0xdb81d3f33ef3d84685486916e0d372e247558094", "topic2"), 131)
-  assert.equal(resolveFactoryId(FACTORIES, "0xdb81d3f33ef3d84685486916e0d372e247558094", "offset0"), 134)
+test("factoryCandidates never matches a build that bound a different factory event", () => {
+  assert.deepEqual(
+    factoryCandidates(FACTORIES, { ...surfaceCollections, eventSelector: OLD_SURFACE_CREATED }).map((f) => f.id),
+    [90],
+  )
+  assert.deepEqual(factoryCandidates(FACTORIES, { ...surfaceCollections, eventSelector: HOUSE_CREATED }), [])
 })
 
-test("resolveFactoryId returns undefined for an address with no matching row", () => {
-  assert.equal(resolveFactoryId(FACTORIES, "0x0000000000000000000000000000000000dead"), undefined)
+test("resolveFactoryStream: no candidates, one candidate", () => {
+  assert.deepEqual(resolveFactoryStream([], new Map()), { kind: "none" })
+  assert.deepEqual(resolveFactoryStream([FACTORIES[2]!], new Map()), { kind: "resolved", id: 131 })
+})
+
+test("resolveFactoryStream picks the candidate covering the schema's rows best, regardless of id order", () => {
+  const a = { ...FACTORIES[2]!, id: 131, fromBlock: 25_590_436 }
+  const b = { ...FACTORIES[2]!, id: 300, fromBlock: 25_600_000 }
+  assert.deepEqual(resolveFactoryStream([a, b], new Map([[131, 3], [300, 12]])), { kind: "resolved", id: 300 })
+  assert.deepEqual(resolveFactoryStream([b, a], new Map([[131, 12], [300, 3]])), { kind: "resolved", id: 131 })
+})
+
+test("resolveFactoryStream reports a tie as ambiguous instead of guessing", () => {
+  const a = { ...FACTORIES[2]!, id: 131 }
+  const b = { ...FACTORIES[2]!, id: 300 }
+  assert.deepEqual(resolveFactoryStream([a, b], new Map([[131, 5], [300, 5]])), { kind: "ambiguous", ids: [131, 300] })
+})
+
+test("repair is opt-in", () => {
+  assert.equal(repairEnabled(undefined), false)
+  assert.equal(repairEnabled(""), false)
+  assert.equal(repairEnabled("0"), false)
+  assert.equal(repairEnabled("1"), true)
+  assert.equal(repairEnabled("TRUE"), true)
 })
 
 test("missingAddresses returns source addresses absent from existing, lowercased and deduped", () => {

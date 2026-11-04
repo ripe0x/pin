@@ -8,6 +8,18 @@
  * Source: https://github.com/f8n/fnd-protocol
  */
 export const foundationNftAbi = [
+  // Standard ERC-721 ownership stream, for token_ownership (src/index.ts).
+  // Ponder subscribes this contract from FND_START_BLOCK, not its deploy,
+  // so ownership is complete only for tokens minted or moved since then.
+  {
+    type: "event",
+    name: "Transfer",
+    inputs: [
+      { name: "from", type: "address", indexed: true },
+      { name: "to", type: "address", indexed: true },
+      { name: "tokenId", type: "uint256", indexed: true },
+    ],
+  },
   // Emitted when a new token is minted on the shared contract
   {
     type: "event",
