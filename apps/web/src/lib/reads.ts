@@ -447,11 +447,12 @@ async function probeHoldingSources(
  * Ponder; Surface collection_tokens.owner once ponder_v5 is live) and
  * ERC-1155 balances > 0, one row per token, newest first, keyset
  * paginated (collector-holdings.ts has the rules). Replaces a silent
- * LIMIT 200. Pure Postgres.
+ * LIMIT 200. Pure Postgres. `excludeOwnWorks` leaves out works PND
+ * attributes to the wallet itself (the profile's Collected tab, #299).
  */
 export async function getCollectorTokens(
   wallet: string,
-  opts: { cursor?: string | null; limit?: number } = {},
+  opts: { cursor?: string | null; limit?: number; excludeOwnWorks?: boolean } = {},
 ): Promise<CollectorTokensPage> {
   const empty: CollectorTokensPage = {
     items: [], total: 0, nextCursor: null, coverage: "pnd-indexed-works",
@@ -463,7 +464,7 @@ export async function getCollectorTokens(
   const sources = await probeHoldingSources(sql)
 
   const rows = (await sql.unsafe(
-    collectorHoldingsSql(INDEXER_SCHEMA, sources),
+    collectorHoldingsSql(INDEXER_SCHEMA, { ...sources, excludeOwnWorks: opts.excludeOwnWorks === true }),
     // One extra row says whether another page exists.
     collectorHoldingsParams(lower, cursor, limit + 1),
   )) as Array<{ total: number } & ({ [K in keyof HoldingRow]: HoldingRow[K] | null })>

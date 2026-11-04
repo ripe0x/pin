@@ -10,12 +10,20 @@ export function ArtistHeader({
   identity,
   totalWorks,
   activeAuctions,
+  collected = null,
 }: {
   identity: ArtistIdentity
   totalWorks: number
   /** null when the artist has no sovereign auction house deployed. */
   activeAuctions: number | null
+  /**
+   * Holdings among the works PND indexes (#299); null hides the stat
+   * (unknown, or the read failed). A collector-only address shows this in
+   * place of "0 indexed works".
+   */
+  collected?: number | null
 }) {
+  const showWorks = totalWorks > 0 || !collected
   // Gate the wagmi hook behind a mount check — useReadContract throws during
   // SSR if WagmiProvider isn't reachable, and we want this header to render
   // server-side without errors. Pre-mount the pill simply isn't shown.
@@ -83,10 +91,25 @@ export function ArtistHeader({
 
         {/* Stats */}
         <div className="flex items-center gap-3 text-[11px] font-mono text-gray-500">
-          <span>
-            <strong className="font-medium text-fg">{totalWorks}</strong>{" "}
-            {totalWorks === 1 ? "indexed work" : "indexed works"}
-          </span>
+          {showWorks && (
+            <span>
+              <strong className="font-medium text-fg">{totalWorks}</strong>{" "}
+              {totalWorks === 1 ? "indexed work" : "indexed works"}
+            </span>
+          )}
+          {!!collected && (
+            <>
+              {showWorks && (
+                <span aria-hidden className="text-gray-300">
+                  ·
+                </span>
+              )}
+              <span>
+                <strong className="font-medium text-fg">{collected}</strong>{" "}
+                collected
+              </span>
+            </>
+          )}
           {activeAuctions !== null && (
             <>
               <span aria-hidden className="text-gray-300">

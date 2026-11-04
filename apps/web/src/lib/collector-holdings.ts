@@ -100,11 +100,27 @@ export function decodeHoldingCursor(raw: string | null | undefined): HoldingCurs
  * `surface`: whether `<schema>.collection_tokens` has the ponder_v5
  * `owner` / `owner_updated_at_block` columns;
  * `erc1155`: whether migration 034's tables exist.
+ *
+ * `excludeOwnWorks`: drop tokens PND attributes to the wallet itself
+ * (artist_tokens, Ponder's Foundation / SR V2 shared 1/1s; the sources of
+ * artist-token-refs.ts), from the page and from `total`. The profile's
+ * Collected tab (#299) uses it so an artist's unsold inventory sits under
+ * Created, not Collected.
  */
 export function collectorHoldingsSql(
-  schema: string, opts: { surface: boolean; erc1155: boolean },
+  schema: string, opts: { surface: boolean; erc1155: boolean; excludeOwnWorks?: boolean },
 ): string {
   const rank = (s: HoldingSource) => HOLDING_SOURCES.indexOf(s)
+  const ownWorks = opts.excludeOwnWorks
+    ? `WHERE NOT EXISTS (SELECT 1 FROM artist_tokens a
+                     WHERE a.contract = h.contract AND a.token_id = h.token_id AND a.artist = $1)
+         AND NOT EXISTS (SELECT 1 FROM ${schema}.fnd_artist_tokens f
+                     WHERE f.contract = h.contract AND f.token_id = h.token_id::numeric
+                       AND lower(f.creator) = $1)
+         AND NOT EXISTS (SELECT 1 FROM ${schema}.srv2_artist_tokens v
+                     WHERE v.contract = h.contract AND v.token_id = h.token_id::numeric
+                       AND lower(v.creator) = $1)`
+    : ""
   const notErc1155 = opts.erc1155
     ? "AND NOT EXISTS (SELECT 1 FROM token_1155_transfers x WHERE x.contract = o.contract)"
     : ""
@@ -136,6 +152,7 @@ export function collectorHoldingsSql(
        SELECT DISTINCT ON (h.contract, h.token_id)
               h.contract, h.token_id, h.standard, h.balance, h.block, h.source
        FROM holdings h
+       ${ownWorks}
        ORDER BY h.contract, h.token_id, h.src_rank
      ),
      page AS (

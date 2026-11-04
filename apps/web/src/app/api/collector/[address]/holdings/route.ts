@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getCollectorTokens } from "@/lib/reads"
+import { getCollectedPage } from "@/lib/profile-reads"
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
 import { isCrawlerUserAgent } from "@/lib/crawler"
 import { clampHoldingsLimit, DEFAULT_HOLDINGS_LIMIT } from "@/lib/collector-holdings"
@@ -16,7 +16,10 @@ import { clampHoldingsLimit, DEFAULT_HOLDINGS_LIMIT } from "@/lib/collector-hold
  * Response: { address, items, total, nextCursor, coverage }. `nextCursor`
  * is opaque; pass it back as `cursor`. An unknown cursor starts from the
  * first page. `coverage` is "pnd-indexed-works": holdings outside what
- * PND indexes are not listed.
+ * PND indexes are not listed. Each item is a `CollectedCard`
+ * (lib/profile-collected.ts): the holding plus title, artwork and the
+ * attributed artist, all from Postgres, so the profile's Collected tab
+ * (#299) pages through this route with no second request per page.
  */
 export async function GET(
   req: NextRequest,
@@ -45,13 +48,16 @@ export async function GET(
   const url = req.nextUrl
   const limit = clampHoldingsLimit(url.searchParams.get("limit") ?? DEFAULT_HOLDINGS_LIMIT)
   const cursor = url.searchParams.get("cursor")
+  // `?exclude=own` leaves out the wallet's own created works (the
+  // profile's Collected tab). Keep it the same across a cursor walk.
+  const excludeOwnWorks = url.searchParams.get("exclude") === "own"
 
   try {
-    const page = await getCollectorTokens(address, { cursor, limit })
+    const page = await getCollectedPage(address, { cursor, limit, excludeOwnWorks })
     return NextResponse.json(
       {
         address: address.toLowerCase(),
-        items: page.items.map((h) => ({ ...h, acquiredBlock: h.acquiredBlock.toString() })),
+        items: page.items,
         total: page.total,
         nextCursor: page.nextCursor,
         coverage: page.coverage,
