@@ -1729,6 +1729,44 @@ export async function getCollectionAddressesFromIndexer(
   })
 }
 
+/**
+ * One page of the /collections browse index: v1 and v2 collections from the
+ * discovery table, newest first, plus the total for the page count. Pure
+ * SELECT (zero chain reads in the list path, per AGENTS.md); live
+ * per-collection state stays behind getCollection()'s cached reads. The
+ * address tiebreak keeps the order stable for collections created in the
+ * same block, so OFFSET pages never repeat or skip a row. Same
+ * owner_confirmed filter as the other listing reads. Null when the indexer
+ * is unavailable / disabled / slow; the caller falls back.
+ *
+ * Search would slot in here as a WHERE clause on name/symbol (deferred until
+ * the collection count warrants it, see issue #262).
+ */
+export async function getCollectionsPageFromIndexer(
+  limit: number,
+  offset: number,
+): Promise<{ addresses: string[]; total: number } | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  const schema = indexerSchema()
+  const confirmed = await ownerConfirmedFilter(db, schema)
+  return withTimeout(async () => {
+    const [countRows, rows] = await Promise.all([
+      db.unsafe(`SELECT COUNT(*)::int AS count FROM ${schema}.collections WHERE ${confirmed}`) as Promise<
+        Array<{ count: number }>
+      >,
+      db.unsafe(
+        `SELECT collection FROM ${schema}.collections
+         WHERE ${confirmed}
+         ORDER BY created_at_block DESC, collection DESC
+         LIMIT $1 OFFSET $2`,
+        [limit, offset],
+      ) as Promise<Array<{ collection: string }>>,
+    ])
+    return { addresses: rows.map((r) => r.collection), total: Number(countRows[0]?.count ?? 0) }
+  }, 2_000)
+}
+
 export type IndexedCollectionRow = {
   collection: string
   name: string | null

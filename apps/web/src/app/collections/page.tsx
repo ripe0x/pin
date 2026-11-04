@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { getRecentCollections } from "@/lib/collection-onchain"
+import { getCollectionsPage } from "@/lib/collection-onchain"
+import { COLLECTIONS_PAGE_SIZE, pageNav, pageOffset, parsePageParam } from "@/lib/collections-pagination"
 import {
   SurfaceStatus,
   ZERO_ADDRESS,
@@ -10,6 +11,7 @@ import {
   saleWindowOf,
   shortAddress,
   surfaceFactory,
+  surfaceTokenFactoryV2,
   type Collection,
 } from "@/lib/collection"
 import { CollectionStatusChip } from "@/components/collections/CollectionStatusChip"
@@ -28,11 +30,14 @@ type CollectionGroup = {
   items: Collection[]
 }
 
-/** Buckets recent collections by derived lifecycle status, leading with
- * actively minting work, then scheduled, then past — same three-way split
- * as OpenSea's Live/Upcoming/Past, restrained to a flat list within each
- * bucket (no pagination, no filters). Section labels only render when more
- * than one bucket is non-empty; a single-bucket listing stays a plain list. */
+/** Buckets one page of collections by derived lifecycle status, leading
+ * with actively minting work, then scheduled, then past: same three-way
+ * split as OpenSea's Live/Upcoming/Past. The index paginates newest first
+ * and buckets WITHIN the page (a minting collection on page 2 is not pulled
+ * forward to page 1): bucketing across pages would need lifecycle state in
+ * the SELECT, which is live chain state the discovery table does not carry.
+ * Newest-first order is kept inside each bucket. Section labels only render
+ * when more than one bucket is non-empty. */
 function groupByLifecycle(collections: Collection[], nowSec: number): CollectionGroup[] {
   const groups: CollectionGroup[] = [
     { key: "minting", label: "Minting now", items: [] },
@@ -48,11 +53,20 @@ function groupByLifecycle(collections: Collection[], nowSec: number): Collection
   return groups.filter((g) => g.items.length > 0)
 }
 
-export default async function CollectionsHome() {
-  const factory = surfaceFactory()
-  const recent = factory ? await getRecentCollections(factory, 8) : []
+export default async function CollectionsHome({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string | string[] }>
+}) {
+  // v1 (SurfaceFactory) or v2 (token CloneFactory): either makes the index live.
+  const live = surfaceFactory() !== null || surfaceTokenFactoryV2() !== null
+  const page = parsePageParam((await searchParams).page)
+  const { collections, total } = live
+    ? await getCollectionsPage(pageOffset(page), COLLECTIONS_PAGE_SIZE)
+    : { collections: [] as Collection[], total: 0 }
+  const nav = pageNav(page, total)
   const nowSec = Math.floor(Date.now() / 1000)
-  const groups = groupByLifecycle(recent, nowSec)
+  const groups = groupByLifecycle(collections, nowSec)
   const showGroupLabels = groups.length > 1
 
   return (
@@ -73,7 +87,7 @@ export default async function CollectionsHome() {
         </ul>
       </header>
 
-      {factory === null ? (
+      {!live ? (
         <section className="rounded-lg border border-gray-200 bg-surface p-6">
           <p className="text-sm text-fg-muted leading-relaxed">
             Collections are not yet live on this network. Check back soon.
@@ -135,7 +149,42 @@ export default async function CollectionsHome() {
             </div>
           ))}
         </section>
+      ) : total > 0 ? (
+        <section className="rounded-lg border border-gray-200 bg-surface p-6">
+          <p className="text-sm text-fg-muted leading-relaxed">
+            No collections on this page.{" "}
+            <Link href="/collections" className="underline hover:text-fg">
+              Back to the newest
+            </Link>
+            .
+          </p>
+        </section>
       ) : null}
+
+      {nav.totalPages > 1 && (
+        <nav
+          aria-label="Collections pages"
+          className="flex items-center justify-between pt-2 text-[10px] font-mono uppercase tracking-wider text-gray-400"
+        >
+          {nav.newerHref ? (
+            <Link href={nav.newerHref} className="hover:text-fg transition-colors">
+              Newer
+            </Link>
+          ) : (
+            <span className="text-gray-300">Newer</span>
+          )}
+          <span className="tabular-nums text-gray-500">
+            Page {Math.min(nav.page, nav.totalPages)} of {nav.totalPages}
+          </span>
+          {nav.olderHref ? (
+            <Link href={nav.olderHref} className="hover:text-fg transition-colors">
+              Older
+            </Link>
+          ) : (
+            <span className="text-gray-300">Older</span>
+          )}
+        </nav>
+      )}
     </div>
   )
 }

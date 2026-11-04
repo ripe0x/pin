@@ -58,6 +58,9 @@ export function Footer() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-mono text-gray-400">
+            <a href="/collections" className="hover:text-fg transition-colors">
+              Collections
+            </a>
             <a href="/about" className="hover:text-fg transition-colors">
               About
             </a>
