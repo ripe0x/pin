@@ -53,3 +53,20 @@ emit({
   outFile: "sovereignAuctionHouseV2Factory.ts",
   indexerFile: "SovereignAuctionHouseV2Factory.ts",
 });
+// V2.1: V2's ABI plus heldForWinner/version/probeTransfer, the
+// DELIVERY_PROBE_RECIPIENT constant and the LotHeldForWinner event
+// (contracts/src/ISovereignAuctionHouseV2_1.sol). The factory ABI is
+// identical to V2's; it is emitted separately so the indexer binds its own
+// contract name.
+emit({
+  artifact: "SovereignAuctionHouseV2_1.sol/SovereignAuctionHouseV2_1.json",
+  exportName: "sovereignAuctionHouseV2_1Abi",
+  outFile: "sovereignAuctionHouseV2_1.ts",
+  indexerFile: "SovereignAuctionHouseV2_1.ts",
+});
+emit({
+  artifact: "SovereignAuctionHouseV2_1Factory.sol/SovereignAuctionHouseV2_1Factory.json",
+  exportName: "sovereignAuctionHouseV2_1FactoryAbi",
+  outFile: "sovereignAuctionHouseV2_1Factory.ts",
+  indexerFile: "SovereignAuctionHouseV2_1Factory.ts",
+});
