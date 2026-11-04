@@ -25,6 +25,7 @@ import { mapWithConcurrency } from "@/lib/concurrency"
 import { ipfsToHttp } from "@pin/shared"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
 import { useArtistHouseV2 } from "@/components/auction/useArtistHouseV2"
+import { useArtistHouseV2_1 } from "@/components/auction/useArtistHouseV2_1"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import { PREFERRED_CHAIN, useChainNowSec } from "@/components/tx/tx-ui"
 import { parseListingExpiry } from "@/lib/listing-expiry"
@@ -74,22 +75,25 @@ export function SovereignBulkPanel({ artistAddress }: { artistAddress: string })
 
   const v1 = useArtistHouse(isOwner ? artistAddress : undefined)
   const v2 = useArtistHouseV2(isOwner ? artistAddress : undefined)
+  const v2_1 = useArtistHouseV2_1(isOwner ? artistAddress : undefined)
 
   if (!isOwner || !connectedAddress) return null
-  if (!v1.houseAddress && !v2.houseAddress) return null
+  if (!v1.houseAddress && !v2.houseAddress && !v2_1.houseAddress) return null
 
   return (
     <PanelInner
       artistAddress={artistAddress}
       connectedAddress={connectedAddress as Address}
-      // Bulk listing targets the newest house generation (V2 when live).
-      listHouseAddress={(v2.houseAddress ?? v1.houseAddress) as Address}
-      listHouseVersion={v2.houseAddress ? 2 : 1}
+      // Bulk listing targets the newest house generation (V2.1, then V2).
+      listHouseAddress={(v2_1.houseAddress ?? v2.houseAddress ?? v1.houseAddress) as Address}
+      listHouseVersion={v2_1.houseAddress || v2.houseAddress ? 2 : 1}
       // Bulk cancel runs per house generation the artist actually has: V1
-      // via bulkCancelAuctions (one tx), V2 via N cancelAuction calls (V2
-      // dropped bulkCancelAuctions) through the batched-calls runner.
+      // via bulkCancelAuctions (one tx), V2 and V2.1 (same ABI) via N
+      // cancelAuction calls (V2 dropped bulkCancelAuctions) through the
+      // batched-calls runner.
       v1HouseAddress={v1.houseAddress}
       v2HouseAddress={v2.houseAddress}
+      v2_1HouseAddress={v2_1.houseAddress}
     />
   )
 }
@@ -101,6 +105,7 @@ function PanelInner({
   listHouseVersion,
   v1HouseAddress,
   v2HouseAddress,
+  v2_1HouseAddress,
 }: {
   artistAddress: string
   connectedAddress: Address
@@ -108,6 +113,7 @@ function PanelInner({
   listHouseVersion: 1 | 2
   v1HouseAddress: Address | null
   v2HouseAddress: Address | null
+  v2_1HouseAddress: Address | null
 }) {
   // Bulk listing is ERC721-only; on a V1-only owner the policy blocks it
   // and the owner is pointed at the upgrade flow instead.
@@ -138,6 +144,14 @@ function PanelInner({
           connectedAddress={connectedAddress}
           houseAddress={v2HouseAddress}
           houseVersion={2}
+        />
+      )}
+      {v2_1HouseAddress && (
+        <BulkCancelSection
+          connectedAddress={connectedAddress}
+          houseAddress={v2_1HouseAddress}
+          houseVersion={2}
+          houseLabel="V2.1"
         />
       )}
     </div>
@@ -526,10 +540,13 @@ function BulkCancelSection({
   connectedAddress,
   houseAddress,
   houseVersion,
+  houseLabel = `V${houseVersion}`,
 }: {
   connectedAddress: Address
   houseAddress: Address
   houseVersion: 1 | 2
+  /** Shown as "on your {houseLabel} house"; "V2.1" for a V2.1 house. */
+  houseLabel?: string
 }) {
   const router = useRouter()
   const [load, setLoad] = useState<CancelLoadState>({ kind: "loading" })
@@ -685,8 +702,8 @@ function BulkCancelSection({
             Cancel pending auctions
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            {total} pre-bid {total === 1 ? "auction" : "auctions"} on your V
-            {houseVersion} house
+            {total} pre-bid {total === 1 ? "auction" : "auctions"} on your{" "}
+            {houseLabel} house
           </p>
         </div>
         <button

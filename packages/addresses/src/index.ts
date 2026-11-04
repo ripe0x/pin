@@ -107,6 +107,20 @@ export const SOVEREIGN_AUCTION_HOUSE_V2_FACTORY: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x77aB853543286C9Cdd7dd6c01222A7cC4Ac93d63",
 }
 
+// SovereignAuctionHouseV2_1Factory + implementation (V2.1 houses: V2's ABI,
+// plus binding settlement when only the winner cannot receive the lot: the
+// seller is paid and the lot is held for the winner's claimLot). NOT YET
+// DEPLOYED: zero address, and everything keyed on it stays inert until it is
+// filled. Mirror contracts/deployments.mainnet.json (`auctionHouseV2_1Factory`,
+// `auctionHouseV2_1Implementation`) when the deploy lands. The web app also
+// honours NEXT_PUBLIC_SOVEREIGN_V2_1_FACTORY for local fork testing.
+export const SOVEREIGN_AUCTION_HOUSE_V2_1_FACTORY: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+export const SOVEREIGN_AUCTION_HOUSE_V2_1_IMPLEMENTATION: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
 // SUPERSEDED — PND Editions (PNDEditionsFactory + reference mint hooks) is
 // retired in favor of the Collection system (see
 // SURFACE_FACTORY + ATTRIBUTION below). The editions contracts
