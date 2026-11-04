@@ -32,6 +32,7 @@ import { buildEscapeArtwork, isEscapeRenderer } from "./escape-render"
 import { decodeContractURI, decodePreviewURI, type ContractMetadata, type PreviewDecodeResult } from "./collection-preview"
 import {
   getCollectionAddressesFromIndexer,
+  getCollectionsPageFromIndexer,
   getCollectionPrimaryMinterFromIndexer,
   getCollectionRowFromIndexer,
   isCollectionInIndexer,
@@ -973,7 +974,22 @@ export async function getRecentCollections(factory: Address, limit = 8): Promise
       return collections.filter((c): c is Collection => c !== null)
     }
   }
-  return pgCache(`sc-recent:${lc(factory)}:${limit}`, 60, async () => {
+  return (await enumerateFactoryCollections(factory, 0, limit)).collections
+}
+
+/**
+ * The factory-enumeration read (totalSurfaces + allSurfaces multicall),
+ * newest first, `limit` collections after skipping `offset`. The fallback
+ * when the indexer is unavailable and the primary path on a fork/sepolia
+ * instance. v1 factory only: the v2 token CloneFactory has no enumeration
+ * getter, so v2 collections list through the indexer alone.
+ */
+async function enumerateFactoryCollections(
+  factory: Address,
+  offset: number,
+  limit: number,
+): Promise<{ collections: Collection[]; total: number }> {
+  return pgCache(`sc-recent:${lc(factory)}:${offset}:${limit}`, 60, async () => {
     const client = getClient()
     try {
       const total = (await client.readContract({
@@ -982,9 +998,10 @@ export async function getRecentCollections(factory: Address, limit = 8): Promise
         functionName: "totalSurfaces",
       })) as bigint
       const n = Number(total)
-      if (n === 0) return []
-      const start = Math.max(0, n - limit)
-      const idxs = Array.from({ length: n - start }, (_, i) => n - 1 - i) // newest first
+      const newest = n - 1 - offset
+      if (n === 0 || newest < 0) return { collections: [], total: n }
+      const count = Math.min(limit, newest + 1)
+      const idxs = Array.from({ length: count }, (_, i) => newest - i) // newest first
       const addrResults = await client.multicall({
         allowFailure: true,
         contracts: idxs.map((i) => ({
@@ -998,11 +1015,35 @@ export async function getRecentCollections(factory: Address, limit = 8): Promise
         .filter((r) => r.status === "success")
         .map((r) => r.result as Address)
       const collections = await Promise.all(addrs.map((a) => getCollection(a)))
-      return collections.filter((c): c is Collection => c !== null)
+      return { collections: collections.filter((c): c is Collection => c !== null), total: n }
     } catch {
-      return []
+      return { collections: [], total: 0 }
     }
   })
+}
+
+/**
+ * One page of the /collections browse index: v1 and v2 collections, newest
+ * first. The address list and total come from one indexed SELECT
+ * (getCollectionsPageFromIndexer); each collection's live state comes from
+ * getCollection()'s cached reads, exactly as the old 8-item landing did.
+ * Indexer unavailable (or a fork/sepolia instance): the v1 factory
+ * enumeration, sliced to the same page.
+ */
+export async function getCollectionsPage(
+  offset: number,
+  limit: number,
+): Promise<{ collections: Collection[]; total: number }> {
+  if (!FORK_MODE && !USE_SEPOLIA) {
+    const indexed = await getCollectionsPageFromIndexer(limit, offset)
+    if (indexed !== null) {
+      const collections = await Promise.all(indexed.addresses.map((a) => getCollection(a as Address)))
+      return { collections: collections.filter((c): c is Collection => c !== null), total: indexed.total }
+    }
+  }
+  const factory = surfaceFactory()
+  if (!factory) return { collections: [], total: 0 }
+  return enumerateFactoryCollections(factory, offset, limit)
 }
 
 /**

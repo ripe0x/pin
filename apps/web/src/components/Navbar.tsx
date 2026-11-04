@@ -75,6 +75,12 @@ export function Navbar() {
         {/* Desktop (md+): search + nav links + wallet inline. */}
         <div className="hidden items-center gap-6 md:flex">
           <HeaderSearch />
+          <Link
+            href="/collections"
+            className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-600 transition-colors hover:text-fg"
+          >
+            Collections
+          </Link>
           <div ref={menuRef} className="relative">
             <button
               type="button"
