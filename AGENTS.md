@@ -166,6 +166,11 @@ accidentally staged; delete the directory if you see it.
   ~2 req/s (`RPC_DELAY_MS=500`). One global limiter because drpc's free
   tier rate-limits at the account level.
 - `eth_getLogs` ranges are chunked (worker bounds scan windows per task).
+- Scanners stop at the `finalized` block, not `latest` (`finality.ts`;
+  `SCAN_CONFIRMATIONS`, `SCAN_REPLAY_OVERLAP`), walk ranges with
+  `scan-range.ts`, write cursors through `cursors.ts` (monotonic), and
+  back off failing scopes via `backoff.ts`. New scanners should do the
+  same; see ARCHITECTURE.md's worker section.
 - **Quirk:** the drpc URL is currently stored under the env var
   `ALCHEMY_MAINNET_URL` (legacy naming — see the comment in `rpc.ts`).
   A real Alchemy key goes in `ALCHEMY_API_KEY` and is the paid backstop;
