@@ -26,13 +26,16 @@
  * click-time and the contract rejects stale bids regardless of UI.
  */
 import { sql } from "../db.ts"
-import { client } from "../rpc.ts"
+import { client, safeHead } from "../rpc.ts"
 import { throttleRpc } from "../throttle.ts"
 import {
   getAddress, parseAbiItem, type Address,
 } from "viem"
 import type { TaskResult } from "../scheduler.ts"
 import { describeScanError, scanRange } from "../scan-range.ts"
+import { assertLogsInRange } from "../log-guard.ts"
+import { advanceCursor as upsertCursor, readCursor, scanWindow } from "../cursors.ts"
+import { replayOverlap } from "../finality.ts"
 
 const SR_BAZAAR = "0x6d7c44773c52d396f43c2d511b81aa168e9a7a42" as const
 const SR_BAZAAR_DEPLOY_BLOCK = 14_100_000n
@@ -81,8 +84,14 @@ export async function scanSrv2ActiveAuctions(): Promise<TaskResult> {
 
   if (artists.length === 0) return { scopeCount: 0, rpcCalls: 0, rowsWritten: 0 }
 
-  const head = await client.getBlockNumber()
-  let rpcCalls = 1
+  // Confirmations-mode safe head (finality.ts): latest - SCAN_CONFIRMATIONS.
+  // Not `finalized`: every candidate's state is re-read live below and
+  // an orphaned listing log reads back as settled, so this tracker only
+  // needs the margin against lagging providers, and the gallery overlay
+  // stays ~2 min behind the tip instead of ~15.
+  const safe = await safeHead.get("confirmed")
+  const head = safe.block
+  let rpcCalls = safe.rpcCalls
   let rowsWritten = 0
   const errors: string[] = []
 
@@ -109,13 +118,17 @@ async function scanOneArtist(
   const scope = `srv2:${lower}`
 
   // Cursor: scan from this block forward.
-  const cursorRow = (await sql`
-    SELECT last_block::text AS last_block FROM worker_cursors
-    WHERE task = ${TASK} AND scope = ${scope} LIMIT 1
-  `) as Array<{ last_block: string }>
-  const fromBlock = cursorRow[0]
-    ? BigInt(cursorRow[0].last_block) + 1n
-    : SR_BAZAAR_DEPLOY_BLOCK
+  // Replays a small overlap below the cursor: candidates are keyed on
+  // (contract, tokenId) and their rows are upserts from live state, so
+  // re-reading a log is harmless. Nothing new: skip the walk but still
+  // re-check tracked rows below.
+  const window = scanWindow({
+    cursor: await readCursor(sql, TASK, scope),
+    initialFrom: SR_BAZAAR_DEPLOY_BLOCK,
+    safeHead: head,
+    overlap: replayOverlap(),
+  })
+  const fromBlock = window ? window.from : head + 1n
 
   let rpcCalls = 0
   const errors: string[] = []
@@ -136,13 +149,14 @@ async function scanOneArtist(
     label: `${TASK} ${scope}`,
     fetch: async (a, b) => {
       await throttleRpc()
-      return client.getLogs({
+      const logs = await client.getLogs({
         address: SR_BAZAAR,
         event: newAuctionEvent,
         args: { _auctionCreator: getAddress(lower) as Address },
         fromBlock: a,
         toBlock: b,
       })
+      return assertLogsInRange(logs, a, b, `${TASK} ${scope}`)
     },
     process: (logs) => {
       for (const l of logs) {
@@ -283,10 +297,7 @@ async function scanOneArtist(
 
 async function advanceCursor(scope: string, lastBlock: bigint): Promise<void> {
   if (!sql) return
-  await sql`
-    INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
-    VALUES (${TASK}, ${scope}, ${lastBlock.toString()}::bigint, NOW())
-    ON CONFLICT (task, scope) DO UPDATE SET
-      last_block = EXCLUDED.last_block, last_run_at = NOW()
-  `
+  // GREATEST upsert (cursors.ts): a cursor held below a failed leg, or a
+  // replayed overlap, can never move an existing cursor backwards.
+  await upsertCursor(sql, TASK, scope, lastBlock)
 }

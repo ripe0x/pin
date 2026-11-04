@@ -29,10 +29,13 @@
  * limits.
  */
 import { sql } from "../db.ts"
-import { client } from "../rpc.ts"
+import { client, safeHead } from "../rpc.ts"
 import { throttleRpc } from "../throttle.ts"
 import { resolveNewTokenOwner } from "../scanners/resolve-owner.ts"
 import { describeScanError, scanRange } from "../scan-range.ts"
+import { assertLogsInRange } from "../log-guard.ts"
+import { advanceCursor, readCursor, scanWindow } from "../cursors.ts"
+import { replayOverlap } from "../finality.ts"
 import { parseAbiItem, type Address } from "viem"
 import type { TaskResult } from "../scheduler.ts"
 
@@ -86,16 +89,19 @@ export async function scanFndShared(): Promise<TaskResult> {
     console.error(`[${TASK}] seed copy failed:`, err)
   }
 
-  const head = await client.getBlockNumber()
-  let rpcCalls = 1
-
-  const cursorRow = (await sql`
-    SELECT last_block::text AS last_block FROM worker_cursors
-    WHERE task = ${TASK} AND scope = ${SCOPE} LIMIT 1
-  `) as Array<{ last_block: string }>
-  const fromBlock = cursorRow[0]
-    ? BigInt(cursorRow[0].last_block) + 1n
-    : FND_NFT_DEPLOY_BLOCK
+  // Scan up to the finalized safe head (finality.ts), replaying a small
+  // overlap below the cursor: the inserts are ON CONFLICT DO NOTHING.
+  const head = await safeHead.get()
+  let rpcCalls = head.rpcCalls
+  const window = scanWindow({
+    cursor: await readCursor(sql, TASK, SCOPE),
+    initialFrom: FND_NFT_DEPLOY_BLOCK,
+    safeHead: head.block,
+    overlap: replayOverlap(),
+  })
+  if (!window) {
+    return { scopeCount: knownArtists.size, rpcCalls, rowsWritten: seededRows, errors: [] }
+  }
 
   let rowsWritten = 0
   // A failed getLogs used to be logged and then treated as "no logs",
@@ -104,19 +110,20 @@ export async function scanFndShared(): Promise<TaskResult> {
   // still fails; the cursor is committed only through the last range
   // that was fetched AND written.
   const scan = await scanRange({
-    from: fromBlock,
-    to: head,
+    from: window.from,
+    to: window.to,
     chunkSize: CHUNK_SIZE,
     maxChunks: MAX_CHUNKS_PER_TICK,
     label: TASK,
     fetch: async (a, b) => {
       await throttleRpc()
-      return client.getLogs({
+      const logs = await client.getLogs({
         address: FOUNDATION_NFT as Address,
         event: mintedEvent,
         fromBlock: a,
         toBlock: b,
       })
+      return assertLogsInRange(logs, a, b, TASK)
     },
     process: async (logs) => {
       for (const log of logs) {
@@ -124,15 +131,18 @@ export async function scanFndShared(): Promise<TaskResult> {
         if (!creator || !knownArtists.has(creator)) continue
         if (log.args.tokenId === undefined) continue
         const tokenId = log.args.tokenId.toString()
-        await sql`
+        const inserted = await sql`
           INSERT INTO artist_tokens
             (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
           VALUES
             (${creator}, ${FOUNDATION_NFT}, ${tokenId}, 'fnd-shared',
-             ${log.blockNumber!.toString()}::bigint, ${log.logIndex!}, NOW())
+             ${log.blockNumber.toString()}::bigint, ${log.logIndex}, NOW())
           ON CONFLICT (contract, token_id) DO NOTHING
         `
-        rowsWritten += 1
+        // Count real inserts only (L3); a replayed overlap or a token the
+        // seed copy already wrote is a no-op and needs no owner lookup.
+        if (inserted.count === 0) continue
+        rowsWritten += inserted.count
         await resolveNewTokenOwner({
           sql,
           client,
@@ -143,14 +153,7 @@ export async function scanFndShared(): Promise<TaskResult> {
     },
     // Persist after every successful range so a long backfill that dies
     // mid-tick keeps its progress.
-    commit: async (scannedTo) => {
-      await sql`
-        INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
-        VALUES (${TASK}, ${SCOPE}, ${scannedTo.toString()}::bigint, NOW())
-        ON CONFLICT (task, scope) DO UPDATE SET
-          last_block = EXCLUDED.last_block, last_run_at = NOW()
-      `
-    },
+    commit: (scannedTo) => advanceCursor(sql, TASK, SCOPE, scannedTo),
     onSplit: (a, b, err) =>
       console.warn(`[${TASK}] getLogs ${a}-${b} failed, splitting: ${err}`),
   })

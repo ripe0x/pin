@@ -28,13 +28,16 @@
  * re-walked, which is cheap.
  */
 import { sql as workerSql } from "../db.ts"
-import { client as viemClient, traceClient } from "../rpc.ts"
+import { client as viemClient, safeHead, traceClient } from "../rpc.ts"
 import { throttleRpc } from "../throttle.ts"
 import {
   getAddress, parseAbiItem, type Address, type PublicClient,
 } from "viem"
 import { resolveNewTokenOwner } from "./resolve-owner.ts"
 import { describeScanError, scanRange } from "../scan-range.ts"
+import { assertLogsInRange } from "../log-guard.ts"
+import { advanceCursor, readCursor, scanWindow } from "../cursors.ts"
+import { replayOverlap } from "../finality.ts"
 
 /**
  * Alchemy returns a "#<tokenId>" placeholder name when it can't resolve a
@@ -207,17 +210,20 @@ export async function scanManifoldArtistTokens(
 
   for (const c of scannable) {
     const scope = `${artist}:${c.contract}`
-    const cursorRow = (await workerSql`
-      SELECT last_block::text AS last_block FROM worker_cursors
-      WHERE task = ${TASK_NAME} AND scope = ${scope} LIMIT 1
-    `) as Array<{ last_block: string }>
-    const fromBlock = cursorRow[0]
-      ? BigInt(cursorRow[0].last_block) + 1n
-      : MANIFOLD_FIRST_BLOCK
-
-    const head = await viemClient.getBlockNumber()
-    rpcCalls += 1
-    if (fromBlock > head) continue
+    // Finalized safe head (finality.ts), cached ~12s, so this is no
+    // longer one eth_blockNumber per contract. The mint inserts are ON
+    // CONFLICT DO NOTHING, so a small overlap below the cursor is replayed.
+    const safe = await safeHead.get()
+    rpcCalls += safe.rpcCalls
+    const head = safe.block
+    const window = scanWindow({
+      cursor: await readCursor(workerSql, TASK_NAME, scope),
+      initialFrom: MANIFOLD_FIRST_BLOCK,
+      safeHead: head,
+      overlap: replayOverlap(),
+    })
+    if (!window) continue
+    const fromBlock = window.from
 
     // Backfill mode: if the cursor is more than 100K blocks behind head,
     // try the Alchemy NFT API fast path before falling back to chunked
@@ -262,12 +268,7 @@ export async function scanManifoldArtistTokens(
     // Persist only real progress. On a failure the cursor stays at the
     // end of the last fully-successful range and the next tick retries.
     if (scannedTo >= fromBlock) {
-      await workerSql`
-        INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
-        VALUES (${TASK_NAME}, ${scope}, ${scannedTo.toString()}::bigint, NOW())
-        ON CONFLICT (task, scope) DO UPDATE SET
-          last_block = EXCLUDED.last_block, last_run_at = NOW()
-      `
+      await advanceCursor(workerSql, TASK_NAME, scope, scannedTo)
     }
   }
 
@@ -289,19 +290,27 @@ async function discoverDeployedContracts(
   if (!workerSql) return { contracts: [], rpcCalls: 0, error: null }
 
   const scope = `${artist}:trace`
-  const cursorRow = (await workerSql`
-    SELECT last_block::text AS last_block FROM worker_cursors
-    WHERE task = ${TASK_NAME} AND scope = ${scope} LIMIT 1
-  `) as Array<{ last_block: string }>
-  const fromBlock = cursorRow[0]
-    ? BigInt(cursorRow[0].last_block) + 1n
-    : MANIFOLD_FIRST_BLOCK
-
-  const head = await client.getBlockNumber()
-  let rpcCalls = 1
-  if (fromBlock > head) {
-    return { contracts: [], rpcCalls, error: null }
+  // Finalized safe head from the main client (the trace client is drpc
+  // only, and finalized trails the tip far more than drpc ever lags).
+  // Discovery only collects a set, so the replayed overlap is harmless.
+  const safe = await safeHead.get()
+  let rpcCalls = safe.rpcCalls
+  const window = scanWindow({
+    cursor: await readCursor(workerSql, TASK_NAME, scope),
+    initialFrom: MANIFOLD_FIRST_BLOCK,
+    safeHead: safe.block,
+    overlap: replayOverlap(),
+  })
+  const previously = async () =>
+    ((await workerSql`
+      SELECT lower(contract) AS contract FROM manifold_contracts
+      WHERE artist = ${artist}
+    `) as Array<{ contract: string }>).map((p) => getAddress(p.contract) as Address)
+  if (!window) {
+    return { contracts: await previously(), rpcCalls, error: null }
   }
+  const fromBlock = window.from
+  const head = window.to
 
   type TraceRow = {
     action?: { from?: string }
@@ -341,19 +350,10 @@ async function discoverDeployedContracts(
   rpcCalls += scan.calls
 
   if (scan.scannedTo >= fromBlock) {
-    await workerSql`
-      INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
-      VALUES (${TASK_NAME}, ${scope}, ${scan.scannedTo.toString()}::bigint, NOW())
-      ON CONFLICT (task, scope) DO UPDATE SET
-        last_block = EXCLUDED.last_block, last_run_at = NOW()
-    `
+    await advanceCursor(workerSql, TASK_NAME, scope, scan.scannedTo)
   }
 
-  const previouslySeen = (await workerSql`
-    SELECT lower(contract) AS contract FROM manifold_contracts
-    WHERE artist = ${artist}
-  `) as Array<{ contract: string }>
-  for (const p of previouslySeen) contracts.add(p.contract)
+  for (const p of await previously()) contracts.add(p.toLowerCase())
 
   return {
     contracts: Array.from(contracts).map((c) => getAddress(c) as Address),
@@ -469,52 +469,52 @@ async function scanMintsForContract(
       const out: MintRef[] = []
       if (is721) {
         await throttleRpc()
-        const logs = await viemClient.getLogs({
+        const logs = assertLogsInRange(await viemClient.getLogs({
           address: contract,
           event: transferEvent,
           args: { from: ZERO_ADDRESS as `0x${string}` },
           fromBlock: a,
           toBlock: b,
-        })
+        }), a, b, `${TASK_NAME} ${contract}`)
         for (const log of logs) {
           if (log.args.tokenId === undefined) continue
           out.push({
             tokenId: log.args.tokenId.toString(),
-            blockNumber: log.blockNumber!, logIndex: log.logIndex!,
+            blockNumber: log.blockNumber, logIndex: log.logIndex,
           })
         }
       }
       if (is1155) {
         await throttleRpc()
-        const singles = await viemClient.getLogs({
+        const singles = assertLogsInRange(await viemClient.getLogs({
           address: contract,
           event: transferSingleEvent,
           args: { from: ZERO_ADDRESS as `0x${string}` },
           fromBlock: a,
           toBlock: b,
-        })
+        }), a, b, `${TASK_NAME} ${contract}`)
         for (const log of singles) {
           if (log.args.id === undefined) continue
           out.push({
             tokenId: log.args.id.toString(),
-            blockNumber: log.blockNumber!, logIndex: log.logIndex!,
+            blockNumber: log.blockNumber, logIndex: log.logIndex,
           })
         }
 
         await throttleRpc()
-        const batches = await viemClient.getLogs({
+        const batches = assertLogsInRange(await viemClient.getLogs({
           address: contract,
           event: transferBatchEvent,
           args: { from: ZERO_ADDRESS as `0x${string}` },
           fromBlock: a,
           toBlock: b,
-        })
+        }), a, b, `${TASK_NAME} ${contract}`)
         for (const log of batches) {
           const ids = (log.args.ids ?? []) as readonly bigint[]
           for (const id of ids) {
             out.push({
               tokenId: id.toString(),
-              blockNumber: log.blockNumber!, logIndex: log.logIndex!,
+              blockNumber: log.blockNumber, logIndex: log.logIndex,
             })
           }
         }
@@ -523,8 +523,7 @@ async function scanMintsForContract(
     },
     process: async (mints) => {
       for (const m of mints) {
-        await insertToken(artist, contract, m.tokenId, m.blockNumber, m.logIndex)
-        rowsWritten++
+        rowsWritten += await insertToken(artist, contract, m.tokenId, m.blockNumber, m.logIndex)
       }
     },
     onSplit: (a, b, err) =>
@@ -798,12 +797,20 @@ export async function discoverMintsToArtist(args: {
   `) as Array<{ last_block: string }>
   const fromBlock = cursorRow[0] ? BigInt(cursorRow[0].last_block) + 1n : 0n
   const fromBlockHex = "0x" + fromBlock.toString(16)
+  // Bound the query at the safe head captured BEFORE it runs (audit L5,
+  // H1). The cursor used to jump to a fresh eth_blockNumber read after
+  // the Alchemy walk, which could be later than the block Alchemy's
+  // query had covered, skipping mints in between.
+  const safe = await safeHead.get()
+  const toBlock = safe.block
+  if (fromBlock > toBlock) return { rpcCalls: safe.rpcCalls, rowsWritten: 0 }
+  const toBlockHex = "0x" + toBlock.toString(16)
 
   // Page through new NFT mints to the artist since the cursor.
   type MintRef = { contract: string; tokenId: string; blockNum: bigint }
   const mints: MintRef[] = []
   let pageKey: string | undefined
-  let rpcCalls = 0
+  let rpcCalls = safe.rpcCalls
   let maxBlockSeen = fromBlock
   const MAX_PAGES = 50 // ~50K mints max — way beyond any realistic artist
 
@@ -820,6 +827,7 @@ export async function discoverMintsToArtist(args: {
         withMetadata: false,
         order: "asc",
         fromBlock: fromBlockHex,
+        toBlock: toBlockHex,
         ...(pageKey ? { pageKey } : {}),
       }],
     }
@@ -869,21 +877,10 @@ export async function discoverMintsToArtist(args: {
     console.warn(`[manifold-mints-to] ${artist}: hit ${MAX_PAGES}-page cap at block ${maxBlockSeen}; cursor will stop there`)
   }
 
-  // Empty incremental tick — write cursor forward to head so we don't keep
-  // re-querying the same idle range. Use viemClient.getBlockNumber() since
-  // we already paid for trace_filter; this is in cache.
+  // Empty incremental tick: move the cursor to the block the query was
+  // bounded at, so the same idle range isn't re-queried.
   if (mints.length === 0 && !truncated) {
-    try {
-      const head = await viemClient.getBlockNumber()
-      await workerSql`
-        INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
-        VALUES (${TASK_NAME}, ${cursorScope}, ${head.toString()}::bigint, NOW())
-        ON CONFLICT (task, scope) DO UPDATE SET
-          last_block = EXCLUDED.last_block, last_run_at = NOW()
-      `
-    } catch (err) {
-      console.warn(`[manifold-mints-to] ${artist}: cursor update failed ${err}`)
-    }
+    await advanceMintsToCursor(cursorScope, fromBlock, toBlock)
     return { rpcCalls, rowsWritten: 0 }
   }
 
@@ -915,7 +912,7 @@ export async function discoverMintsToArtist(args: {
     // Nothing relevant in what we saw, but we did see it: advance the
     // cursor (to head, or to the truncation point) so the same range
     // isn't re-paged forever.
-    await advanceMintsToCursor(cursorScope, fromBlock, truncated ? maxBlockSeen - 1n : null)
+    await advanceMintsToCursor(cursorScope, fromBlock, truncated ? maxBlockSeen - 1n : toBlock)
     return { rpcCalls, rowsWritten: 0 }
   }
   // Use filtered set from here on.
@@ -1014,36 +1011,31 @@ export async function discoverMintsToArtist(args: {
     return { rpcCalls, rowsWritten }
   }
 
-  // Advance the cursor to head so the next tick starts at the right place.
-  // Using head (not maxBlockSeen) so that we don't re-query the entire
-  // chain even if the most-recent mint we found was historical — the
-  // important thing is that we've now SEEN every mint up to head.
+  // Advance the cursor to the query's toBlock so the next run starts at
+  // the right place. Using toBlock (not maxBlockSeen) so that we don't
+  // re-query the entire chain even if the most-recent mint we found was
+  // historical: we've now SEEN every mint up to toBlock.
   // Exception: if paging stopped at MAX_PAGES with more pages left, we
   // have NOT seen every mint; stop just before the last block we saw
   // (results are ascending, and that block may be split across pages).
-  await advanceMintsToCursor(cursorScope, fromBlock, truncated ? maxBlockSeen - 1n : null)
+  await advanceMintsToCursor(cursorScope, fromBlock, truncated ? maxBlockSeen - 1n : toBlock)
 
   return { rpcCalls, rowsWritten }
 }
 
 /**
- * Persist the Path B cursor. `to` null means "everything up to head was
- * seen"; otherwise it's the last fully-seen block. Never moves the cursor
- * backwards past `fromBlock - 1n`. Best-effort, like before.
+ * Persist the Path B cursor at `to`, the last fully-seen block (the
+ * query's toBlock, or just before the truncation point). Skips a write
+ * that wouldn't advance past `fromBlock - 1n`, and the GREATEST upsert
+ * never moves it backwards. Best-effort, like before.
  */
 async function advanceMintsToCursor(
-  cursorScope: string, fromBlock: bigint, to: bigint | null,
+  cursorScope: string, fromBlock: bigint, to: bigint,
 ): Promise<void> {
   if (!workerSql) return
   try {
-    const next = to ?? await viemClient.getBlockNumber()
-    if (next < fromBlock) return
-    await workerSql`
-      INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
-      VALUES (${TASK_NAME}, ${cursorScope}, ${next.toString()}::bigint, NOW())
-      ON CONFLICT (task, scope) DO UPDATE SET
-        last_block = EXCLUDED.last_block, last_run_at = NOW()
-    `
+    if (to < fromBlock) return
+    await advanceCursor(workerSql, TASK_NAME, cursorScope, to)
   } catch (err) {
     console.warn(`[manifold-mints-to] ${cursorScope}: cursor update failed ${err}`)
   }
@@ -1052,9 +1044,9 @@ async function advanceMintsToCursor(
 async function insertToken(
   artist: Address, contract: Address, tokenId: string,
   blockNumber: bigint, logIndex: number,
-): Promise<void> {
-  if (!workerSql) return
-  await workerSql`
+): Promise<number> {
+  if (!workerSql) return 0
+  const inserted = await workerSql`
     INSERT INTO artist_tokens
       (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
     VALUES
@@ -1062,8 +1054,12 @@ async function insertToken(
        ${blockNumber.toString()}::bigint, ${logIndex}, NOW())
     ON CONFLICT (contract, token_id) DO NOTHING
   `
+  // Already known (replayed overlap, or found by another path): no
+  // write to count and no owner lookup to repeat (L3).
+  if (inserted.count === 0) return 0
   await resolveNewTokenOwner({
     sql: workerSql, client: viemClient,
     contract: contract.toLowerCase(), tokenId,
   }).catch(() => undefined)
+  return inserted.count
 }
