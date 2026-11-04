@@ -92,10 +92,10 @@ function StartAuctionCTAClient({
       !!currentOwner &&
       address.toLowerCase() === (currentOwner as string).toLowerCase()
 
-  const { houseAddress, version } = useResolvedArtistHouse(address)
+  const { houseAddress, version, isV2_1 } = useResolvedArtistHouse(address)
 
   if (!isCurrentOwner || !houseAddress) return null
-  const blockReason = listingBlockReason(version ?? 1, tokenStandard)
+  const blockReason = listingBlockReason(version ?? 1, tokenStandard, isV2_1)
   if (blockReason) {
     return (
       <section className="py-5 border-b border-gray-100">
@@ -121,6 +121,7 @@ function StartAuctionCTAClient({
         <CreateAuctionModal
           houseAddress={houseAddress}
           houseVersion={version ?? 1}
+          houseIsV2_1={isV2_1}
           nftContract={nftContract}
           tokenId={tokenId}
           tokenStandard={tokenStandard}

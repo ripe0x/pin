@@ -48,7 +48,7 @@ function PageShell({ children }: { children?: React.ReactNode }) {
 
 function Inner() {
   const { address } = useAccount()
-  const { houseAddress, version, isLoading: houseLoading } =
+  const { houseAddress, version, isV2_1, isLoading: houseLoading } =
     useResolvedArtistHouse(address)
 
   if (!address) {
@@ -121,6 +121,7 @@ function Inner() {
         connected={address as `0x${string}`}
         houseAddress={houseAddress}
         houseVersion={version ?? 1}
+        houseIsV2_1={isV2_1}
       />
     </PageShell>
   )
@@ -130,10 +131,12 @@ function ListForm({
   connected,
   houseAddress,
   houseVersion,
+  houseIsV2_1,
 }: {
   connected: `0x${string}`
   houseAddress: `0x${string}`
   houseVersion: 1 | 2
+  houseIsV2_1: boolean
 }) {
   const router = useRouter()
   const [contractInput, setContractInput] = useState("")
@@ -246,6 +249,7 @@ function ListForm({
                 <AuctionTermsForm
                   houseAddress={houseAddress}
                   houseVersion={houseVersion}
+                  houseIsV2_1={houseIsV2_1}
                   nftContract={contractInput.trim() as `0x${string}`}
                   tokenId={tokenIdInput.trim()}
                   onSuccess={handleCreated}
@@ -272,6 +276,7 @@ function ListForm({
                 <AuctionTermsForm
                   houseAddress={houseAddress}
                   houseVersion={houseVersion}
+                  houseIsV2_1={houseIsV2_1}
                   nftContract={contractInput.trim() as `0x${string}`}
                   tokenId={tokenIdInput.trim()}
                   tokenStandard="erc1155"

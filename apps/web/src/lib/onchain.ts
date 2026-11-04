@@ -1,7 +1,11 @@
 import "server-only"
 import { createPublicClient, type Address } from "viem"
 import { mainnet } from "viem/chains"
-import { sovereignAuctionHouseAbi, sovereignAuctionHouseV2Abi } from "@pin/abi"
+import {
+  sovereignAuctionHouseAbi,
+  sovereignAuctionHouseV2Abi,
+  sovereignAuctionHouseV2_1Abi,
+} from "@pin/abi"
 import { pgCache } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
 import { sql } from "./db"
@@ -249,4 +253,35 @@ export async function getAccountCodeKind(
       return null
     }
   })
+}
+
+/**
+ * `heldForWinner(auctionId)` on a V2.1 house: true while a settled sale's
+ * lot is escrowed for the winner's claim. Fallback for the auction page
+ * only (see needsHeldForWinnerRead in auction-policy.ts): the indexer
+ * writes status "held_for_winner" itself, so this runs just for a V2.1 row
+ * that reads "settled" with no recorded claim. Never called for V1/V2
+ * houses (they have no such getter). 30-second cache, null when the read
+ * fails.
+ */
+export async function getHeldForWinner(
+  house: Address,
+  auctionId: bigint,
+): Promise<boolean | null> {
+  return pgCache(
+    `held-for-winner:${house.toLowerCase()}:${auctionId}`,
+    30,
+    async () => {
+      try {
+        return (await getClient().readContract({
+          address: house,
+          abi: sovereignAuctionHouseV2_1Abi,
+          functionName: "heldForWinner",
+          args: [auctionId],
+        })) as boolean
+      } catch {
+        return null
+      }
+    },
+  )
 }

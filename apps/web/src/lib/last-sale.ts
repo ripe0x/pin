@@ -1,6 +1,7 @@
 import "server-only"
 import { sql } from "./db"
 import { INDEXER_SCHEMA as schema } from "./indexer-schema"
+import { PND_SOLD_STATUSES_SQL } from "./auction-policy"
 
 /**
  * Last-sale price lookup for a single token. v2 reads from Ponder
@@ -46,7 +47,7 @@ export async function getLastSalePriceForToken(
               lifecycle_tx_hash AS tx_hash
        FROM ${schema}.pnd_auctions
        WHERE lower(token_contract) = $1 AND token_id::text = $2
-         AND status = 'settled'
+         AND status IN ${PND_SOLD_STATUSES_SQL}
        ORDER BY settled_at_time DESC LIMIT 1`,
       [lower, tokenId],
     ) as Promise<Array<{ price_wei: string; block_time: string; tx_hash: string | null }>>,

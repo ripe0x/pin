@@ -20,6 +20,7 @@ import { TxLink } from "./tx"
 export function CreateAuctionModal({
   houseAddress,
   houseVersion = 1,
+  houseIsV2_1 = false,
   nftContract,
   tokenId,
   tokenStandard = "erc721",
@@ -30,6 +31,8 @@ export function CreateAuctionModal({
 }: {
   houseAddress: `0x${string}`
   houseVersion?: 1 | 2
+  /** V2.1 house: allows ERC-1155 lots (lib/auction-policy.ts). */
+  houseIsV2_1?: boolean
   nftContract: `0x${string}`
   tokenId: string
   tokenStandard?: "erc721" | "erc1155"
@@ -89,6 +92,7 @@ export function CreateAuctionModal({
             <AuctionTermsForm
               houseAddress={houseAddress}
               houseVersion={houseVersion}
+              houseIsV2_1={houseIsV2_1}
               nftContract={nftContract}
               tokenId={tokenId}
               tokenStandard={tokenStandard}

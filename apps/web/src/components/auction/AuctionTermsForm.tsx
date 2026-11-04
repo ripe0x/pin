@@ -44,6 +44,7 @@ const DURATION_OPTIONS = [
 export function AuctionTermsForm({
   houseAddress,
   houseVersion = 1,
+  houseIsV2_1 = false,
   nftContract,
   tokenId,
   tokenStandard = "erc721",
@@ -52,6 +53,8 @@ export function AuctionTermsForm({
 }: {
   houseAddress: `0x${string}`
   houseVersion?: 1 | 2
+  /** V2.1 house: same V2 ABI and steps, and ERC-1155 lots are allowed. */
+  houseIsV2_1?: boolean
   nftContract: `0x${string}`
   tokenId: string
   tokenStandard?: "erc721" | "erc1155"
@@ -179,7 +182,7 @@ export function AuctionTermsForm({
 
   function handleCreate() {
     if (!reserveValid || reserve.wei == null || !quantityValid || !listingTermsValid) return
-    if (listingBlockReason(houseVersion, tokenStandard)) return
+    if (listingBlockReason(houseVersion, tokenStandard, houseIsV2_1)) return
     const listingExpirySeconds = houseVersion === 2 ? listingExpiry.seconds ?? 0n : 0n
     if (is1155) {
       if (quantity === null) return
@@ -233,10 +236,10 @@ export function AuctionTermsForm({
   const approveBusy = isApprovePending || isApproveMining
   const createBusy = isCreatePending || isCreateMining
 
-  // New listings go to V2 houses only, and V2 ERC-1155 lots are paused
-  // (lib/auction-policy.ts). A blocked form renders the reason instead of
-  // the approve/create steps.
-  const blockReason = listingBlockReason(houseVersion, tokenStandard)
+  // New listings go to V2-family houses only, and ERC-1155 lots are paused
+  // on V2 houses but allowed on V2.1 (lib/auction-policy.ts). A blocked
+  // form renders the reason instead of the approve/create steps.
+  const blockReason = listingBlockReason(houseVersion, tokenStandard, houseIsV2_1)
   if (blockReason) {
     return <ListingBlockedNotice reason={blockReason} ownerAddress={address} />
   }

@@ -12,7 +12,8 @@ import { getAuctionDetail } from "@/lib/auctions"
 import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
 import { formatEthAmount } from "@/lib/format-eth"
 import { isCrawler } from "@/lib/crawler"
-import { getAccountCodeKind } from "@/lib/onchain"
+import { getAccountCodeKind, getHeldForWinner } from "@/lib/onchain"
+import { needsHeldForWinnerRead, resolveHeldForWinner } from "@/lib/auction-policy"
 
 export const revalidate = 60
 
@@ -22,8 +23,15 @@ type Params = Promise<{ house: string; auctionId: string }>
 // one request resolves the auction + metadata once. `cache()` is React's
 // built-in per-request dedup, no cross-request leakage.
 const getAuctionPageData = cache(async (house: string, auctionId: string) => {
-  const detail = await getAuctionDetail(house, auctionId).catch(() => null)
-  if (!detail) return null
+  const indexed = await getAuctionDetail(house, auctionId).catch(() => null)
+  if (!indexed) return null
+  // The indexer writes "held_for_winner" for V2.1 lots itself. Guard for a
+  // V2.1 row that still reads "settled" with no recorded claim (an indexer
+  // build without the status): one heldForWinner(id) read, V2.1 houses only.
+  const heldOnchain = needsHeldForWinnerRead(indexed)
+    ? await getHeldForWinner(indexed.marketAddress, BigInt(indexed.auctionId)).catch(() => null)
+    : null
+  const detail = { ...indexed, status: resolveHeldForWinner({ ...indexed, heldOnchain }) }
   const meta = await resolveTokenMetadataDirect(
     detail.nftContract,
     detail.tokenId,
@@ -36,6 +44,11 @@ function shortDescription(
 ): string {
   if (detail.status === "settled" && detail.finalPriceWei != null) {
     return `Sold for ${formatEthAmount(detail.finalPriceWei)} ETH`
+  }
+  if (detail.status === "held_for_winner") {
+    return detail.finalPriceWei != null
+      ? `Sold for ${formatEthAmount(detail.finalPriceWei)} ETH. Awaiting the winner's claim.`
+      : "Sold. Awaiting the winner's claim."
   }
   if (detail.status === "deferred") {
     return "Auction ended, delivery pending. Nobody has been paid yet."
@@ -100,11 +113,11 @@ export default async function AuctionPage({ params }: { params: Params }) {
   if (!data) notFound()
 
   const { detail, meta } = data
-  // Deferred V2 lots only: one getCode on the winner, so the card can say
-  // when the winning bidder is a contract account (its own code runs on
-  // delivery). Skipped for every other status.
+  // Deferred V2 and held V2.1 lots only: one getCode on the winner, so the
+  // card can say when the winning bidder is a contract account (its own
+  // code runs on delivery). Skipped for every other status.
   const winnerCodeKind =
-    detail.status === "deferred" && detail.winner
+    (detail.status === "deferred" || detail.status === "held_for_winner") && detail.winner
       ? await getAccountCodeKind(detail.winner).catch(() => null)
       : null
   const imageUrl = meta?.image
@@ -164,7 +177,8 @@ export default async function AuctionPage({ params }: { params: Params }) {
               />
             ) : detail.status === "deferred" ||
               detail.status === "unwound" ||
-              detail.status === "unwound_return_pending" ? (
+              detail.status === "unwound_return_pending" ||
+              detail.status === "held_for_winner" ? (
               <DeferredLotCard
                 houseAddress={detail.marketAddress}
                 auctionId={detail.auctionId}
@@ -175,6 +189,8 @@ export default async function AuctionPage({ params }: { params: Params }) {
                 deferredAtTime={detail.deferredAtTime}
                 refundAmount={detail.refundAmount}
                 winnerCodeKind={winnerCodeKind}
+                houseIsV2_1={detail.houseIsV2_1}
+                salePriceWei={detail.finalPriceWei}
               />
             ) : (
               <div className="rounded-lg border border-gray-200 bg-surface p-5 space-y-2">
