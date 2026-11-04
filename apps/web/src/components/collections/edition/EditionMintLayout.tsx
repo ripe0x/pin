@@ -20,6 +20,7 @@ export function EditionMintLayout({
   history,
   about,
   facts,
+  preservation,
 }: {
   name: string
   /** The work's own title. When present it becomes the main heading and the
@@ -40,6 +41,8 @@ export function EditionMintLayout({
   history?: ReactNode
   about?: ReactNode
   facts: { label: string; value: ReactNode }[]
+  /** The Preservation card (PreservationCard), shown under the facts. */
+  preservation?: ReactNode
 }) {
   return (
     <div className="grid min-h-[calc(100vh-64px)] grid-cols-1 lg:grid-cols-[2fr_1fr]">
@@ -86,6 +89,8 @@ export function EditionMintLayout({
             ))}
           </dl>
         </section>
+
+        {preservation && <section className="pb-5">{preservation}</section>}
       </aside>
     </div>
   )

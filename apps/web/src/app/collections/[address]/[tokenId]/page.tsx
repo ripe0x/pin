@@ -11,7 +11,19 @@ import { detectHomageMinter } from "@/lib/homage/detect.server"
 import { parseHomageFacts, extractHomageGround } from "@/lib/homage/token-facts"
 import { getPunkImageSvg } from "@/lib/homage/punk-image.server"
 import { getOnchainPfpSrc } from "@/lib/homage/pfp.server"
-import { PND_CHAIN_ID, evmNowAddressUrl, ipfsToHttp, shortAddress } from "@/lib/collection"
+import { PreservationCard } from "@/components/collections/PreservationCard"
+import { isFullyOnchain, preservationFacts } from "@/lib/preservation"
+import { getMuriToken } from "@/lib/reads"
+import { withTimeout } from "@/lib/indexer-queries"
+import {
+  PND_CHAIN_ID,
+  SurfaceStatus,
+  evmNowAddressUrl,
+  ipfsToHttp,
+  lifecycleStatus,
+  saleWindowOf,
+  shortAddress,
+} from "@/lib/collection"
 // A homage token detail wears the same terminal skin as the collection + redeem pages.
 import "@/components/mint/homage-gallery/homage-gallery.css"
 import "../homage-skin.css"
@@ -91,6 +103,29 @@ export default async function CollectionTokenPage({ params }: { params: Params }
       </div>
     )
   }
+
+  // Preservation card (issue #265): this token's own storage, classified
+  // from the tokenURI and media strings getCollectionToken already read (no
+  // extra call), plus the collection's lock or ownership facts and, for v1,
+  // this token's indexed MURI record (one SELECT).
+  const storage = t.storage ?? null
+  const muriToken = c.primitiveV2 ? null : await withTimeout(() => getMuriToken(addr, id.toString()))
+  const preservation = preservationFacts({
+    primitiveV2: c.primitiveV2,
+    protocolVersion: c.protocolVersion,
+    isRendererLocked: c.isRendererLocked,
+    isSupplyLocked: c.isSupplyLocked,
+    isRoyaltyLocked: c.isRoyaltyLocked,
+    sealed: c.sealed,
+    supplyCap: c.cfg.supplyCap,
+    saleClosed:
+      lifecycleStatus(saleWindowOf(c), c.minted, Math.floor(Date.now() / 1000)) === SurfaceStatus.Closed,
+    storage,
+    muri: c.primitiveV2 ? null : { registered: false, tokens: muriToken ? 1 : 0 },
+    muriScope: "token",
+  })
+  const rendererFixed = c.primitiveV2 ? c.sealed : c.isRendererLocked
+  const artFixedOnchain = storage !== null && isFullyOnchain(storage) && rendererFixed
 
   return (
     <div>
@@ -191,10 +226,6 @@ export default async function CollectionTokenPage({ params }: { params: Params }
           <section className="pt-2 space-y-2 text-[11px] font-mono">
             <TokenFact label="Collection" value={c.name} />
             <TokenFact label="Standard" value="ERC721" />
-            <TokenFact
-              label="Renderer"
-              value={c.isRendererLocked ? "Locked forever" : "Swappable by the artist"}
-            />
             <div className="pt-1">
               <a
                 href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
@@ -205,10 +236,18 @@ export default async function CollectionTokenPage({ params }: { params: Params }
                 View contract ↗
               </a>
             </div>
-            <p className="pt-2 text-[10px] font-mono text-gray-400 leading-relaxed">
-              The render is a pure function of chain state: this seed, this
-              code, forever. No server keeps this artwork alive.
-            </p>
+            {/* Said only when the facts back it: every part of this token's
+                render is onchain and the renderer can no longer change. The
+                Preservation card below states the facts either way. */}
+            {artFixedOnchain && (
+              <p className="pt-2 text-[10px] font-mono text-gray-400 leading-relaxed">
+                The render is a function of chain state: this seed, this code.
+                No server keeps this artwork alive.
+              </p>
+            )}
+            <div className="pt-3">
+              <PreservationCard facts={preservation} />
+            </div>
             {hasWork && (
               <p className="pt-1 text-[10px] font-mono text-gray-400 leading-relaxed">
                 Rendered live from the onchain seed. The static image is a
