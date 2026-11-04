@@ -1,11 +1,11 @@
 /**
  * Run with: node --experimental-strip-types --test apps/web/src/lib/collection-render/build.test.ts
  *
- * Pins the byte-exact shape of the injected tokenData script against
- * ScriptyRenderer._contextJs (field order, string vs number types,
- * lowercase hex, the context field, trailing `"};`). The fork e2e asserts
- * whole-document equality; this catches drift in the injection line alone,
- * cheaply, on every change.
+ * Pins the byte-exact shape of the injected tokenData script defined by
+ * docs/injection-convention.md (field order, string vs number types,
+ * lowercase hex, the context field, trailing `"};`), the same bytes the
+ * removed onchain reference renderer's `_contextJs` emitted. Catches drift
+ * in the injection line cheaply, on every change.
  */
 
 import assert from "node:assert/strict"
@@ -17,7 +17,7 @@ const SEED =
   "0xAB00000000000000000000000000000000000000000000000000000000000001"
 const COLLECTION = "0xAbCdEf0123456789aBcDeF0123456789AbCdEf01"
 
-test("buildContextJs matches ScriptyRenderer._contextJs byte for byte", () => {
+test("buildContextJs emits the convention's injection line byte for byte", () => {
   const js = buildContextJs({
     hash: SEED,
     tokenId: "7",

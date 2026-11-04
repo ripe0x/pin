@@ -95,11 +95,13 @@ export function layeredResolver(
 }
 
 /**
- * The canonical gunzip helper (a GenerativeRenderer constructor immutable,
- * not part of WorkConfig). Chain-agnostic singleton: dev chains fork
- * mainnet, so the mainnet entry is valid there and serves as the fallback
- * for any chain id without its own entry. Overridable per collection by
- * reading the renderer's own gunzipStore()/gunzipFile() when it differs.
+ * The canonical gunzip helper: EthFS v2's `gunzipScripts-0.0.1.js`, the
+ * file the convention's assembly appends when any tag is gzipped (a
+ * renderer-level setting, not per work; PND's removed reference renderer
+ * took it as a constructor immutable). Chain-agnostic singleton: dev chains
+ * fork mainnet, so the mainnet entry is valid there and serves as the
+ * fallback for any chain id without its own entry. A renderer that uses a
+ * different helper must be read for its own store/file instead.
  */
 export function defaultGunzip(chainId: number): GunzipRef {
   const store =

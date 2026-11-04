@@ -52,9 +52,11 @@ export default async function CollectionTokenPage({ params }: { params: Params }
   const nextId = id < c.minted ? id + 1n : null
   const hasLiveDoc = !!t.animationUrl && t.animationUrl.startsWith("data:text/html")
 
-  // Generative collections publish executable code + deps to the
-  // GenerativeRenderer's work registry; empty for renderer-native works
-  // (e.g. DefaultRenderer) or custom renderers with no parity source.
+  // Executable code + deps for the offchain parity render. No onchain
+  // work registry exists any more (GenerativeRenderer/ScriptyRenderer were
+  // removed), so c.work is always empty today and the parity live render
+  // never engages; live works still show through their tokenURI document
+  // (liveHref). Kept for a future parity source.
   const hasWork = c.work.code.length > 0
   // A genuine per-token capture (RenderAssets), as opposed to the
   // collection-level cover falling through as a generic placeholder —
