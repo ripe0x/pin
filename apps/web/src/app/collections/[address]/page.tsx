@@ -35,6 +35,7 @@ import {
   type RenderableSample,
 } from "@/lib/collection-onchain"
 import { getCollectionMintedIdsFromIndexer } from "@/lib/indexer-queries"
+import { creditedArtists } from "@/lib/attribution"
 import { selectCollectionHeroMode, selectPreMintHero } from "@/lib/collection-hero"
 import type { ContractMetadata } from "@/lib/collection-preview"
 import { selectGridTokenIds } from "@/lib/collection-grid-tokens"
@@ -196,7 +197,7 @@ export default async function CollectionPage({
     : [[], []]
   const [history, attribution, recent] = await Promise.all([
     getCollectionMintHistory(addr, c.minted, c.cfg.idMode),
-    getAttribution(addr),
+    getAttribution(addr, c),
     getRecentTokenMarks(addr, c.minted, c.cfg.idMode),
   ])
 
@@ -316,7 +317,7 @@ export default async function CollectionPage({
   }
 
   if (!homageSkin && layoutKind === "edition") {
-    const editionArtists = attribution.length > 0 ? attribution.map((a) => a.creator) : [c.owner]
+    const editionArtists = creditedArtists(attribution, c.owner)
     // An edition shows one artwork for every token, so the hero renders the
     // shared piece (interactive when the renderer gives an animation_url),
     // shown pre-mint too since the renderer returns art for any id. A batch
@@ -434,7 +435,7 @@ export default async function CollectionPage({
   // layoutKind branch above instead of the banner+grid masthead below, so
   // the two single-visual cases render identically.
   if (!homageSkin && isDefaultLayout && !hasWork && heroMode === "single") {
-    const singleArtists = attribution.length > 0 ? attribution.map((a) => a.creator) : [c.owner]
+    const singleArtists = creditedArtists(attribution, c.owner)
     return (
       <EditionMintLayout
         name={c.name}
@@ -531,7 +532,7 @@ export default async function CollectionPage({
     pooled,
   }
 
-  const artists = attribution.length > 0 ? attribution.map((a) => a.creator) : [c.owner]
+  const artists = creditedArtists(attribution, c.owner)
 
   const hero = homageSkin ? (
     <HomageField

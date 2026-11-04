@@ -29,6 +29,8 @@ import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache, pgCacheHas } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
 import { buildEscapeArtwork, isEscapeRenderer } from "./escape-render"
+import { getAttributionRoster } from "./attribution.server"
+import type { CreatorEntry } from "./attribution"
 import { decodeContractURI, decodePreviewURI, type ContractMetadata, type PreviewDecodeResult } from "./collection-preview"
 import {
   getCollectionAddressesFromIndexer,
@@ -1380,23 +1382,29 @@ export async function getRecentTokenMarks(
   })
 }
 
-export type CreatorEntry = { creator: Address; confirmed: boolean }
+export type { CreatorEntry, AttributionRoster } from "./attribution"
 export type AttributionEntry = CreatorEntry // back-compat alias
 
 /**
- * Confirmed creators for a collection. Attribution is now fully onchain on the
- * collection itself: the owner LISTS creators (`CreatorListed` events) and each
- * confirms by claiming the collection in the Catalog; the collection exposes
- * `isConfirmedCreator(who)` as the live intersection.
- *
- * The listed set is enumerated from indexed `CreatorListed` events (worker owns
- * chain scanning; web never scans), so this returns [] until the indexer serves
- * them. Given a candidate set, confirmation is a live `isConfirmedCreator` read.
- * There is no shared Attribution registry to read anymore.
+ * A collection's creators with their confirmation state, from Postgres
+ * alone (no chain read in the render path; the owner is the one
+ * getCollection already read): v1 is the owner's indexed listing
+ * (`CreatorListed`) intersected with Catalog claims, the indexed form of
+ * the collection's isConfirmedCreator; primitive v2 credits only the
+ * owner's own Catalog claim. A self-asserted claim by anyone else is never
+ * credited. See lib/attribution.ts for the rules and
+ * lib/attribution.server.ts for the SELECTs and the table-existence guard
+ * (v1 has no roster until the schema carries `collection_creators`). []
+ * when the indexer is unavailable.
  */
-export async function getAttribution(_collection: Address): Promise<CreatorEntry[]> {
-  return []
+export async function getAttribution(
+  collection: Address,
+  c: Pick<Collection, "primitiveV2" | "owner">,
+): Promise<CreatorEntry[]> {
+  return (await getAttributionRoster(collection, c)).entries
 }
+
+export { getAttributionRoster }
 
 /**
  * The collection's own contractURI() metadata: description (shown verbatim

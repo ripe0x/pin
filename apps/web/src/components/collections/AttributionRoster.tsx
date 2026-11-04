@@ -1,11 +1,13 @@
 /**
- * A collection's artist roster from Attribution.creatorsOf, cross-checked
- * live via the collection's isConfirmedCreator (see getAttribution's doc comment
- * in lib/collection-onchain.ts for the confirmation model). "Claimed" means
- * the artist has independently registered this collection in their own
- * Catalog record — the two-sided confirmation Attribution.sol documents.
+ * A collection's creator roster (lib/attribution.ts has the rules; read
+ * from Postgres by getAttribution, no chain reads). "Claimed" means the
+ * creator has registered this collection in their own Catalog record: for
+ * v1 that is the second side of the owner's listing (isConfirmedCreator);
+ * for a primitive v2 Surface only the owner's own claim is shown, since
+ * anyone can claim any contract and other claims are never credited.
+ * "Unclaimed" is a v1 creator the owner listed who has not claimed yet.
  */
-import { type AttributionEntry } from "@/lib/collection-onchain"
+import { type CreatorEntry as AttributionEntry } from "@/lib/attribution"
 import { evmNowAddressUrl, shortAddress } from "@/lib/collection"
 
 export function AttributionRoster({
