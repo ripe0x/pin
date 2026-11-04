@@ -47,17 +47,33 @@ export class EnrichmentEmpty extends Error {
 // has already minted and the existing pre-tag cache entries can't be
 // flushed via revalidateTag (which only matches entries written with the
 // new tag).
-export const getCachedTokenRefs = unstable_cache(
-  async (artistAddress: string): Promise<TokenRef[]> =>
-    filterOutBurnedRefs(await discoverArtistTokenRefs(artistAddress)),
-  // v7: drop burned/nonexistent tokens from refs so they leave both the
-  // gallery and the "N indexed works" count.
-  // v6: seed-backed discovery for unadmitted artists (FND shared mints +
-  // on-demand collection enumeration) — clears every cached empty-refs
-  // entry written while those artists had no indexed rows.
-  ["artist-token-refs", "v7"],
-  { revalidate: 86_400, tags: ["artist-refs"] },
-)
+/**
+ * Per-artist invalidation tag for the refs cache. A finished durable
+ * refresh job evicts exactly this artist (lib/refresh-jobs.ts), so new
+ * works appear without the global `artist-refs` flush.
+ */
+export function artistRefsTag(artistAddress: string): string {
+  return `artist-refs:${artistAddress.toLowerCase()}`
+}
+
+export async function getCachedTokenRefs(artistAddress: string): Promise<TokenRef[]> {
+  const lower = artistAddress.toLowerCase()
+  // A wrapper per call so the tag can name the artist (unstable_cache
+  // tags are fixed per wrapper). The address is also a key part.
+  return unstable_cache(
+    async (): Promise<TokenRef[]> =>
+      filterOutBurnedRefs(await discoverArtistTokenRefs(lower)),
+    // v8: per-artist tag (durable refresh jobs, #297); keyed on the
+    // lowercased address.
+    // v7: drop burned/nonexistent tokens from refs so they leave both the
+    // gallery and the "N indexed works" count.
+    // v6: seed-backed discovery for unadmitted artists (FND shared mints +
+    // on-demand collection enumeration) — clears every cached empty-refs
+    // entry written while those artists had no indexed rows.
+    ["artist-token-refs", "v8", lower],
+    { revalidate: 86_400, tags: ["artist-refs", artistRefsTag(lower)] },
+  )()
+}
 
 export const getCachedEnrichedPage = unstable_cache(
   async (refs: TokenRef[]): Promise<DiscoveredToken[]> => {

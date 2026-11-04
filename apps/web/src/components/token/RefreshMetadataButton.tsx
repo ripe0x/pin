@@ -11,8 +11,9 @@ import { useIsGodMode } from "@/lib/useGodMode"
  * fetch, without waiting for the background sweep.
  *
  * Client-side match is purely UX — it hides the button from collectors and
- * crawlers. The server route enforces the real protection: a once-per-hour-
- * per-token rate limit. The refresh runs in the worker, so the change isn't
+ * crawlers. The server route enforces the real protection: a per-IP budget
+ * and a per-token cooldown on the durable refresh queue (refresh_jobs). The
+ * refresh runs in the worker, so the change isn't
  * instant — we tell the user it lands within a minute and to reload, and lock
  * the button afterward so it isn't mashed.
  */
