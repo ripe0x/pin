@@ -28,6 +28,28 @@ async function tableExists(db: NonNullable<typeof sql>, schema: string, table: s
   }
 }
 
+// `collections.launch_owner` (written once at creation, never updated) also
+// arrives with the ponder_v5 replay (#370). When present it names a renounced
+// collection's launching owner; until then the indexed `owner` stands in.
+// Sticky once true; an erroring probe falls back to `owner` for this call.
+let launchOwnerSeen = false
+async function launchOwnerColumnExists(db: NonNullable<typeof sql>, schema: string): Promise<boolean> {
+  if (launchOwnerSeen) return true
+  try {
+    const rows = (await db.unsafe(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = $1 AND table_name = 'collections' AND column_name = 'launch_owner'
+       ) AS ok`,
+      [schema],
+    )) as Array<{ ok: boolean }>
+    if (rows[0]?.ok) launchOwnerSeen = true
+  } catch {
+    // fall through: use `owner`
+  }
+  return launchOwnerSeen
+}
+
 /**
  * A collection's attribution roster from Postgres alone (zero chain reads;
  * the live owner is the one getCollection already read). Rules in
@@ -35,7 +57,7 @@ async function tableExists(db: NonNullable<typeof sql>, schema: string, table: s
  *
  * - primitive v2: only the owner's own Catalog claim (`catalog_contracts`)
  *   is credited. Once renounced (live owner zero) the indexed
- *   `collections.owner` stands in as the launch owner when it is still
+ *   `collections.launch_owner` (ponder_v5; `owner` before it) stands in as the launch owner when it is still
  *   nonzero.
  * - v1: the owner's listing (`collection_creators`, listed = true)
  *   intersected with Catalog claims. Without that table: no roster.
@@ -69,9 +91,14 @@ export async function getAttributionRoster(
     if (c.primitiveV2) {
       const [claimRows, ownerRows] = await Promise.all([
         claimsQuery,
-        db.unsafe(`SELECT owner FROM ${schema}.collections WHERE collection = $1 LIMIT 1`, [addr]) as Promise<
-          Array<{ owner: string }>
-        >,
+        launchOwnerColumnExists(db, schema).then(
+          (hasLaunchOwner) =>
+            db.unsafe(
+              `SELECT ${hasLaunchOwner ? "COALESCE(launch_owner, owner)" : "owner"} AS owner
+               FROM ${schema}.collections WHERE collection = $1 LIMIT 1`,
+              [addr],
+            ) as Promise<Array<{ owner: string }>>,
+        ),
       ])
       return buildAttributionRoster({
         kind: "v2",
