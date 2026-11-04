@@ -219,6 +219,8 @@ NEXT_PUBLIC_ARTIST_ADDRESS=0x0000000000000000000000000000000000000001 npm run bu
 
 **I migrated from V1 to V2, where did my old auctions go?**: nowhere. The page reads both houses: settled and cancelled auctions from your V1 house stay visible in your history, and new listings show up on whichever house currently holds them. Nothing needs to be re-created.
 
+**A V1 auction says new bids are paused**: bids are only offered on auctions held by a V2 house. A first-version (V1) house delivers the token inline at settlement and cannot be patched, so the page no longer takes new bids there, matching the PND app. A V1 auction that already has a bid keeps it and still settles from the page once it ends. To take bids again, cancel the V1 listing and relist it on a V2 house from the PND app.
+
 **A V2 auction shows "Delivery deferred" or "Settlement outcome pending"**: the winner's token or 1155 quantity failed to deliver when the auction settled (a paused collection, a receiver that reverted). Nobody has been paid yet. Anyone can retry delivery from the auction page; after 30 days anyone can unwind the sale instead, refunding the winner in full and returning the lot to the seller.
 
 **Past auctions take a long time to load**: first load scans onchain events from your house's deploy block. Subsequent visits hit the cache. If it's persistently slow, [add an RPC key](#add-your-own-rpc-key-recommended).
@@ -266,6 +268,8 @@ lib/
   rpc.ts                         # Public RPC failover + dynamic getLogs chunking
   auction-status.ts              # Auction types + event ABIs + pure decode/derivation (no server-only)
   auctions.ts                    # House resolution (V1 + V2) + auction list + bid history
+  auction-policy.ts              # Which houses take bids (V2 only) + auction notices
+  bid-transaction.ts             # Mainnet-pinned bid/settle call builders + revert messages
   metadata.ts                    # Onchain tokenURI + IPFS gateway race
   safe-fetch.ts                  # Size-bounded, SSRF-guarded metadata fetches
   format.ts                      # ETH / address / time / display formatting

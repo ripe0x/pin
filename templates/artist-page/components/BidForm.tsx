@@ -6,8 +6,10 @@ import { type Address, formatEther, parseEther } from "viem"
 import {
   useAccount,
   useBalance,
+  usePublicClient,
   useReadContract,
   useReadContracts,
+  useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi"
@@ -16,10 +18,23 @@ import { sovereignAuctionHouseAbi, sovereignAuctionHouseV2Abi } from "@/lib/abi"
 import { ZERO_ADDRESS } from "@/lib/config"
 import { displayFor, formatEth } from "@/lib/format"
 import type { HouseVersion, TokenStandard } from "@/lib/auctions"
+import {
+  ERC1155_SETTLEMENT_NOTE,
+  V1_BID_STANDS_NOTE,
+  V1_BIDS_PAUSED_NOTICE,
+  canBid,
+  showsSettlementDelayNote,
+} from "@/lib/auction-policy"
+import {
+  AUCTION_CHAIN_ID,
+  buildBidRequest,
+  buildSettleRequest,
+  describeBidError,
+} from "@/lib/bid-transaction"
 
-// Mirrors `uint16 public constant MIN_BID_INCREMENT_BPS = 500;`, identical
-// on both house versions. V1 exposes a `getMinBidAmount` view that applies
-// this onchain; V2 doesn't, so the increment is computed here instead.
+// Mirrors `uint16 public constant MIN_BID_INCREMENT_BPS = 500;` on the V2
+// house, which has no min-bid view, so the increment is computed here. Only
+// V2 houses take bids from this site (lib/auction-policy.ts).
 const MIN_BID_INCREMENT_BPS = 500n
 
 function computeMinBid(amount: bigint, reservePrice: bigint): bigint {
@@ -49,7 +64,11 @@ type Props = {
 }
 
 /**
- * Live bid + settle panel. Mirrors PND's bid panel chrome from
+ * Live bid + settle panel. Bids are offered on V2 houses only: a V1 house
+ * listing shows a paused notice in place of the bid box, but still settles
+ * here once it has ended with a bid (lib/auction-policy.ts).
+ *
+ * Mirrors PND's bid panel chrome from
  * `SettledAuctionSummary` (status header + big tabular-nums price) so
  * pre-bid, mid-auction, and settled all read as one visual family.
  *
@@ -75,6 +94,7 @@ export function BidForm({ houseAddress, houseVersion, auctionId, initial, ensMap
   // the live read be the single source of truth and fall back to the server
   // `initial.*` values below only until the first fetch resolves.
   const auctionRead = useReadContract({
+    chainId: AUCTION_CHAIN_ID,
     address: houseAddress,
     abi,
     functionName: "auctions",
@@ -103,24 +123,8 @@ export function BidForm({ houseAddress, houseVersion, auctionId, initial, ensMap
     initial.bidder) as Address
   const firstBidTime = (tuple?.[2] as bigint | undefined) ?? BigInt(initial.firstBidTime)
 
-  const minBidReadV1 = useReadContract({
-    address: houseAddress,
-    abi: sovereignAuctionHouseAbi,
-    functionName: "getMinBidAmount",
-    args: [BigInt(auctionId)],
-    query: {
-      enabled: houseVersion === 1,
-      refetchInterval: 12_000,
-      refetchIntervalInBackground: true,
-    },
-  })
-  const minBidWei =
-    houseVersion === 2
-      ? computeMinBid(amount, reservePrice)
-      : ((minBidReadV1.data as readonly [boolean, bigint] | undefined)?.[1] ??
-        computeMinBid(amount, reservePrice))
+  const minBidWei = computeMinBid(amount, reservePrice)
   const refetchAuction = auctionRead.refetch
-  const refetchMinBid = minBidReadV1.refetch
 
   // V2 only: a settlement delivery failure leaves `tokenOwner` populated
   // (unlike V1, where settling always deletes storage), so it never reads as
@@ -129,12 +133,14 @@ export function BidForm({ houseAddress, houseVersion, auctionId, initial, ensMap
   const deferralFlags = useReadContracts({
     contracts: [
       {
+        chainId: AUCTION_CHAIN_ID,
         address: houseAddress,
         abi: sovereignAuctionHouseV2Abi,
         functionName: "pendingDelivery",
         args: [BigInt(auctionId)],
       },
       {
+        chainId: AUCTION_CHAIN_ID,
         address: houseAddress,
         abi: sovereignAuctionHouseV2Abi,
         functionName: "pendingReturn",
@@ -168,15 +174,14 @@ export function BidForm({ houseAddress, houseVersion, auctionId, initial, ensMap
   const { writeContract, data: txHash, isPending, error: writeError } =
     useWriteContract()
   const { isLoading: confirming, isSuccess: confirmed } =
-    useWaitForTransactionReceipt({ hash: txHash })
+    useWaitForTransactionReceipt({ hash: txHash, chainId: AUCTION_CHAIN_ID })
 
   useEffect(() => {
     if (confirmed) {
       refetchAuction()
-      refetchMinBid()
       router.refresh()
     }
-  }, [confirmed, refetchAuction, refetchMinBid, router])
+  }, [confirmed, refetchAuction, router])
 
   useEffect(() => {
     if (!isFinalized || refreshedFinalState.current) return
@@ -236,7 +241,7 @@ export function BidForm({ houseAddress, houseVersion, auctionId, initial, ensMap
         />
         <SettleButton
           houseAddress={houseAddress}
-          abi={abi}
+          houseVersion={houseVersion}
           auctionId={auctionId}
           isConnected={isConnected}
           isPending={isPending}
@@ -270,17 +275,26 @@ export function BidForm({ houseAddress, houseVersion, auctionId, initial, ensMap
           showBidder ? `by ${displayFor(bidder, ensMap)}` : undefined
         }
       />
-      <BidInput
-        houseAddress={houseAddress}
-        abi={abi}
-        auctionId={auctionId}
-        minBidWei={minBidWei}
-        isConnected={isConnected}
-        connected={connected}
-        isPending={isPending}
-        confirming={confirming}
-        writeContract={writeContract}
-      />
+      {canBid(houseVersion) ? (
+        <BidInput
+          houseAddress={houseAddress}
+          houseVersion={houseVersion}
+          auctionId={auctionId}
+          minBidWei={minBidWei}
+          isConnected={isConnected}
+          connected={connected}
+          isPending={isPending}
+          confirming={confirming}
+          writeContract={writeContract}
+        />
+      ) : (
+        <BidsPausedNotice hasBid={!awaitingFirstBid} />
+      )}
+      {showsSettlementDelayNote({ houseVersion, standard: initial.standard }) ? (
+        <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
+          {ERC1155_SETTLEMENT_NOTE}
+        </p>
+      ) : null}
       {writeError ? <ErrorLine error={writeError} /> : null}
     </Panel>
   )
@@ -361,24 +375,60 @@ function PriceRow({
   )
 }
 
-function ErrorLine({ error }: { error: Error }) {
-  const msg = (error.message ?? "").split("\n")[0]
+/**
+ * Replaces the bid box on a V1 house listing (canBid() is false). A V1
+ * auction that already has a bid keeps it and settles through SettleButton
+ * once it ends.
+ */
+function BidsPausedNotice({ hasBid }: { hasBid: boolean }) {
+  return (
+    <div className="space-y-2 rounded-md border border-gray-200 bg-bg p-3">
+      <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+        {V1_BIDS_PAUSED_NOTICE}
+      </p>
+      {hasBid ? (
+        <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+          {V1_BID_STANDS_NOTE}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function ErrorLine({ error }: { error: unknown }) {
   return (
     <p
-      className="text-[11px] font-mono text-status-sold"
+      className="text-[11px] font-mono text-status-sold break-words"
       role="alert"
     >
-      {msg || "Transaction failed."}
+      {describeBidError(error)}
     </p>
   )
 }
 
 type WriteContractFn = ReturnType<typeof useWriteContract>["writeContract"]
-type HouseAbi = typeof sovereignAuctionHouseAbi | typeof sovereignAuctionHouseV2Abi
+
+/**
+ * Shown in place of a write button when the wallet is on another chain:
+ * every write is pinned to mainnet, so wagmi would reject it anyway.
+ */
+function SwitchNetworkButton({ action }: { action: string }) {
+  const { switchChain, isPending: switching } = useSwitchChain()
+  return (
+    <button
+      type="button"
+      onClick={() => switchChain({ chainId: AUCTION_CHAIN_ID })}
+      disabled={switching}
+      className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-80 transition-opacity"
+    >
+      {switching ? "Switching…" : `Switch to Ethereum to ${action}`}
+    </button>
+  )
+}
 
 function BidInput({
   houseAddress,
-  abi,
+  houseVersion,
   auctionId,
   minBidWei,
   isConnected,
@@ -388,7 +438,7 @@ function BidInput({
   writeContract,
 }: {
   houseAddress: Address
-  abi: HouseAbi
+  houseVersion: HouseVersion
   auctionId: string
   minBidWei: bigint
   isConnected: boolean
@@ -412,23 +462,53 @@ function BidInput({
   }, [value])
   const tooLow = parsed < minBidWei
 
+  const publicClient = usePublicClient({ chainId: AUCTION_CHAIN_ID })
+  const { chainId } = useAccount()
+  const wrongNetwork = Boolean(connected) && chainId !== AUCTION_CHAIN_ID
+
   const balanceQuery = useBalance({
     address: connected,
+    chainId: AUCTION_CHAIN_ID,
     query: { enabled: Boolean(connected), refetchInterval: 12_000 },
   })
   const balanceWei = balanceQuery.data?.value ?? 0n
   const balanceLoaded = balanceQuery.isSuccess
   const insufficient = balanceLoaded && parsed > balanceWei
 
-  function submit() {
-    if (tooLow || insufficient) return
-    writeContract({
-      address: houseAddress,
-      abi,
-      functionName: "createBid",
-      args: [BigInt(auctionId)],
+  const [simulating, setSimulating] = useState(false)
+  const [simError, setSimError] = useState<unknown>(null)
+
+  async function submit() {
+    if (tooLow || insufficient || !publicClient || !connected) return
+    const request = buildBidRequest({
+      house: houseAddress,
+      houseVersion,
+      auctionId,
       value: parsed,
     })
+    if (!request) return
+    setSimError(null)
+    setSimulating(true)
+    try {
+      // Simulate before asking the wallet to send ETH: a bid that would
+      // revert (outbid since the page loaded, below the minimum raise,
+      // auction already over) shows its reason here instead of costing gas.
+      // The public client is pinned to mainnet; chainId rides on the write.
+      const { address, abi, functionName, args, value } = request
+      await publicClient.simulateContract({
+        account: connected,
+        address,
+        abi,
+        functionName,
+        args,
+        value,
+      })
+      writeContract(request)
+    } catch (err) {
+      setSimError(err)
+    } finally {
+      setSimulating(false)
+    }
   }
 
   if (!isConnected || !connected) {
@@ -445,6 +525,14 @@ function BidInput({
             </button>
           )}
         </RKConnectButton.Custom>
+      </div>
+    )
+  }
+
+  if (wrongNetwork) {
+    return (
+      <div className="pt-2">
+        <SwitchNetworkButton action="bid" />
       </div>
     )
   }
@@ -467,26 +555,29 @@ function BidInput({
       <button
         type="button"
         onClick={submit}
-        disabled={tooLow || insufficient || isPending || confirming}
+        disabled={tooLow || insufficient || simulating || isPending || confirming}
         className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-80 transition-opacity"
       >
         {confirming
           ? "Waiting for confirmation…"
           : isPending
             ? "Confirm in wallet…"
-            : tooLow
-              ? `Min bid ${formatEth(minBidWei.toString())} ETH`
-              : insufficient
-                ? `Insufficient balance · ${formatEth(balanceWei.toString())} ETH available`
-                : "Place bid"}
+            : simulating
+              ? "Checking bid…"
+              : tooLow
+                ? `Min bid ${formatEth(minBidWei.toString())} ETH`
+                : insufficient
+                  ? `Insufficient balance · ${formatEth(balanceWei.toString())} ETH available`
+                  : "Place bid"}
       </button>
+      {simError ? <ErrorLine error={simError} /> : null}
     </div>
   )
 }
 
 function SettleButton({
   houseAddress,
-  abi,
+  houseVersion,
   auctionId,
   isConnected,
   isPending,
@@ -494,13 +585,15 @@ function SettleButton({
   writeContract,
 }: {
   houseAddress: Address
-  abi: HouseAbi
+  houseVersion: HouseVersion
   auctionId: string
   isConnected: boolean
   isPending: boolean
   confirming: boolean
   writeContract: WriteContractFn
 }) {
+  const { chainId } = useAccount()
+  const wrongNetwork = isConnected && chainId !== AUCTION_CHAIN_ID
   if (!isConnected) {
     return (
       <div className="pt-2">
@@ -518,17 +611,28 @@ function SettleButton({
       </div>
     )
   }
+  if (wrongNetwork) {
+    return (
+      <div className="pt-2">
+        <SwitchNetworkButton action="settle" />
+      </div>
+    )
+  }
+  // Settlement stays open on both house generations: a V1 auction that
+  // already has a bid must still settle. (Two branches only so each write
+  // narrows to one house ABI.)
+  function settle() {
+    const request = buildSettleRequest({ house: houseAddress, houseVersion, auctionId })
+    if (request.abi === sovereignAuctionHouseV2Abi) {
+      writeContract({ ...request, abi: sovereignAuctionHouseV2Abi })
+    } else {
+      writeContract({ ...request, abi: sovereignAuctionHouseAbi })
+    }
+  }
   return (
     <button
       type="button"
-      onClick={() =>
-        writeContract({
-          address: houseAddress,
-          abi,
-          functionName: "endAuction",
-          args: [BigInt(auctionId)],
-        })
-      }
+      onClick={settle}
       disabled={isPending || confirming}
       className="mt-2 block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-80 transition-opacity"
     >
