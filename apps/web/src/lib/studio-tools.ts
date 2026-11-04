@@ -5,16 +5,16 @@
  * per-artist management surface lives at `/studio/[address]/<tool>`,
  * while the public protocol surfaces stay at top-level routes
  * (`/artist/[address]`, `/catalog/[address]`, `/delist`, `/preserve`,
- * `/sites`, `/editions`). This registry drives the studio sidebar,
+ * `/sites`, `/collections`). This registry drives the studio sidebar,
  * the dashboard tool cards, and the navbar's "For artists" dropdown,
  * so navigation can't drift from what the studio actually contains.
  *
  * Adding a tool = one entry here + one route folder under
  * `app/studio/[address]/<id>/`. For protocol surfaces that aren't on
  * mainnet yet (PND Editions, Releases), gate the entry with
- * `available`, mirroring the `getAddressOrNull(FACTORY)` pattern
- * `/editions/new` already uses — the tab then ships dark and appears
- * everywhere at once when the factory deploys:
+ * `available`, using the `getAddressOrNull(FACTORY)` pattern — the
+ * tab then ships dark and appears everywhere at once when the factory
+ * deploys:
  *
  *   {
  *     id: "editions",
