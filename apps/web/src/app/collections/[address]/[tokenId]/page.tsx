@@ -11,7 +11,16 @@ import { detectHomageMinter } from "@/lib/homage/detect.server"
 import { parseHomageFacts, extractHomageGround } from "@/lib/homage/token-facts"
 import { getPunkImageSvg } from "@/lib/homage/punk-image.server"
 import { getOnchainPfpSrc } from "@/lib/homage/pfp.server"
-import { PND_CHAIN_ID, evmNowAddressUrl, ipfsToHttp, shortAddress } from "@/lib/collection"
+import { getTokenMintPrice } from "@/lib/token-mint-price.server"
+import { formatMintPrice } from "@/lib/token-mint-price"
+import {
+  PND_CHAIN_ID,
+  evmNowAddressUrl,
+  evmNowTxUrl,
+  ipfsToHttp,
+  openSeaTokenUrl,
+  shortAddress,
+} from "@/lib/collection"
 // A homage token detail wears the same terminal skin as the collection + redeem pages.
 import "@/components/mint/homage-gallery/homage-gallery.css"
 import "../homage-skin.css"
@@ -91,6 +100,11 @@ export default async function CollectionTokenPage({ params }: { params: Params }
       </div>
     )
   }
+
+  // Primary mint price from the indexed Sold rows (one SELECT, no chain
+  // read). Null hides the row: minted by another minter, not indexed yet, or
+  // a schema without collection_sales.
+  const mintPrice = await getTokenMintPrice(addr, id).catch(() => null)
 
   return (
     <div>
@@ -195,7 +209,26 @@ export default async function CollectionTokenPage({ params }: { params: Params }
               label="Renderer"
               value={c.isRendererLocked ? "Locked forever" : "Swappable by the artist"}
             />
-            <div className="pt-1">
+            {mintPrice && (
+              <div className="flex items-baseline justify-between gap-4">
+                <span className="text-gray-400 uppercase tracking-wider text-[10px]">Minted for</span>
+                <a
+                  href={evmNowTxUrl(mintPrice.txHash, PND_CHAIN_ID)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="tabular-nums text-right hover:underline"
+                  title={
+                    mintPrice.quantity > 1n
+                      ? `One of ${mintPrice.quantity.toString()} minted in one transaction; the total paid split evenly`
+                      : undefined
+                  }
+                >
+                  {formatMintPrice(mintPrice)}
+                  {mintPrice.quantity > 1n && mintPrice.perToken > 0n ? " each" : ""}
+                </a>
+              </div>
+            )}
+            <div className="flex items-center gap-4 pt-1">
               <a
                 href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
                 target="_blank"
@@ -203,6 +236,17 @@ export default async function CollectionTokenPage({ params }: { params: Params }
                 className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
               >
                 View contract ↗
+              </a>
+              {/* Where this token trades: a neutral deep link, not a CTA
+                  (issue #268). PND surfaces secondary venues without building
+                  or intermediating a marketplace. */}
+              <a
+                href={openSeaTokenUrl(addr, id, PND_CHAIN_ID)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
+              >
+                OpenSea ↗
               </a>
             </div>
             <p className="pt-2 text-[10px] font-mono text-gray-400 leading-relaxed">

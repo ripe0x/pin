@@ -54,6 +54,7 @@ import {
   ZERO_ADDRESS,
   evmNowAddressUrl,
   openSeaAddressUrl,
+  openSeaCollectionUrl,
   formatBps,
   hasPriceStrategy,
   ipfsToHttp,
@@ -66,6 +67,10 @@ import {
   shortAddress,
   type Collection,
 } from "@/lib/collection"
+
+/** Homage's curated OpenSea collection slug (the contract-address path also
+ *  resolves, this is the page the artist links). */
+const HOMAGE_OPENSEA_SLUG = "homage-to-the-punk"
 
 /**
  * The collection page, composed as an exhibition rather than a token
@@ -97,6 +102,24 @@ function addressLink(a: Address) {
       {shortAddress(a)}
     </a>
   )
+}
+
+/** The "Trades on" fact for the single-visual layouts: where the collection
+ *  trades on secondary, a neutral deep link (issue #268), not a CTA. */
+function tradesOnFact(a: Address) {
+  return {
+    label: "Trades on",
+    value: (
+      <a
+        href={openSeaCollectionUrl(a, PND_CHAIN_ID)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
+      >
+        OpenSea ↗
+      </a>
+    ),
+  }
 }
 
 /** Whether the renderer can still change, a fact about the Surface protocol
@@ -423,6 +446,7 @@ export default async function CollectionPage({
             value: c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none",
           },
           { label: "Sale mode", value: pooled ? "Pooled (via minter)" : "Sequential" },
+          tradesOnFact(addr),
         ]}
       />
     )
@@ -505,6 +529,7 @@ export default async function CollectionPage({
             value: c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none",
           },
           { label: "Sale mode", value: pooled ? "Pooled (via minter)" : "Sequential" },
+          tradesOnFact(addr),
         ]}
       />
     )
@@ -762,16 +787,17 @@ export default async function CollectionPage({
             >
               {shortAddress(addr)} ↗
             </a>
-            {homageSkin && (
-              <a
-                href="https://opensea.io/collection/homage-to-the-punk"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-fg"
-              >
-                OpenSea ↗
-              </a>
-            )}
+            {/* Where the collection trades: a neutral deep link, not a CTA
+                (issue #268). Every collection gets it; Homage keeps its
+                curated OpenSea slug. */}
+            <a
+              href={openSeaCollectionUrl(addr, PND_CHAIN_ID, homageSkin ? HOMAGE_OPENSEA_SLUG : null)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-fg"
+            >
+              OpenSea ↗
+            </a>
           </p>
         </div>
       </div>{/* /band inner plate */}

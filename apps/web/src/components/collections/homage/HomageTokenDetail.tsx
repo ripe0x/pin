@@ -14,7 +14,7 @@ import {ArtistName} from "./ArtistName"
 import {HomageArtStage} from "./HomageArtStage"
 import {HomageRedeemLink} from "./HomageRedeemLink"
 import {CopyAddressButton} from "@/components/CopyAddressButton"
-import {PND_CHAIN_ID, evmNowAddressUrl, ipfsToHttp, shortAddress} from "@/lib/collection"
+import {PND_CHAIN_ID, evmNowAddressUrl, ipfsToHttp, openSeaTokenUrl, shortAddress} from "@/lib/collection"
 import type {HomageTokenFacts} from "@/lib/homage/token-facts"
 
 const META = "text-[10px] font-mono uppercase tracking-wider text-gray-400"
@@ -199,7 +199,7 @@ export function HomageTokenDetail({
             </div>
             <div className="flex flex-col gap-2 pt-1">
               <a
-                href={`https://opensea.io/assets/ethereum/${collection}/${id}`}
+                href={openSeaTokenUrl(collection, id, PND_CHAIN_ID)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={`${META} underline hover:text-fg`}

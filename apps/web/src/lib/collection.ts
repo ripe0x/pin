@@ -694,6 +694,24 @@ export function openSeaAddressUrl(addr: string, chainId: number = PND_CHAIN_ID):
 }
 
 /**
+ * OpenSea item URL for one token, chain-aware: the collection path above
+ * with the token id appended (assets/<chain>/<address>/<tokenId>), which
+ * resolves to the token's own page. A neutral "where this trades" deep
+ * link (issue #268): PND builds no marketplace and makes no reads for it.
+ */
+export function openSeaTokenUrl(addr: string, tokenId: bigint | string, chainId: number = PND_CHAIN_ID): string {
+  return `${openSeaAddressUrl(addr, chainId)}/${tokenId.toString()}`
+}
+
+/** The OpenSea collection page for a collection: its curated slug when one
+ *  is known (Homage), else the contract-address path, which OpenSea resolves
+ *  to the collection. */
+export function openSeaCollectionUrl(addr: string, chainId: number = PND_CHAIN_ID, slug?: string | null): string {
+  if (slug && chainId !== sepolia.id) return `https://opensea.io/collection/${slug}`
+  return openSeaAddressUrl(addr, chainId)
+}
+
+/**
  * Explorer tx URL, chain-aware. Mainnet uses evm.now; testnets use the
  * network's own etherscan subdomain.
  */
