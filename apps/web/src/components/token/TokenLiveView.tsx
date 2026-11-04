@@ -2,8 +2,9 @@
 
 /**
  * Live parity render for a single token page: the token's real onchain
- * seed run through the same document builder GenerativeRenderer.sol emits
- * (docs/injection-convention.md), byte-identical by construction — zero
+ * seed run through the parity document builder (lib/collection-render,
+ * specified by docs/injection-convention.md), byte-identical by
+ * construction to a conforming onchain renderer — zero
  * heavy RPC. The 60-120M-gas tokenURI call stays reserved for TokenMedia's
  * Image mode (see collection-onchain.ts's getCollectionToken). Reuses the
  * render context wiring (resolver/gunzip caching) already established for

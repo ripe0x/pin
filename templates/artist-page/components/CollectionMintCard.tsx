@@ -1,149 +1,213 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
 import { type Address, formatEther } from "viem"
 import {
   useAccount,
   useBalance,
-  useReadContract,
+  usePublicClient,
+  useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi"
 import { ConnectButton as RKConnectButton } from "@rainbow-me/rainbowkit"
-import { surfaceAbi } from "@/lib/abi"
-import { buildMintWithRewardsRequest } from "@/lib/mint-transaction"
-import { CollectionStatus, isMintable } from "@/lib/surface"
-import type { CollectionConfig } from "@/lib/surface"
-
-/**
- * `CollectionConfig` with every bigint field as a decimal string. Next.js
- * can't serialize a raw `bigint` across the server/client component
- * boundary (it throws "Do not know how to serialize a BigInt" from the RSC
- * payload encoder) — every other bigint crossing that boundary elsewhere in
- * this template already goes through a string (see AuctionSummary in
- * lib/auctions.ts), so `initial.cfg` follows the same convention.
- */
-export type SerializedCollectionConfig = Omit<
-  CollectionConfig,
-  "price" | "supplyCap" | "mintStart" | "mintEnd"
-> & {
-  price: string
-  supplyCap: string
-  mintStart: string
-  mintEnd: string
-}
-
-function deserializeCfg(cfg: SerializedCollectionConfig): CollectionConfig {
-  return {
-    ...cfg,
-    price: BigInt(cfg.price),
-    supplyCap: BigInt(cfg.supplyCap),
-    mintStart: BigInt(cfg.mintStart),
-    mintEnd: BigInt(cfg.mintEnd),
-  }
-}
+import { formatAddress, formatTimeRemaining } from "@/lib/format"
+import {
+  MINT_CHAIN_ID,
+  buildMintRequest,
+  describeMintError,
+} from "@/lib/mint-transaction"
+import {
+  deserializeCollection,
+  pndCollectionUrl,
+  remainingSupply,
+  salePhase,
+  ZERO_ADDRESS,
+  type CollectionSummary,
+  type SaleState,
+  type SalePhase,
+  type SerializedCollectionSummary,
+} from "@/lib/surface"
+import { quoteMint, readCollectionSummary, readMintedBy } from "@/lib/surface-reads"
 
 type Props = {
   collectionAddress: Address
-  /** The artist's own wallet — see the surface-share comment on MintButton below. */
-  artistAddress: Address
-  /** Server-rendered initial state for fast first paint. */
-  initial: {
-    name: string
-    cfg: SerializedCollectionConfig
-    status: CollectionStatus
-    minted: string
-    /** Pre-connect price estimate for quantity 1, or null if unreadable. */
-    price: string | null
-  }
+  /**
+   * The address credited the sale's referral share for mints from this
+   * page, already resolved server-side (lib/surface.ts resolveReferrer):
+   * NEXT_PUBLIC_MINT_REFERRER, else the collection owner, else the artist.
+   * On the artist's own site the referral share lands back with the artist.
+   */
+  referrer: Address
+  /** Server-rendered snapshot for first paint (bigints as strings). */
+  initial: SerializedCollectionSummary
 }
 
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
+/** Per-transaction quantity ceiling when no cap is tighter. */
+const MAX_QUANTITY = 20n
+
+const PHASE_LABEL: Record<SalePhase, string> = {
+  "not-started": "Not open yet",
+  open: "Open",
+  ended: "Ended",
+  closed: "Closed",
+  "sold-out": "Sold out",
+}
 
 /**
- * Mint card for the artist's optional Surface. Mirrors BidForm's
- * chrome (status dot + big tabular-nums price + a single primary action) so
- * the collection surface reads as part of the same visual family as the
- * auction panel, even though the underlying protocol is entirely different.
+ * Mint card for the artist's optional Surface collection (v1 or v2). Mirrors
+ * BidForm's chrome (status dot + big tabular-nums price + one primary
+ * action) so it reads as part of the same family as the auction panel.
  *
- * Only rendered when `NEXT_PUBLIC_COLLECTION_ADDRESS` is configured — see
- * lib/config.ts and app/page.tsx.
+ * Read discipline: one live refresh of the collection + sale every 12s while
+ * the tab is visible (two multicalls, see lib/surface-reads.ts), one
+ * mintedBy read per connected wallet when a wallet cap is set, and the
+ * mint-time priceOf + simulate only on click.
+ *
+ * Only rendered when `NEXT_PUBLIC_COLLECTION_ADDRESS` is configured.
  */
-export function CollectionMintCard({ collectionAddress, artistAddress, initial }: Props) {
-  const { address: connected, isConnected } = useAccount()
+export function CollectionMintCard({ collectionAddress, referrer, initial }: Props) {
+  const publicClient = usePublicClient({ chainId: MINT_CHAIN_ID })
+  const initialSummary = useMemo(() => deserializeCollection(initial), [initial])
 
-  // No `initialData` seeding here, same reasoning as BidForm: a server
-  // snapshot treated as "already fetched" data can stick past a mint that
-  // happened after the last ISR revalidation. The live read is the single
-  // source of truth; `initial.*` only covers the gap until it resolves.
-  const configRead = useReadContract({
-    address: collectionAddress,
-    abi: surfaceAbi,
-    functionName: "config",
-    query: {
-      refetchInterval: 12_000,
-      refetchIntervalInBackground: true,
-    },
+  // No `initialData` seeding, same reasoning as BidForm: a server snapshot
+  // treated as fresh data can stick past a mint that happened after the
+  // last ISR revalidation. The live read is the source of truth; `initial`
+  // only covers the gap until it resolves.
+  const live = useQuery({
+    queryKey: ["surface-collection", collectionAddress],
+    queryFn: () => readCollectionSummary(publicClient!, collectionAddress),
+    enabled: Boolean(publicClient),
+    refetchInterval: 12_000,
+    staleTime: 10_000,
   })
+  const c = live.data ?? initialSummary
 
-  const tuple = configRead.data as
-    | readonly [CollectionConfig, number, bigint]
-    | undefined
-  const cfg = tuple?.[0] ?? deserializeCfg(initial.cfg)
-  const status = (tuple?.[1] ?? initial.status) as CollectionStatus
-  const minted = tuple?.[2] ?? BigInt(initial.minted)
+  if (!c.sale) return <NoSale collection={c} />
+  if (c.sale.gated) return <GatedSale collection={c} />
+  return (
+    <SaleCard
+      collection={c}
+      sale={c.sale}
+      referrer={referrer}
+      onMinted={() => live.refetch()}
+    />
+  )
+}
 
-  const priceRead = useReadContract({
-    address: collectionAddress,
-    abi: surfaceAbi,
-    functionName: "currentPrice",
-    args: [connected ?? ZERO_ADDRESS, 1n, "0x"],
-    query: { refetchInterval: 12_000, refetchIntervalInBackground: true },
-  })
-  const priceWei =
-    (priceRead.data as bigint | undefined) ??
-    (initial.price !== null ? BigInt(initial.price) : cfg.price)
-
-  const { writeContract, data: txHash, isPending, error: writeError } =
-    useWriteContract()
-  const { isLoading: confirming, isSuccess: confirmed } =
-    useWaitForTransactionReceipt({ hash: txHash })
-
-  useEffect(() => {
-    if (confirmed) {
-      configRead.refetch()
-      priceRead.refetch()
-    }
-  }, [confirmed]) // eslint-disable-line react-hooks/exhaustive-deps
+function SaleCard({
+  collection: c,
+  sale,
+  referrer,
+  onMinted,
+}: {
+  collection: CollectionSummary
+  sale: SaleState
+  referrer: Address
+  onMinted: () => void
+}) {
+  const router = useRouter()
+  const publicClient = usePublicClient({ chainId: MINT_CHAIN_ID })
+  const { address: connected, isConnected, chainId } = useAccount()
+  const { switchChain, isPending: switching } = useSwitchChain()
+  const wrongNetwork = isConnected && chainId !== MINT_CHAIN_ID
 
   const nowSec = useNowSec()
-  const notStarted = cfg.mintStart > 0n && BigInt(nowSec) < cfg.mintStart
-  const remaining = cfg.supplyCap > 0n ? cfg.supplyCap - minted : null
-  const soldOut = remaining !== null && remaining <= 0n
-  const mintable =
-    !notStarted && isMintable(cfg, minted, nowSec) && status !== CollectionStatus.Closed
+  const phase = salePhase(c, sale, nowSec)
+  const remaining = remainingSupply(c, sale)
 
-  const statusLabel = notStarted
-    ? "Not open yet"
-    : soldOut
-      ? "Sold out"
-      : status === CollectionStatus.Closed
-        ? "Closed"
-        : status === CollectionStatus.Closing
-          ? "Closing soon"
-          : "Open"
-  const statusDot = mintable
-    ? status === CollectionStatus.Closing
-      ? "bg-status-upcoming"
-      : "bg-status-live animate-pulse"
-    : "bg-gray-400"
+  // Wallet cap: the sale's own mintedBy counter, one read per wallet.
+  const mintedBy = useQuery({
+    queryKey: ["surface-minted-by", sale.address, connected],
+    queryFn: () => readMintedBy(publicClient!, sale, connected!),
+    enabled: Boolean(publicClient && connected && sale.walletCap > 0n),
+    staleTime: 15_000,
+  })
+  const walletLeft =
+    sale.walletCap > 0n && mintedBy.data !== undefined
+      ? sale.walletCap - mintedBy.data
+      : null
+
+  let maxQty = MAX_QUANTITY
+  if (remaining !== null && remaining < maxQty) maxQty = remaining
+  if (walletLeft !== null && walletLeft < maxQty) maxQty = walletLeft
+  if (maxQty < 0n) maxQty = 0n
+
+  const [qty, setQty] = useState(1n)
+  useEffect(() => {
+    if (maxQty > 0n && qty > maxQty) setQty(maxQty)
+  }, [maxQty, qty])
+
+  const unitPrice = sale.quote1
+  const total = unitPrice * qty
 
   const balanceQuery = useBalance({
     address: connected,
-    query: { enabled: Boolean(connected), refetchInterval: 12_000 },
+    chainId: MINT_CHAIN_ID,
+    query: { enabled: Boolean(connected) && !wrongNetwork, refetchInterval: 12_000 },
   })
   const balanceWei = balanceQuery.data?.value ?? 0n
-  const insufficient = balanceQuery.isSuccess && priceWei > balanceWei
+  const insufficient = balanceQuery.isSuccess && total > balanceWei
+
+  const { writeContract, data: txHash, isPending, error: writeError, reset } =
+    useWriteContract()
+  const { isLoading: confirming, isSuccess: confirmed } =
+    useWaitForTransactionReceipt({ hash: txHash, chainId: MINT_CHAIN_ID })
+  const [simulating, setSimulating] = useState(false)
+  const [simError, setSimError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!confirmed) return
+    onMinted()
+    mintedBy.refetch()
+    // The recent-mints grid is server-rendered; pick up the new token once
+    // the server cache turns over.
+    router.refresh()
+  }, [confirmed]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function submit() {
+    if (!publicClient || !connected || qty < 1n) return
+    reset()
+    setSimError(null)
+    setSimulating(true)
+    try {
+      // Price is read from the sale at click time, never from the cached
+      // display value: both sales require exact payment for a fixed price.
+      const value = await quoteMint(publicClient, sale, connected, qty)
+      const request = buildMintRequest({
+        sale,
+        to: connected,
+        quantity: qty,
+        referrer,
+        value,
+      })
+      // Simulate before asking the wallet to send value: a doomed mint
+      // (window, caps, gate, price) fails here with a decoded reason instead
+      // of costing the collector gas.
+      // (Two branches only so each call narrows to one sale ABI; chainId
+      // rides on the write, the public client is already pinned to it.)
+      if (request.functionName === "mintWithReferral") {
+        const { address, abi, functionName, args, value: v } = request
+        await publicClient.simulateContract({ account: connected, address, abi, functionName, args, value: v })
+        writeContract(request)
+      } else {
+        const { address, abi, functionName, args, value: v } = request
+        await publicClient.simulateContract({ account: connected, address, abi, functionName, args, value: v })
+        writeContract(request)
+      }
+    } catch (err) {
+      setSimError(describeMintError(err))
+    } finally {
+      setSimulating(false)
+    }
+  }
+
+  const mintable = phase === "open" && maxQty > 0n
+  const statusDot =
+    phase === "open" ? "bg-status-live animate-pulse" : phase === "not-started" ? "bg-status-upcoming" : "bg-gray-400"
+  const errorText = simError ?? (writeError ? describeMintError(writeError) : null)
 
   return (
     <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
@@ -152,53 +216,101 @@ export function CollectionMintCard({ collectionAddress, artistAddress, initial }
           <div className="flex items-center gap-2">
             <span className={`inline-block h-1.5 w-1.5 rounded-full ${statusDot}`} />
             <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
-              {statusLabel}
+              {PHASE_LABEL[phase]}
+              {phase === "not-started"
+                ? ` · opens in ${formatTimeRemaining(Number(sale.mintStart) - nowSec)}`
+                : ""}
             </span>
           </div>
           <div className="text-right">
-            <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-              Minted
-            </p>
+            <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Minted</p>
             <p className="text-sm font-mono tabular-nums leading-none text-gray-500">
-              {minted.toString()}
-              {cfg.supplyCap > 0n ? ` / ${cfg.supplyCap.toString()}` : ""}
+              {c.minted.toString()}
+              {c.supplyCap > 0n ? ` / ${c.supplyCap.toString()}` : ""}
             </p>
           </div>
         </div>
 
-        <PriceRow priceWei={priceWei} />
+        <PriceRow unitPrice={unitPrice} strategy={sale.priceStrategy !== null} />
 
-        <MintButton
-          collectionAddress={collectionAddress}
-          artistAddress={artistAddress}
-          priceWei={priceWei}
-          mintable={mintable}
-          isConnected={isConnected}
-          isPending={isPending}
-          confirming={confirming}
-          insufficient={insufficient}
-          balanceWei={balanceWei}
-          writeContract={writeContract}
-        />
-        {writeError ? <ErrorLine error={writeError} /> : null}
+        {mintable ? (
+          <QuantityRow qty={qty} max={maxQty} onChange={setQty} total={total} />
+        ) : null}
+
+        {!isConnected || !connected ? (
+          <RKConnectButton.Custom>
+            {({ openConnectModal }) => (
+              <button type="button" onClick={openConnectModal} className={BUTTON}>
+                Connect wallet to mint
+              </button>
+            )}
+          </RKConnectButton.Custom>
+        ) : wrongNetwork ? (
+          <button
+            type="button"
+            onClick={() => switchChain({ chainId: MINT_CHAIN_ID })}
+            disabled={switching}
+            className={BUTTON}
+          >
+            {switching ? "Switching…" : "Switch to Ethereum to mint"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!mintable || simulating || isPending || confirming || insufficient}
+            className={BUTTON}
+          >
+            {confirming
+              ? "Waiting for confirmation…"
+              : isPending
+                ? "Confirm in wallet…"
+                : simulating
+                  ? "Checking…"
+                  : !mintable
+                    ? walletLeft !== null && walletLeft <= 0n && phase === "open"
+                      ? "Wallet limit reached"
+                      : PHASE_LABEL[phase]
+                    : insufficient
+                      ? `Insufficient balance · ${trimEth(formatEther(balanceWei))} ETH available`
+                      : qty > 1n
+                        ? `Mint ${qty.toString()}`
+                        : "Mint"}
+          </button>
+        )}
+
+        {confirmed ? (
+          <p className="text-[11px] font-mono text-gray-500" role="status">
+            Minted. It will appear below shortly.
+          </p>
+        ) : null}
+        {errorText ? (
+          <p className="text-[11px] font-mono text-status-sold" role="alert">
+            {errorText}
+          </p>
+        ) : null}
+
+        <ReferralNote sale={sale} referrer={referrer} unitPrice={unitPrice} />
       </div>
     </div>
   )
 }
 
-function PriceRow({ priceWei }: { priceWei: bigint }) {
-  const gasOnly = priceWei === 0n
+const BUTTON =
+  "block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-80 transition-opacity"
+
+function PriceRow({ unitPrice, strategy }: { unitPrice: bigint; strategy: boolean }) {
   return (
     <div className="space-y-1">
       <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-        Price
+        {strategy ? "Current price" : "Price"}
       </p>
       <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
-        {gasOnly ? (
+        {unitPrice === 0n ? (
           "Gas only"
         ) : (
           <>
-            {trimEth(formatEther(priceWei))}{" "}
+            {trimEth(formatEther(unitPrice))}{" "}
             <span className="text-sm font-mono text-gray-500">ETH</span>
           </>
         )}
@@ -207,97 +319,131 @@ function PriceRow({ priceWei }: { priceWei: bigint }) {
   )
 }
 
+function QuantityRow({
+  qty,
+  max,
+  onChange,
+  total,
+}: {
+  qty: bigint
+  max: bigint
+  onChange: (q: bigint) => void
+  total: bigint
+}) {
+  if (max <= 1n) return null
+  const step = "h-8 w-8 border border-gray-200 font-mono text-sm disabled:opacity-40"
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className={step}
+          onClick={() => onChange(qty - 1n)}
+          disabled={qty <= 1n}
+          aria-label="One fewer"
+        >
+          −
+        </button>
+        <span className="w-8 text-center font-mono tabular-nums text-sm">{qty.toString()}</span>
+        <button
+          type="button"
+          className={step}
+          onClick={() => onChange(qty + 1n)}
+          disabled={qty >= max}
+          aria-label="One more"
+        >
+          +
+        </button>
+      </div>
+      {total > 0n ? (
+        <p className="text-[11px] font-mono tabular-nums text-gray-500">
+          Total {trimEth(formatEther(total))} ETH
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function ReferralNote({
+  sale,
+  referrer,
+  unitPrice,
+}: {
+  sale: SaleState
+  referrer: Address
+  unitPrice: bigint
+}) {
+  if (unitPrice === 0n) return null
+  const pct = `${(sale.referralShareBps / 100).toString()}%`
+  const noReferrer = referrer.toLowerCase() === ZERO_ADDRESS
+  const toPayout = referrer.toLowerCase() === sale.payoutRecipient.toLowerCase()
+  return (
+    <p className="text-[10px] font-mono leading-relaxed text-gray-400">
+      {noReferrer
+        ? "Minted here with no referrer: the full price goes to the artist's payout address."
+        : toPayout
+          ? `Minted here, the ${pct} referral share goes to the artist's own payout address, so the artist keeps the full price.`
+          : `Minted here, ${pct} of the price is credited as referral to ${formatAddress(referrer)}; the rest goes to the artist's payout address.`}
+    </p>
+  )
+}
+
+function NoSale({ collection: c }: { collection: CollectionSummary }) {
+  const message =
+    c.protocolVersion === 0
+      ? "This collection is not a Surface collection this page can mint from."
+      : c.minter === null
+        ? "No sale is set up for this collection right now."
+        : "This collection mints through its own minter contract, not a standard PND sale."
+  return (
+    <Notice>
+      <p>{message}</p>
+      {c.protocolVersion !== 0 && c.minter !== null ? (
+        <PndLink collection={c.address} label="View it on pnd.fyi" />
+      ) : null}
+    </Notice>
+  )
+}
+
+/**
+ * Allowlist minting needs a Merkle proof for the collector's wallet, built
+ * from the published list. That list lives with PND (its allowlist API is
+ * same-origin only), and this template runs no backend that could hold it,
+ * so a gated sale links out instead of minting here.
+ */
+function GatedSale({ collection: c }: { collection: CollectionSummary }) {
+  return (
+    <Notice>
+      <p>Allowlist mint — use the collection page on pnd.fyi.</p>
+      <PndLink collection={c.address} label="Mint on pnd.fyi" />
+    </Notice>
+  )
+}
+
+function Notice({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-surface p-5 space-y-3 text-[11px] font-mono text-gray-500 leading-relaxed">
+      {children}
+    </div>
+  )
+}
+
+function PndLink({ collection, label }: { collection: Address; label: string }) {
+  return (
+    <a
+      href={pndCollectionUrl(collection)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-block underline underline-offset-2 hover:text-fg"
+    >
+      {label} ↗
+    </a>
+  )
+}
+
 function trimEth(s: string): string {
   if (!s.includes(".")) return s
   return s.replace(/\.?0+$/, "")
-}
-
-type WriteContractFn = ReturnType<typeof useWriteContract>["writeContract"]
-
-function MintButton({
-  collectionAddress,
-  artistAddress,
-  priceWei,
-  mintable,
-  isConnected,
-  isPending,
-  confirming,
-  insufficient,
-  balanceWei,
-  writeContract,
-}: {
-  collectionAddress: Address
-  artistAddress: Address
-  priceWei: bigint
-  mintable: boolean
-  isConnected: boolean
-  isPending: boolean
-  confirming: boolean
-  insufficient: boolean
-  balanceWei: bigint
-  writeContract: WriteContractFn
-}) {
-  if (!isConnected) {
-    return (
-      <RKConnectButton.Custom>
-        {({ openConnectModal }) => (
-          <button
-            type="button"
-            onClick={openConnectModal}
-            className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-opacity"
-          >
-            Connect wallet to mint
-          </button>
-        )}
-      </RKConnectButton.Custom>
-    )
-  }
-
-  function submit() {
-    // `surface` is passed as the artist's own address, not PND's. On PND's
-    // main site, mints surfaced there pay PND's surface share; on the
-    // artist's own self-hosted page, the artist IS the surface — passing
-    // their own address here means the surface-share cut lands back with
-    // the artist instead of anyone else. That's the whole point of a
-    // self-hosted mint card.
-    writeContract(
-      buildMintWithRewardsRequest({
-        collectionAddress,
-        artistAddress,
-        priceWei,
-      }),
-    )
-  }
-
-  const disabled = !mintable || isPending || confirming || insufficient
-
-  return (
-    <button
-      type="button"
-      onClick={submit}
-      disabled={disabled}
-      className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-80 transition-opacity"
-    >
-      {confirming
-        ? "Waiting for confirmation…"
-        : isPending
-          ? "Confirm in wallet…"
-          : !mintable
-            ? "Minting closed"
-            : insufficient
-              ? `Insufficient balance · ${trimEth(formatEther(balanceWei))} ETH available`
-              : "Mint"}
-    </button>
-  )
-}
-
-function ErrorLine({ error }: { error: Error }) {
-  const msg = (error.message ?? "").split("\n")[0]
-  return (
-    <p className="text-[11px] font-mono text-status-sold" role="alert">
-      {msg || "Transaction failed."}
-    </p>
-  )
 }
 
 function useNowSec(): number {

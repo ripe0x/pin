@@ -1,36 +1,41 @@
 /**
- * VENDORED, byte-for-byte, from the foundation monorepo's
- * apps/web/src/lib/collection-render/types.ts. Do not edit the logic below
- * independently of upstream — this file must not drift from it. Re-vendor by
- * copying the upstream file over this one verbatim (no import changes are
- * needed here; this file has no `@pin/*` imports).
+ * VENDORED from the PND monorepo's apps/web/src/lib/collection-render/types.ts
+ * (the parity render library; docs/injection-convention.md is its spec).
+ * Logic copied verbatim; the only change is dropping the `.ts` import
+ * extension upstream uses for Node's strip-types test runner. Do not edit
+ * independently of upstream: re-vendor by copying the upstream file over
+ * this one and re-applying that one change.
  *
  * Shared types for the parity render library: the offchain implementation
  * of docs/injection-convention.md v1.
  *
  * The builder in ./build.ts must produce, byte for byte, the document the
- * onchain GenerativeRenderer emits (before its whole-document base64
- * encoding). Anything that would make the two diverge belongs nowhere in
- * this module.
+ * convention's "Onchain assembly" section describes (what a conforming
+ * onchain renderer emits before its whole-document base64 encoding).
+ * Anything that would make the two diverge belongs nowhere in this module.
  */
 
 import type { Address } from "viem";
 
-/** Mirrors CollectionTypes.sol CodeKind. */
+/** How a stored file is emitted: plain or gzipped script tag (the
+ *  convention's CodeKind; formerly a SurfaceTypes.sol enum). */
 export const CODE_KIND = {
   Script: 0,
   ScriptGzip: 1,
 } as const;
 export type CodeKind = (typeof CODE_KIND)[keyof typeof CODE_KIND];
 
-/** Mirrors CollectionTypes.sol CodeRef. */
+/** A file in scripty-compatible storage: (store, name) plus its CodeKind. */
 export type CodeRefLike = {
   store: Address;
   name: string;
   kind: CodeKind;
 };
 
-/** The subset of WorkConfig the document builder consumes. */
+/** What the document builder consumes: a work's code and dependency refs
+ *  plus the convention version it was authored against. An offchain input
+ *  shape only; there is no shared onchain WorkConfig registry to read it
+ *  from (a work's own renderer, or the studio before upload, supplies it). */
 export type WorkInput = {
   code: CodeRefLike[];
   deps: CodeRefLike[];
@@ -38,7 +43,15 @@ export type WorkInput = {
 };
 
 /**
- * The injected context object, exactly as GenerativeRenderer emits it.
+ * Why a document is being rendered (injection convention, additive in v1):
+ * "token" = canonical render of a real token; "preview" = exploratory
+ * render from a throwaway seed; "capture" = headless static-image capture.
+ */
+export type TokenContext = "token" | "preview" | "capture";
+
+/**
+ * The injected context object, exactly as docs/injection-convention.md
+ * defines it.
  * hash and tokenId are Art Blocks compatible; see the convention doc.
  */
 export type TokenData = {
@@ -46,13 +59,13 @@ export type TokenData = {
   hash: string;
   /** Decimal string. */
   tokenId: string;
-  mintIndex: number;
-  mintBlock: number;
   /** 0x + 40 lowercase hex. */
   collection: string;
   chainId: number;
-  /** Echoes WorkConfig.injectionVersion. */
+  /** Echoes the work's injectionVersion (WorkInput.injectionVersion). */
   version: number;
+  /** Why this document is rendered; real tokens inject "token". */
+  context: TokenContext;
 };
 
 /**
@@ -64,7 +77,7 @@ export type TokenData = {
  */
 export type ContentResolver = (ref: CodeRefLike) => Promise<string>;
 
-/** Where the gunzip helper lives (a renderer immutable, not WorkConfig). */
+/** Where the gunzip helper lives (a renderer-level setting, not per work). */
 export type GunzipRef = {
   store: Address;
   name: string;

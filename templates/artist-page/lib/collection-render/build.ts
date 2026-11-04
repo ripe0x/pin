@@ -1,16 +1,22 @@
 /**
- * VENDORED, byte-for-byte, from the foundation monorepo's
- * apps/web/src/lib/collection-render/build.ts. Do not edit the logic below
- * independently of upstream — this file must not drift from it. Re-vendor by
- * copying the upstream file over this one verbatim (no import changes are
- * needed here; this file has no `@pin/*` imports).
+ * VENDORED from the PND monorepo's apps/web/src/lib/collection-render/build.ts
+ * (the parity render library; docs/injection-convention.md is its spec).
+ * Logic copied verbatim; the only change is dropping the `.ts` import
+ * extension upstream uses for Node's strip-types test runner. Do not edit
+ * independently of upstream: re-vendor by copying the upstream file over
+ * this one and re-applying that one change.
  *
- * The parity document builder: reproduces, byte for byte, the HTML that
- * GenerativeRenderer.sol emits through ScriptyBuilderV2 (before the
- * onchain whole-document base64 encoding).
+ * The parity document builder: the offchain implementation of the
+ * "Onchain assembly" section of docs/injection-convention.md. Together with
+ * that doc, this module is the source of truth for the assembled document;
+ * an onchain renderer that follows the convention through ScriptyBuilderV2
+ * emits these exact bytes (before its whole-document base64 encoding).
  *
- * Emission facts, verified against scripty.sol ScriptyCore.sol and
- * contracts/src/collection/renderers/GenerativeRenderer.sol:
+ * History: the facts below were verified against scripty.sol ScriptyCore.sol
+ * and PND's own onchain reference renderer (GenerativeRenderer, later
+ * ScriptyRenderer). Both are removed from the repo (ae78de4e and #353; the
+ * sources live in git history), so the convention doc and this file now
+ * carry the contract on their own. Emission facts:
  *   - document: <html><head>[head tags]</head><body>[body tags]</body></html>
  *     (no doctype, no whitespace between tags)
  *   - HTMLTagType.script: <script>CONTENT</script>
@@ -21,8 +27,8 @@
  *   - body order: dependencies, the tokenData injection, artist code,
  *     gunzip helper LAST (it replaces the gzip tags that precede it)
  *
- * Divergence between this file and the onchain renderer is a bug by
- * definition; the fork e2e (web plan D8) asserts equality.
+ * Divergence between this file and docs/injection-convention.md is a bug by
+ * definition; build.test.ts pins the injection line byte for byte.
  */
 
 import { CODE_KIND } from "./types";
@@ -34,12 +40,13 @@ import type {
   WorkInput,
 } from "./types";
 
-/** GenerativeRenderer's single head tag, exact content. */
+/** The convention's single head tag, exact content. */
 export const HEAD_STYLE_CONTENT =
   "html,body{margin:0;padding:0;height:100%;overflow:hidden}canvas{display:block}";
 
 /**
- * The tokenData injection, exactly matching GenerativeRenderer._contextJs:
+ * The tokenData injection, exactly as docs/injection-convention.md defines
+ * it (and as the removed reference renderer's `_contextJs` emitted it):
  * field order, string vs number types, lowercase hex, trailing semicolon.
  */
 export function buildContextJs(t: TokenData): string {
@@ -48,17 +55,15 @@ export function buildContextJs(t: TokenData): string {
     t.hash.toLowerCase() +
     '","tokenId":"' +
     t.tokenId +
-    '","mintIndex":' +
-    String(t.mintIndex) +
-    ',"mintBlock":' +
-    String(t.mintBlock) +
-    ',"collection":"' +
+    '","collection":"' +
     t.collection.toLowerCase() +
     '","chainId":' +
     String(t.chainId) +
     ',"version":' +
     String(t.version) +
-    "};"
+    ',"context":"' +
+    t.context +
+    '"};'
   );
 }
 

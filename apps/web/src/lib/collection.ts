@@ -217,9 +217,11 @@ export type Collection = {
    *  null, or when it's set but doesn't implement this sale shape (a
    *  bring-your-own minter). */
   sale: MinterSaleConfig | null
-  /** What the work is, executably — read from the GenerativeRenderer's
-   *  work registry (renderer-land), empty for renderer-native works or
-   *  custom renderers. */
+  /** What the work is, executably, for the offchain parity renderer
+   *  (lib/collection-render, docs/injection-convention.md). There is no
+   *  shared onchain work registry to read it from (the GenerativeRenderer /
+   *  ScriptyRenderer registries were removed), so every read path fills it
+   *  with an empty config; renderer-native works render via tokenURI. */
   work: WorkConfig
   /** Cover image from the RenderAssets registry ("" when unset). */
   cover: string

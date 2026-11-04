@@ -9,8 +9,8 @@ import {
   type AuctionSummary,
 } from "@/lib/auctions"
 import { getConfig } from "@/lib/config"
-import { getCollection, getCurrentPrice } from "@/lib/collection"
-import { IdMode } from "@/lib/surface"
+import { getCollection } from "@/lib/collection"
+import { resolveReferrer, serializeCollection } from "@/lib/surface"
 
 // Rendered on demand, not prerendered at build, so a deploy never crawls the
 // chain (archive eth_getLogs at build time is exactly what used to fail the
@@ -139,8 +139,8 @@ function NoHouseState() {
 }
 
 /**
- * Mint card + recent-mints grid for the artist's optional Surface.
- * Entirely absent from the page unless `NEXT_PUBLIC_COLLECTION_ADDRESS` is
+ * Mint card + recent-mints grid for the artist's optional Surface collection
+ * (v1 or v2). Entirely absent from the page unless `NEXT_PUBLIC_COLLECTION_ADDRESS` is
  * configured (see lib/config.ts) — the section itself, and every read behind
  * it, only runs when an artist has opted in.
  */
@@ -153,11 +153,15 @@ async function CollectionSection({
   >
   artistAddress: Awaited<ReturnType<typeof getConfig>>["artistAddress"]
 }) {
-  const [collection, price] = await Promise.all([
-    getCollection(),
-    getCurrentPrice(),
-  ])
+  const collection = await getCollection()
   if (!collection) return null
+  // The referral share of every mint from this page goes to the site owner:
+  // the configured referrer, else the collection's owner, else the artist.
+  const referrer = resolveReferrer({
+    configured: getConfig().mintReferrer,
+    owner: collection.owner,
+    artist: artistAddress,
+  })
 
   return (
     <div className="space-y-6">
@@ -168,27 +172,13 @@ async function CollectionSection({
           </h2>
           <CollectionMintCard
             collectionAddress={collectionAddress}
-            artistAddress={artistAddress}
-            initial={{
-              name: collection.name,
-              // Bigint fields must cross the server/client boundary as
-              // strings — Next.js can't serialize a raw bigint in the RSC
-              // payload (see SerializedCollectionConfig's doc comment in
-              // CollectionMintCard.tsx).
-              cfg: {
-                ...collection.cfg,
-                price: collection.cfg.price.toString(),
-                supplyCap: collection.cfg.supplyCap.toString(),
-                mintStart: collection.cfg.mintStart.toString(),
-                mintEnd: collection.cfg.mintEnd.toString(),
-              },
-              status: collection.status,
-              minted: collection.minted.toString(),
-              price: price !== null ? price.toString() : null,
-            }}
+            referrer={referrer}
+            // Bigints cross the server/client boundary as strings: Next.js
+            // can't serialize a raw bigint in the RSC payload.
+            initial={serializeCollection(collection)}
           />
         </div>
-        {collection.cfg.idMode === IdMode.Sequential ? (
+        {collection.sequential ? (
           <CollectionTokenGrid
             collectionAddress={collectionAddress}
             minted={collection.minted}
