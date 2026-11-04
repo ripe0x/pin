@@ -202,7 +202,22 @@ jobs:
   deployment-drift:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    # The allowlist store for the Surface v2 lifecycle browser spec
+    # (apps/web/tests/e2e, E2E_DATABASE_URL). Throwaway, trust auth.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: pnd_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -235,9 +250,10 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm --filter @pin/web exec playwright install --with-deps chromium
 
-      - name: Run Surface create-and-mint browser flow
+      - name: Run Surface create-and-mint and v2 lifecycle browser flows
         env:
           E2E_FORK_RPC: https://ethereum-rpc.publicnode.com
+          E2E_DATABASE_URL: postgres://postgres@127.0.0.1:5432/pnd_e2e
         run: pnpm --filter @pin/web test:e2e
 
       - name: Check deployed ABIs

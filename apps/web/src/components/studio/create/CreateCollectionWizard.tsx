@@ -14,6 +14,7 @@ import { useState } from "react"
 import { useAccount, useChainId, useSwitchChain } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { PREFERRED_CHAIN, PREFERRED_CHAIN_LABEL } from "@/components/tx/tx-ui"
+import { launcherV2 } from "@/lib/collection"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import type { FactoryStatus } from "@/lib/collection-onchain"
 import { initialWizardState, WIZARD_STEPS, type StepId, type WizardState } from "./types"
@@ -54,6 +55,10 @@ export function CreateCollectionWizard({
   const [step, setStep] = useState<StepId>("renderer")
 
   const price = useEthAmountInput()
+  // Surface v2 (Launcher) when one resolves for the preferred chain, the
+  // same choice DeployStep makes. v2 has no onchain cover or creator
+  // roster, so those fields are hidden.
+  const v2 = launcherV2(PREFERRED_CHAIN.id) !== null
 
   function set<K extends keyof WizardState>(key: K, value: WizardState[K]) {
     setState((s) => ({ ...s, [key]: value }))
@@ -123,9 +128,9 @@ export function CreateCollectionWizard({
       <header className="space-y-1.5">
         <h1 className="text-xl font-semibold tracking-tight">Launch a collection</h1>
         <p className="text-sm text-gray-500 leading-relaxed">
-          Deploys your own immutable contract that renders through the renderer
-          you already deployed. No protocol fee. Only your wallet has admin
-          access.
+          {v2
+            ? "Deploys your own collection contract and its fixed-price sale, rendering through the renderer you already deployed. No protocol fee. Only your wallet can change it, until you renounce ownership."
+            : "Deploys your own immutable contract that renders through the renderer you already deployed. No protocol fee. Only your wallet has admin access."}
         </p>
       </header>
 
@@ -140,6 +145,7 @@ export function CreateCollectionWizard({
           <DetailsStep
             state={state}
             set={set}
+            v2={v2}
             onBack={() => setStep(stepBefore("details"))}
             onNext={() => setStep(stepAfter("details"))}
           />
@@ -149,6 +155,7 @@ export function CreateCollectionWizard({
           <SaleStep
             state={state}
             set={set}
+            v2={v2}
             price={price}
             onBack={() => setStep(stepBefore("sale"))}
             onNext={() => setStep(stepAfter("sale"))}

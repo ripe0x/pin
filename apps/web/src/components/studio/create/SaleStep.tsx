@@ -19,9 +19,13 @@ export function SaleStep({
   price,
   onBack,
   onNext,
+  v2 = false,
 }: {
   state: WizardState
   set: Setter
+  /** Surface v2 launch: no cover field (the renderer's contractURI is the
+   *  cover). */
+  v2?: boolean
   price: UseEthAmountInputResult
   onBack: () => void
   onNext: () => void
@@ -33,7 +37,7 @@ export function SaleStep({
   const payoutOk = state.payout === "" || isAddress(state.payout)
   const priceOk = price.isEmpty || price.isValid
   const artworkTrimmed = state.artworkURI.trim()
-  const artworkOk = artworkTrimmed === "" || isValidArtworkURI(artworkTrimmed)
+  const artworkOk = v2 || artworkTrimmed === "" || isValidArtworkURI(artworkTrimmed)
 
   const canProceed = priceOk && royaltyOk && capOk && payoutOk && artworkOk
 
@@ -45,7 +49,7 @@ export function SaleStep({
 
       <PriceSupplyWindowFields state={state} set={set} price={price} disabled={false} />
       <RoyaltyPayoutFields state={state} set={set} disabled={false} />
-      <ArtworkField state={state} set={set} disabled={false} />
+      {!v2 && <ArtworkField state={state} set={set} disabled={false} />}
 
       <div className="flex gap-3">
         <button onClick={onBack} className={BTN_SECONDARY}>

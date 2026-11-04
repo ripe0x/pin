@@ -1,7 +1,17 @@
 "use client"
 
 /**
- * Step 4: review every value, then a single createSurface write on
+ * Step 4: review every value, then one deploy transaction.
+ *
+ * Surface v2 (the default wherever a Launcher is configured): one
+ * Launcher.launch call deploys the collection and its FixedPriceSale,
+ * already wired to each other (contracts/src/surface/v2/Launcher.sol). The
+ * royalty receiver and payout recipient go in as zero when left empty: the
+ * Launcher resolves both to the owner. v2 has no cover registry and no
+ * onchain creator roster (the renderer's contractURI is the cover; the
+ * Catalog carries credit), so neither is written.
+ *
+ * Otherwise (v1 / the superseded Sepolia v2): a single createSurface write on
  * SurfaceFactory. createSurface takes the token's SurfaceConfig
  * (identity/renderer/royalty/cap/locks) and a separate SaleConfig the
  * factory hands to the canonical FixedPriceMinter clone it wires in the
@@ -20,24 +30,29 @@
  */
 
 import { useEffect, useRef } from "react"
-import { type Address } from "viem"
+import { type Abi, type Address } from "viem"
 import {
   useAccount,
   useChainId,
+  useConfig,
   useWriteContract,
   useWaitForTransactionReceipt,
 } from "wagmi"
-import { surfaceFactoryAbi, surfaceFactoryV2Abi, renderAssetsAbi } from "@pin/abi"
-import { formatWriteError } from "@/components/tx/tx-ui"
+import { simulateContract } from "wagmi/actions"
+import { launcherAbi, surfaceFactoryAbi, surfaceFactoryV2Abi, renderAssetsAbi } from "@pin/abi"
+import { PREFERRED_CHAIN, formatWriteError } from "@/components/tx/tx-ui"
 import {
   ZERO_ADDRESS,
+  launcherV2,
   surfaceFactory,
   surfaceFactoryV2,
   renderAssetsAddress,
 } from "@/lib/collection"
 import { buildReviewSummary, isValidArtworkURI } from "@/lib/create-collection"
+import { buildLaunchArgs } from "@/lib/surface-v2-studio"
 import { studioToolHref } from "@/lib/studio-tools"
-import { parseDeployedCollectionAddress } from "./parse-deployed-address"
+import { usePreflight } from "@/lib/use-preflight"
+import { parseDeployedCollectionAddress, parseLaunchedAddresses } from "./parse-deployed-address"
 import { validateCollaborators } from "./SharedFields"
 import type { UseEthAmountInputResult } from "@/lib/useEthAmountInput"
 import type { WizardState } from "./types"
@@ -74,21 +89,28 @@ export function DeployStep({
 }) {
   const { address } = useAccount()
   const chainId = useChainId()
-  // v2 factory wins when it resolves for this chain (art-only core, no
-  // pooled mode); v1 is the fallback until v2 deploys. See
-  // docs/pnd-surface-v2-plan.md.
-  const factoryV2 = surfaceFactoryV2(chainId)
+  const config = useConfig()
+  // The primitive v2 Launcher wins when it resolves for this chain; then
+  // the superseded SurfaceFactoryV2 (Sepolia only); v1 is the fallback.
+  // getFactoryStatus (the wizard's block screen) picks in the same order.
+  const launcher = launcherV2(chainId)
+  const factoryV2 = launcher ? null : surfaceFactoryV2(chainId)
   const factoryV1 = surfaceFactory(chainId)
-  const factory = factoryV2 ?? factoryV1
-  const renderAssets = renderAssetsAddress(chainId)
+  const factory = launcher ?? factoryV2 ?? factoryV1
+  const renderAssets = launcher ? null : renderAssetsAddress(chainId)
   const priceWei = price.wei ?? 0n
 
   const deploy = useWriteContract()
+  const preflight = usePreflight()
   const { data: receipt, isLoading: mining } = useWaitForTransactionReceipt({
     hash: deploy.data,
+    chainId: PREFERRED_CHAIN.id,
   })
 
-  const deployedAddress = parseDeployedCollectionAddress(receipt, !!factoryV2)
+  const launched = launcher ? parseLaunchedAddresses(receipt, launcher) : null
+  const deployedAddress = launcher
+    ? (launched?.collection ?? null)
+    : parseDeployedCollectionAddress(receipt, !!factoryV2)
 
   // Post-deploy configuration: presentation data lives in renderer-land. A
   // cover image goes to RenderAssets, its own tx, authorized by the
@@ -98,7 +120,8 @@ export function DeployStep({
     hash: coverWrite.data,
   })
 
-  const needsCover = state.artworkURI.trim().length > 0
+  // v2 has no cover registry: the renderer's contractURI is the cover.
+  const needsCover = !launcher && state.artworkURI.trim().length > 0
   const coverSettled = !needsCover || coverDone
 
   // Fires the cover write as soon as the collection exists, rather than
@@ -114,6 +137,7 @@ export function DeployStep({
     if (firedFor.current === deployedAddress) return
     firedFor.current = deployedAddress
     coverWrite.writeContract({
+      chainId: PREFERRED_CHAIN.id,
       address: renderAssets,
       abi: renderAssetsAbi,
       functionName: "setCover",
@@ -156,33 +180,56 @@ export function DeployStep({
     }
   }
 
-  const artworkOk = state.artworkURI.trim() === "" || isValidArtworkURI(state.artworkURI)
+  const artworkOk = !!launcher || state.artworkURI.trim() === "" || isValidArtworkURI(state.artworkURI)
 
   const canDeploy = !!factory && !!address && !!state.rendererAddress && artworkOk
 
-  function submit() {
-    if (!canDeploy || !factory || !address) return
+  /** The deploy call for whichever path this chain resolves to. */
+  function deployCall(): { address: Address; abi: Abi; functionName: string; args: readonly unknown[] } | null {
+    if (!factory || !address) return null
     const creators = collabCheck.ok ? collabCheck.parsed : []
     const owner = ownerOverride ?? address
     const name = state.name.trim()
     const symbol = state.symbol.trim()
+    if (launcher) {
+      const sale = buildSaleBase()
+      return {
+        address: launcher,
+        abi: launcherAbi as Abi,
+        functionName: "launch",
+        args: buildLaunchArgs({
+          name,
+          symbol,
+          owner,
+          renderer: state.rendererAddress as Address,
+          supplyCap: state.openSupply ? null : BigInt(Math.floor(Number(state.supplyCap))),
+          royaltyBps,
+          // Empty = zero = the owner, resolved by the Launcher.
+          royaltyReceiver: "",
+          priceWei,
+          mintStart: sale.mintStart,
+          mintEnd: sale.mintEnd,
+          maxMints: sale.maxMints,
+          payoutRecipient: state.payout,
+        }),
+      }
+    }
     const cfg = buildCfg()
     if (factoryV2) {
       // v2's SaleConfig drops priceStrategy (FixedPriceMinterV2 is
       // exact-payment only). seedSource is init-only with no wizard UI (see
       // docs/pnd-surface-v2-plan.md): every wizard-deployed v2 collection
       // derives its own seeds.
-      deploy.writeContract({
+      return {
         address: factoryV2,
-        abi: surfaceFactoryV2Abi,
+        abi: surfaceFactoryV2Abi as Abi,
         functionName: "createSurface",
         args: [name, symbol, owner, cfg, buildSaleBase(), creators, ZERO_ADDRESS as Address],
-      })
-      return
+      }
     }
-    deploy.writeContract({
+    return {
       address: factory,
-      abi: surfaceFactoryAbi,
+      abi: surfaceFactoryAbi as Abi,
       functionName: "createSurface",
       args: [
         name,
@@ -192,11 +239,33 @@ export function DeployStep({
         { ...buildSaleBase(), priceStrategy: ZERO_ADDRESS as Address },
         creators,
       ],
+    }
+  }
+
+  function submit() {
+    if (!canDeploy || !address) return
+    const call = deployCall()
+    if (!call) return
+    deploy.reset()
+    // Simulate from the connected account on PREFERRED_CHAIN first, so a
+    // paused factory or a bad renderer shows its decoded reason here
+    // instead of in a failed transaction; then sign that request.
+    void preflight.run(async () => {
+      const { request } = await simulateContract(config, {
+        account: address,
+        chainId: PREFERRED_CHAIN.id,
+        ...call,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      deploy.writeContract({ ...(request as any), chainId: PREFERRED_CHAIN.id })
     })
   }
 
   if (deployedAddress && coverSettled) {
-    return <SuccessScreen collection={deployedAddress} artistAddress={artistAddress} />
+    return (
+      <SuccessScreen collection={deployedAddress} sale={launched?.sale ?? null} artistAddress={artistAddress} />
+    )
   }
 
   if (deployedAddress) {
@@ -212,6 +281,7 @@ export function DeployStep({
             disabled={coverMining || coverWrite.isPending}
             onClick={() =>
               coverWrite.writeContract({
+                chainId: PREFERRED_CHAIN.id,
                 address: renderAssets,
                 abi: renderAssetsAbi,
                 functionName: "setCover",
@@ -242,16 +312,20 @@ export function DeployStep({
     )
   }
 
-  const busy = deploy.isPending || mining
-  const summary = buildReviewSummary(state, price.rawValue)
+  const busy = preflight.checking || deploy.isPending || mining
+  const summary = buildReviewSummary(state, price.rawValue, { v2: !!launcher })
+  const droppedForV2 =
+    !!launcher &&
+    (state.artworkURI.trim() !== "" || state.collaborators.some((c) => c.address.trim() !== ""))
 
   return (
     <div className="space-y-4">
       <header className="space-y-1.5">
         <h3 className="text-sm font-medium">Review and deploy</h3>
         <p className="text-xs text-gray-500 leading-relaxed">
-          One transaction deploys an immutable contract configured with everything
-          below: no proxy admin, no upgrade path.
+          {launcher
+            ? "One transaction deploys your collection and its sale, wired to each other: no proxy admin, no upgrade path. You keep every setting until you renounce ownership."
+            : "One transaction deploys an immutable contract configured with everything below: no proxy admin, no upgrade path."}
         </p>
       </header>
 
@@ -271,12 +345,26 @@ export function DeployStep({
       {!factory && (
         <p className={ERROR}>No CollectionFactory is configured for this network.</p>
       )}
-      {!artworkOk && <p className={ERROR}>Cover image URI must start with ipfs://, ar://, or https://</p>}
+      {!artworkOk && !launcher && <p className={ERROR}>Cover image URI must start with ipfs://, ar://, or https://</p>}
+      {droppedForV2 && (
+        <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+          A v2 collection has no onchain cover or creator roster: its cover comes from your renderer&apos;s
+          contractURI, and co-creators are credited in the Catalog. The cover and collaborators above are not
+          written.
+        </p>
+      )}
 
       <button onClick={submit} disabled={!canDeploy || busy} className={BTN}>
-        {deploy.isPending ? "Confirm in wallet…" : mining ? "Deploying…" : "Deploy collection"}
+        {preflight.checking
+          ? "Checking…"
+          : deploy.isPending
+            ? "Confirm in wallet…"
+            : mining
+              ? "Deploying…"
+              : "Deploy collection"}
       </button>
 
+      {preflight.error !== null && <p className={ERROR}>{formatWriteError(preflight.error, "Deploy")}</p>}
       {deploy.error && <p className={ERROR}>{formatWriteError(deploy.error, "Deploy")}</p>}
 
       <button onClick={onBack} disabled={busy} className={BTN_SECONDARY}>
@@ -288,16 +376,21 @@ export function DeployStep({
 
 function SuccessScreen({
   collection,
+  sale,
   artistAddress,
 }: {
   collection: Address
+  /** The v2 sale the Launcher wired in; null on the factory paths. */
+  sale: Address | null
   artistAddress: string
 }) {
+  const toolHref = (tool: string) => `${studioToolHref(artistAddress, tool)}?collection=${collection}`
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-green-200 bg-green-50 p-5 space-y-2">
         <p className="text-sm font-medium text-green-800">Collection deployed</p>
         <p className="text-xs font-mono text-green-700 break-all">{collection}</p>
+        {sale && <p className="text-[11px] font-mono text-green-700 break-all">Sale: {sale}</p>}
       </div>
 
       <a
@@ -307,11 +400,27 @@ function SuccessScreen({
         View collection
       </a>
       <a
-        href={`${studioToolHref(artistAddress, "collections")}?collection=${collection}`}
+        href={toolHref("collections")}
         className="block text-center text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 border border-gray-200 hover:border-gray-400 transition-colors"
       >
         Collection settings
       </a>
+      {sale && (
+        <div className="grid grid-cols-2 gap-2">
+          <a
+            href={toolHref("sale")}
+            className="block text-center text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 border border-gray-200 hover:border-gray-400 transition-colors"
+          >
+            Sale settings
+          </a>
+          <a
+            href={toolHref("mint-gate")}
+            className="block text-center text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 border border-gray-200 hover:border-gray-400 transition-colors"
+          >
+            Mint gate
+          </a>
+        </div>
+      )}
     </div>
   )
 }

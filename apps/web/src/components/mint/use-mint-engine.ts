@@ -19,13 +19,16 @@ import {
   useAccount,
   useBalance,
   useChainId,
+  useConfig,
   usePublicClient,
   useReadContract,
   useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi"
+import { simulateContract } from "wagmi/actions"
 import { PREFERRED_CHAIN, useChainNowSec } from "@/components/tx/tx-ui"
+import { usePreflight } from "@/lib/use-preflight"
 import { resolveMintCollection, type MintCollection, type MintPhase } from "@/lib/mint-collections"
 import type { MintSnapshot } from "@/lib/mint-onchain"
 import { resolvePhaseState, type PhaseState, type PhaseWindow } from "@/lib/mint-phases"
@@ -180,7 +183,9 @@ export function useMintEngine(
     data: receipt,
     error: receiptError,
   } = useWaitForTransactionReceipt({ hash: txHash, query: { retry: false } })
-  const isPending = isWritePending || isTxPending
+  const config = useConfig()
+  const preflight = usePreflight()
+  const isPending = isWritePending || isTxPending || preflight.checking
 
   // ── post-mint reveal (2.4) — pure parse of the already-fetched receipt ────
   // The Transfer/announce log the reveal watches is emitted by the TOKEN
@@ -302,17 +307,28 @@ export function useMintEngine(
         return
       }
     }
-    writeContract({
-      address: desc.address,
-      abi: desc.abi,
-      functionName: fn,
-      args,
-      value: total,
+    if (!address) return
+    // Value-bearing: simulate from the connected account on PREFERRED_CHAIN
+    // first, then sign the simulated request (chainId pinned). A rejection
+    // surfaces through writeError like a wallet-side failure.
+    resetWrite()
+    await preflight.run(async () => {
+      const { request } = await simulateContract(config, {
+        account: address,
+        chainId: PREFERRED_CHAIN.id,
+        address: desc.address,
+        abi: desc.abi,
+        functionName: fn,
+        args,
+        value: total,
+      })
+      writeContract(request)
     })
   }
 
   function reset() {
     resetWrite()
+    preflight.reset()
     setSelection(undefined)
     setBuildError(null)
   }
@@ -360,13 +376,16 @@ export function useMintEngine(
     countdownTo,
     countdownLabel,
     mint,
-    busy: isWritePending ? "confirm" : isTxPending ? "pending" : null,
+    // The preflight simulation reads as "confirm" so the skins keep their
+    // existing two busy labels.
+    busy: isWritePending || preflight.checking ? "confirm" : isTxPending ? "pending" : null,
     isPending,
     isSuccess,
     txHash,
     revealedTokenId,
     buildError,
-    writeError: writeError ?? null,
+    writeError:
+      writeError ?? (preflight.error instanceof Error ? preflight.error : null),
     receiptError: receiptError ?? null,
     reset,
   }

@@ -8,8 +8,8 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { encodeAbiParameters, encodeEventTopics, type Address, type TransactionReceipt } from "viem"
-import { surfaceFactoryV2Abi } from "@pin/abi"
-import { parseDeployedCollectionAddress } from "./parse-deployed-address.ts"
+import { launcherAbi, surfaceFactoryV2Abi } from "@pin/abi"
+import { parseDeployedCollectionAddress, parseLaunchedAddresses } from "./parse-deployed-address.ts"
 
 const FACTORY = "0xe4449989D9504D1d734204222AeB543514974C1E" as Address
 const OWNER = "0x1111111111111111111111111111111111111111" as Address
@@ -55,4 +55,44 @@ test("parses a v2 SurfaceCreated receipt with the v2 ABI", () => {
 
 test("returns null for an undefined receipt", () => {
   assert.equal(parseDeployedCollectionAddress(undefined, true), null)
+})
+
+// ── Surface v2 Launcher.launch ──────────────────────────────────────────────
+
+const LAUNCHER = "0x7F3e9B843845Aa44A1860bB1C343D7554920Fb59" as Address
+const SALE = "0x3333333333333333333333333333333333333333" as Address
+
+function launchedReceipt(emitter: Address): TransactionReceipt {
+  const topics = encodeEventTopics({
+    abi: launcherAbi,
+    eventName: "Launched",
+    args: { owner: OWNER, collection: COLLECTION, sale: SALE },
+  })
+  return {
+    logs: [
+      {
+        address: emitter,
+        topics,
+        data: "0x",
+        blockHash: "0x0000000000000000000000000000000000000000000000000000000000000001" as const,
+        blockNumber: 1n,
+        logIndex: 0,
+        transactionHash: "0x0000000000000000000000000000000000000000000000000000000000000002" as const,
+        transactionIndex: 0,
+        removed: false,
+      },
+    ],
+  } as unknown as TransactionReceipt
+}
+
+test("parses the collection and sale out of a Launched receipt", () => {
+  assert.deepEqual(parseLaunchedAddresses(launchedReceipt(LAUNCHER), LAUNCHER), {
+    collection: COLLECTION,
+    sale: SALE,
+  })
+})
+
+test("ignores a Launched log from any contract but the launcher", () => {
+  assert.equal(parseLaunchedAddresses(launchedReceipt(FACTORY), LAUNCHER), null)
+  assert.equal(parseLaunchedAddresses(undefined, LAUNCHER), null)
 })

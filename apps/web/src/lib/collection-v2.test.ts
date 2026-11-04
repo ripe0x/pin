@@ -52,6 +52,21 @@ test("decodeSaleV2Config: gated or failed reads give no buy flow", () => {
   assert.equal(decodeSaleV2Config(saleReads().slice(0, 9)), null)
 })
 
+test("decodeSaleV2Config: an AllowlistGate sale with a root set decodes with that root", () => {
+  const GATE = "0xC3f9A77e46576b678C0a9705Ee39Cb2479A5f031"
+  const ROOT = ("0x" + "ab".repeat(32)) as `0x${string}`
+  const ZERO_ROOT = ("0x" + "0".repeat(64)) as `0x${string}`
+  const s = decodeSaleV2Config(saleReads({ gate: GATE }), { gate: GATE.toLowerCase() as `0x${string}`, root: ROOT })
+  assert.ok(s)
+  assert.equal(s.allowlistRoot, ROOT)
+  // The same gate with no root fails every check: no buy flow.
+  assert.equal(decodeSaleV2Config(saleReads({ gate: GATE }), { gate: GATE, root: ZERO_ROOT }), null)
+  // A gate that is not the AllowlistGate: no buy flow, root or not.
+  assert.equal(decodeSaleV2Config(saleReads({ gate: PND }), { gate: GATE, root: ROOT }), null)
+  // Ungated: the zero root, whatever the gate's root for this collection.
+  assert.equal(decodeSaleV2Config(saleReads(), { gate: GATE, root: ROOT })?.allowlistRoot, ZERO_ROOT)
+})
+
 test("mintReferrerFor: Form of Solitude passes zero, any case", () => {
   process.env[ENV] = PND
   assert.equal(mintReferrerFor(FORM_OF_SOLITUDE as `0x${string}`, SALE_DEFAULT), ZERO_ADDRESS)

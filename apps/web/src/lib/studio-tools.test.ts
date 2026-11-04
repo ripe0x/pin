@@ -55,6 +55,12 @@ test("both -> live", () => {
   })
 })
 
+test("primitive v2 Launcher only -> live", () => {
+  withEnv({ [ENV_V1]: undefined, [ENV_V2]: undefined, NEXT_PUBLIC_LAUNCHER_V2: DEV_ADDR }, () => {
+    assert.equal(anySurfaceFactoryLive(BASE_CHAIN_ID), true)
+  })
+})
+
 test("mainnet default (v1 already deployed) keeps create/mint-gate/sale/collections visible", () => {
   withEnv({ [ENV_V1]: undefined, [ENV_V2]: undefined }, () => {
     assert.equal(anySurfaceFactoryLive(MAINNET_CHAIN_ID), true)

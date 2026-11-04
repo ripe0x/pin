@@ -17,10 +17,19 @@ import type { IndexedCollectionRow } from "@/lib/indexer-queries"
 import { shortAddress } from "@/lib/collection"
 import { BTN, ERROR, HELP, INPUT, LABEL } from "@/components/studio/create/wizard-ui"
 import { MintGatePanel } from "./MintGatePanel"
+import { V2Router } from "@/components/studio/v2/V2Router"
+import { SurfaceV2MintGatePanel } from "@/components/studio/v2/SurfaceV2MintGatePanel"
 
-export function MintGateTool({ owned = [] }: { owned?: IndexedCollectionRow[] }) {
+export function MintGateTool({
+  owned = [],
+  initialCollection = null,
+}: {
+  owned?: IndexedCollectionRow[]
+  /** Preselects a collection (`?collection=0x...`) instead of the picker. */
+  initialCollection?: `0x${string}` | null
+}) {
   const [input, setInput] = useState("")
-  const [collection, setCollection] = useState<`0x${string}` | null>(null)
+  const [collection, setCollection] = useState<`0x${string}` | null>(initialCollection)
 
   const trimmed = input.trim()
   const valid = isAddress(trimmed)
@@ -30,10 +39,11 @@ export function MintGateTool({ owned = [] }: { owned?: IndexedCollectionRow[] })
       <header className="space-y-1.5">
         <h2 className="text-xl font-semibold tracking-tight">Mint gate</h2>
         <p className="text-sm text-gray-500 leading-relaxed">
-          Gate a collection&apos;s mint with an allowlist and a per-wallet
-          limit, configured directly on its canonical FixedPriceMinter
-          clone. Only the collection&apos;s own owner or an admin can
-          activate a gate on it.
+          Gate a collection&apos;s mint with an allowlist: on a v1 collection
+          directly on its canonical FixedPriceMinter clone (with a per-wallet
+          limit), on a v2 collection through the AllowlistGate its sale
+          points at. Only the collection&apos;s owner (or, on v1, an admin)
+          can activate a gate on it.
         </p>
       </header>
 
@@ -117,7 +127,11 @@ export function MintGateTool({ owned = [] }: { owned?: IndexedCollectionRow[] })
               </button>
             </div>
           </div>
-          <MintGatePanel collection={collection} />
+          <V2Router
+            collection={collection}
+            renderV1={() => <MintGatePanel collection={collection} />}
+            renderV2={(state, refetch) => <SurfaceV2MintGatePanel state={state} refetch={refetch} />}
+          />
         </div>
       )}
     </div>

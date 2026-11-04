@@ -62,7 +62,26 @@ function formatWindow(state: WizardState): string {
 /** Builds the Review step's field-by-field summary from wizard state. Pure
  *  (no chain reads): `priceEthLabel` is the already-formatted price string
  *  (e.g. from useEthAmountInput's rawValue) so this stays chain/hook-free. */
-export function buildReviewSummary(state: WizardState, priceEthLabel: string): SummaryRow[] {
+export function buildReviewSummary(
+  state: WizardState,
+  priceEthLabel: string,
+  opts: { v2?: boolean } = {},
+): SummaryRow[] {
+  // A Surface v2 launch has no onchain collaborator roster or cover (the
+  // Catalog credits co-creators; the renderer's contractURI is the cover),
+  // and its royalty goes to the owner.
+  if (opts.v2) {
+    return [
+      { label: "Renderer", value: state.rendererAddress || "None" },
+      { label: "Name", value: state.name || "None" },
+      { label: "Symbol", value: state.symbol || "None" },
+      { label: "Price", value: priceEthLabel.trim() === "" ? "0 ETH (gas only)" : `${priceEthLabel} ETH` },
+      { label: "Supply", value: state.openSupply ? "Open (no cap)" : state.supplyCap || "None" },
+      { label: "Mint window", value: formatWindow(state) },
+      { label: "Royalty", value: `${state.royaltyPct || "0"}% to you` },
+      { label: "Payout", value: state.payout || "You (connected wallet)" },
+    ]
+  }
   return [
     { label: "Renderer", value: state.rendererAddress || "None" },
     { label: "Name", value: state.name || "None" },

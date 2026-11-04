@@ -25,10 +25,11 @@
  */
 
 import { MAINNET_CHAIN_ID } from "@pin/addresses"
-import { surfaceFactory, surfaceFactoryV2 } from "./collection"
+import { launcherV2, surfaceFactory, surfaceFactoryV2 } from "./collection"
 
-/** True when either the v1 or v2 SurfaceFactory resolves for `chainId`
- *  (mainnet by default), or a dev override is set for either. Gates every
+/** True when the v1 SurfaceFactory, the superseded v2 SurfaceFactoryV2, or
+ *  the primitive v2 Launcher resolves for `chainId` (mainnet by default), or
+ *  a dev override is set for any of them. Gates every
  *  tool whose per-collection logic (see the STUDIO_TOOLS entries below)
  *  already routes by the collection's own protocolVersion, so the tool
  *  works once ANY Surface factory is live, not only v1. Exported (rather
@@ -39,8 +40,10 @@ export function anySurfaceFactoryLive(chainId: number = MAINNET_CHAIN_ID): boole
   return (
     surfaceFactory(chainId) !== null ||
     surfaceFactoryV2(chainId) !== null ||
+    launcherV2(chainId) !== null ||
     process.env.NEXT_PUBLIC_SURFACE_FACTORY !== undefined ||
-    process.env.NEXT_PUBLIC_SURFACE_FACTORY_V2 !== undefined
+    process.env.NEXT_PUBLIC_SURFACE_FACTORY_V2 !== undefined ||
+    process.env.NEXT_PUBLIC_LAUNCHER_V2 !== undefined
   )
 }
 

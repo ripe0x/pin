@@ -15,6 +15,8 @@ import type { IndexedCollectionRow } from "@/lib/indexer-queries"
 import { shortAddress } from "@/lib/collection"
 import { BTN, ERROR, HELP, INPUT, LABEL } from "@/components/studio/create/wizard-ui"
 import { CollectionSettingsPanel } from "./CollectionSettingsPanel"
+import { V2Router } from "@/components/studio/v2/V2Router"
+import { SurfaceV2SettingsPanel } from "@/components/studio/v2/SurfaceV2SettingsPanel"
 
 export function CollectionSettingsTool({
   owned = [],
@@ -36,11 +38,11 @@ export function CollectionSettingsTool({
       <header className="space-y-1.5">
         <h2 className="text-xl font-semibold tracking-tight">Collection settings</h2>
         <p className="text-sm text-gray-500 leading-relaxed">
-          Manage the collection contract itself: swap or lock the renderer, set
-          or lock the supply cap, adjust the royalty, edit the cover, grant
-          extension minters, and edit the attribution roster. Only the
-          collection&apos;s owner or an admin can change them. Locks are
-          one-way and permanent.
+          Manage the collection contract itself: the renderer, supply cap,
+          royalty and minter. On a v1 collection also the cover, attribution
+          roster and one-way locks; on a v2 collection also its name,
+          airdrops, and renouncing ownership. Only the collection&apos;s
+          owner (or, on v1, an admin) can change them.
         </p>
       </header>
 
@@ -120,7 +122,13 @@ export function CollectionSettingsTool({
               </button>
             </div>
           </div>
-          <CollectionSettingsPanel collection={collection} />
+          {/* Primitive v2 collections get the v2 panel; v1 keeps its
+              panel unchanged (V2Router). */}
+          <V2Router
+            collection={collection}
+            renderV1={() => <CollectionSettingsPanel collection={collection} />}
+            renderV2={(state, refetch) => <SurfaceV2SettingsPanel state={state} refetch={refetch} />}
+          />
         </div>
       )}
     </div>

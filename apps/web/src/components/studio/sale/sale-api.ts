@@ -6,6 +6,7 @@
  */
 
 import { type Address } from "viem"
+import { isNotSurfaceResponse } from "../../../lib/not-surface.ts"
 
 export type SaleState = {
   minter: Address | null
@@ -23,13 +24,19 @@ export type SaleState = {
   } | null
 }
 
-export async function fetchSaleState(collection: string): Promise<SaleState | null> {
+/** Sale state, "not-surface" when the API says the address is not a PND
+ *  Surface collection, null on any other failure. */
+export async function fetchSaleState(
+  collection: string,
+): Promise<SaleState | "not-surface" | null> {
   try {
     const res = await fetch(`/api/collections/${collection.toLowerCase()}/sale`, {
       cache: "no-store",
     })
+    const body = (await res.json().catch(() => null)) as unknown
+    if (isNotSurfaceResponse(res.status, body)) return "not-surface"
     if (!res.ok) return null
-    return (await res.json()) as SaleState
+    return body as SaleState
   } catch {
     return null
   }

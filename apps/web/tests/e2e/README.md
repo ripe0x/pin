@@ -26,9 +26,24 @@ pnpm --filter @pin/web test:e2e:install
 pnpm --filter @pin/web exec playwright test tests/e2e/collections.spec.ts
 ```
 
-Prerequisites: Foundry (`anvil`, `forge`, `cast`) on `~/.foundry/bin`, and
-network access for the mainnet fork (defaults to free publicnode; override
-with `E2E_FORK_RPC`).
+Prerequisites: Foundry (`anvil`, `forge`, `cast`) on `~/.foundry/bin` (or
+point `FOUNDRY_BIN` at another install), and network access for the mainnet
+fork (defaults to free publicnode; override with `E2E_FORK_RPC`).
+
+The Surface v2 lifecycle spec's allowlist step also needs a Postgres
+database for the app's allowlist store: set `E2E_DATABASE_URL` (any empty
+database; globalSetup creates the one table it needs, migration 026, and
+clears it). Without it that one step is skipped. CI provides one as a
+service container.
+
+```bash
+E2E_DATABASE_URL=postgres://postgres@127.0.0.1:5432/pnd_e2e \
+E2E_SHOTS_DIR=/tmp/shots \
+  pnpm --filter @pin/web exec playwright test tests/e2e/surface-v2-lifecycle.spec.ts
+```
+
+`E2E_SHOTS_DIR`, when set, saves a full-page screenshot of each v2 panel
+state there (`b5-*.png`).
 
 ## How it works
 
@@ -42,10 +57,14 @@ with `E2E_FORK_RPC`).
    (`forge script script/DeploySurfaceSystem.s.sol`): it reuses the forked
    mainnet Catalog, deploys the sequential, pooled, and fixed-price-minter
    implementations, and deploys a paused factory. The fixture then deploys
-   ownerless `RenderAssets` + `DefaultRenderer` reference modules, opens the
-   fork-local factory, and exports the addresses to the test app. The factory
-   has no default renderer, matching mainnet; the spec supplies the renderer
-   explicitly through the supported Renderer-native preset.
+   one bring-your-own renderer (`contracts/script/mocks/MockRenderer.sol`),
+   opens the fork-local factory, and exports the addresses to the test app.
+   The factory has no default renderer, matching mainnet; the spec supplies
+   the renderer explicitly in the wizard's Renderer step. (The shared
+   `RenderAssets` + `DefaultRenderer` modules were deleted in #353.)
+   It also clears the mainnet EIP-7702 delegation on Anvil account 0 (its key
+   is public, so its mainnet code is a `0xef0100…` designator) so the
+   impersonated wallet is a plain EOA on the fork.
 3. Starts `next dev` with the fork env + `NEXT_PUBLIC_DEV_IMPERSONATE`, so
    PND's **wagmi mock connector auto-connects** as the impersonated account.
    No wallet, no modal, no private key in the browser — Anvil signs each tx
@@ -55,19 +74,42 @@ with `E2E_FORK_RPC`).
    — the checksummed form redirects to the studio dashboard, it does not
    404, so a spec that forgets to lowercase silently lands somewhere else.
 
+4. Deploys the **Surface v2 primitives** (`contracts/src/surface/v2`: the
+   Surface and FixedPriceSale implementations, AllowlistGate, the token and
+   sale CloneFactories, the Launcher), unpaused, one `forge create` each
+   (`DeploySurfaceV2.s.sol` only runs on chain 31337), and exports them to
+   the app (`NEXT_PUBLIC_LAUNCHER_V2`, `NEXT_PUBLIC_SURFACE_TOKEN_FACTORY_V2`,
+   `NEXT_PUBLIC_SALE_FACTORY_V2`, `NEXT_PUBLIC_ALLOWLIST_GATE`). With a
+   Launcher configured the wizard launches v2 collections, so both specs
+   create v2 collections.
+5. With `E2E_DATABASE_URL`, prepares the allowlist table and passes the
+   database to the app as `DATABASE_URL` (with `INDEXER_DISABLED=1`).
+
 `fixtures/test.ts` exposes the stack state (RPC URL, factory, renderer,
-RenderAssets, impersonated account) to specs. `fixtures/globalTeardown.ts`
+impersonated account) to specs. `fixtures/globalTeardown.ts`
 stops both processes.
 
 ## What `collections.spec.ts` verifies
 
-One **Renderer-native full create → deploy → mint → verify** test. It first
-asserts that Edition and Generative remain disabled while the factory has no
-shared renderer, then supplies the fork-local reference renderer and deploys a
-capped, 0.01 ETH collection. It verifies the collection page, mints through
-`MintCollectionCTA`, polls the fresh onchain count, and checks the token's
-derived mint order plus full seed. Pure renderer/parity assembly remains
-covered by the fast unit tests under `src/lib/collection-render/`.
+One **full create → deploy → mint → verify** test: it supplies the
+fork-local renderer and deploys a capped, 0.01 ETH collection. It verifies
+the collection page, mints through `MintCollectionCTA`, polls the fresh
+onchain count, and checks the token's derived mint order plus full seed. A
+second test checks that the Renderer step rejects a malformed address and an
+address with no code. Pure renderer/parity assembly remains covered by the
+fast unit tests under `src/lib/collection-render/`.
+
+## What `surface-v2-lifecycle.spec.ts` verifies
+
+The studio's v2 tools, in order, each checked against onchain state: launch
+through the wizard (`Launcher.launch`; owner, minter = the sale, royalty to
+the owner), change the price on the sale panel, publish an allowlist and
+activate it (`AllowlistGate.setRoot` + `setGate`), fetch a proof from the
+proof route and verify it with `AllowlistGate.check`, mint through the gate
+from the collection page, airdrop 2 tokens (`setMinter(owner)`, `mintTo` x2,
+`setMinter(sale)`: the slot returns to the sale and the sale's
+`totalMinted` does not move), close the sale, and renounce ownership (offered
+only once the sale is closed).
 
 Traces/screenshots land under `tests/e2e/test-results/` on failure (gitignored).
 
