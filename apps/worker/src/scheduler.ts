@@ -186,6 +186,9 @@ const REFRESH_TIMEOUT_MS: Record<RefreshJobKind, number> = {
   artist: positiveIntEnv(process.env.REFRESH_ARTIST_TIMEOUT_MS, DEFAULT_JOB_TIMEOUT_MS.artist),
   token: positiveIntEnv(process.env.REFRESH_TOKEN_TIMEOUT_MS, DEFAULT_JOB_TIMEOUT_MS.token),
 }
+// How often each kind polls for due jobs: one indexed UPDATE per poll
+// (refresh_jobs_claim_idx), a few seconds of pickup latency.
+const REFRESH_POLL_MS = positiveIntEnv(process.env.REFRESH_POLL_MS, 3_000)
 const REFRESH_LEASE_SECONDS = positiveIntEnv(
   process.env.REFRESH_JOB_LEASE_SECONDS,
   DEFAULT_LEASE_SECONDS,
@@ -406,7 +409,7 @@ export async function startScheduler(): Promise<void> {
   // jobs a crashed or restarted worker left 'running'. Reclaim once at
   // boot too, so a crash's jobs return after at most one lease.
   void reclaimRefreshJobs()
-  setInterval(() => void pumpRefreshJobs("artist"), 2_000)
-  setInterval(() => void pumpRefreshJobs("token"), 2_000)
+  setInterval(() => void pumpRefreshJobs("artist"), REFRESH_POLL_MS)
+  setInterval(() => void pumpRefreshJobs("token"), REFRESH_POLL_MS)
   setInterval(() => void reclaimRefreshJobs(), 60_000)
 }
