@@ -87,7 +87,12 @@ the **`public` schema** — different tables, never touched by Ponder.
     contract has caught up.
   - Web: `getCollectorTokens` (reads.ts) unions `token_owners`, 1155
     balances and Surface `collection_tokens.owner` (guarded), keyset
-    paginated; `GET /api/collector/[address]/holdings` serves it.
+    paginated; `GET /api/collector/[address]/holdings` serves it, each
+    item hydrated with title, derivative artwork and attributed artist
+    from Postgres (`profile-reads.ts`). It backs the Collected tab of the
+    unified profile, `/artist/[address]?tab=available|created|collected|catalog`
+    (#299; `profile-tabs.ts` has the tab rules). `/profile/[address]`
+    and `/collector/[address]` redirect there.
 - `prune-retention` (hourly) prunes expired `cache_entries`, old
   `worker_iterations`, stale `rate_limits` and `scan_backoff` rows.
 

@@ -6,21 +6,44 @@ import {
   getArtistGalleryPage,
   getArtistIdentity,
   resolveEnsAddress,
+  type ArtistIdentity,
 } from "@/lib/artist-queries"
 import { getActiveAuctionCount } from "@/lib/auctions"
 import { getSovereignHouseOf } from "@/lib/sovereign-house"
 import { getCachedTokenRefs } from "@/lib/artist-cache"
+import { getCachedCatalog } from "@/lib/catalog-cache"
 import { isCrawler } from "@/lib/crawler"
 import { withSingleFlight } from "@/lib/single-flight"
 import { PLATFORMS } from "@/lib/platforms"
+import { getCollectorTokens } from "@/lib/reads"
+import { getSellerOpenAuctions } from "@/lib/profile-reads"
+import { COLLECTED_PAGE_SIZE } from "@/lib/profile-collected"
+import {
+  PROFILE_TAB_LABELS,
+  catalogEntryCount,
+  parseProfileTab,
+  selectProfileTabs,
+  type ProfileTab,
+  type ProfileTabCounts,
+} from "@/lib/profile-tabs"
 import { ArtistHeader } from "@/components/artist/ArtistHeader"
 import { ArtistGallery } from "@/components/artist/ArtistGallery"
-import { CatalogSection } from "@/components/artist/CatalogSection"
 import { StudioBar } from "@/components/artist/StudioBar"
+import { ProfileTabs } from "@/components/artist/ProfileTabs"
+import {
+  PanelErrorBoundary,
+  PanelUnavailable,
+} from "@/components/artist/PanelErrorBoundary"
+import {
+  AvailablePanel,
+  CatalogPanel,
+  CollectedPanel,
+} from "@/components/artist/ProfilePanels"
 
 const INITIAL_PAGE_SIZE = 24
 
 type Params = Promise<{ address: string }>
+type SearchParams = Promise<{ tab?: string | string[] }>
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 
@@ -52,7 +75,18 @@ export async function generateMetadata({
     ])
     const totalWorks = refs.length
 
-    const description = `${totalWorks} ${totalWorks === 1 ? "work" : "works"} by ${identity.displayName}`
+    // A collector-only address (#299) gets a description that says so
+    // instead of "0 works by …". Guarded: the holdings count is optional.
+    const collected =
+      totalWorks === 0
+        ? await getCollectorTokens(address, { limit: 1, excludeOwnWorks: true })
+            .then((p) => p.total)
+            .catch(() => 0)
+        : 0
+    const description =
+      collected > 0
+        ? `${identity.displayName} holds ${collected} ${collected === 1 ? "work" : "works"} among those PND indexes`
+        : `${totalWorks} ${totalWorks === 1 ? "work" : "works"} by ${identity.displayName}`
     return {
       title: identity.displayName,
       description,
@@ -77,10 +111,14 @@ export async function generateMetadata({
 
 export default async function ArtistPage({
   params,
+  searchParams,
 }: {
   params: Params
+  searchParams: SearchParams
 }) {
   const { address: raw } = await params
+  const { tab: rawTab } = await searchParams
+  const requestedTab = parseProfileTab(rawTab)
   const decoded = decodeURIComponent(raw)
   const address = await resolveParam(raw)
 
@@ -97,17 +135,32 @@ export default async function ArtistPage({
 
   // If user navigated via ENS name, redirect to the canonical address URL
   if (!ADDRESS_RE.test(decoded)) {
-    redirect(`/artist/${address}`)
+    redirect(`/artist/${address}${requestedTab ? `?tab=${requestedTab}` : ""}`)
   }
 
   return (
     <Suspense fallback={<ArtistFetchFallback />}>
-      <ArtistPageBody address={address} />
+      <ArtistPageBody address={address} requestedTab={requestedTab} />
     </Suspense>
   )
 }
 
-async function ArtistPageBody({ address }: { address: string }) {
+/**
+ * The unified person profile (#299). One address can have created works,
+ * holdings, open auctions and Catalog declarations at once; each is a tab
+ * (`?tab=`, lib/profile-tabs.ts), listed only when it has something to
+ * show. Created stays the default for anyone with created works, so
+ * existing artist links are unchanged; a collector-only address opens on
+ * Collected instead of an empty gallery. `/profile/[address]` redirects
+ * here (next.config.ts).
+ */
+async function ArtistPageBody({
+  address,
+  requestedTab,
+}: {
+  address: string
+  requestedTab: ProfileTab | null
+}) {
   // Crawlers (Twitterbot, Discord, Slack, etc.) only need the OG metadata
   // produced by `generateMetadata` — they don't render the gallery,
   // can't bid, and don't care about live state. Skipping the body
@@ -143,23 +196,39 @@ async function ArtistPageBody({ address }: { address: string }) {
     auctionDiscoveryDeadline,
   ])
 
-  // SSR only the first page: identity + first 24 tokens + active-auction
-  // count (null when the artist has no sovereign house). Subsequent gallery
-  // pages load client-side via /api/artist/[address]/tokens?page=N.
+  // One count per tab, all Postgres (or an already-cached read), in
+  // parallel: created refs (the gallery's own cached ref list), the first
+  // holdings page (its `total` is the count, and the page is reused when
+  // Collected is the tab shown), the Catalog record (the same cache the
+  // old bottom-of-page CatalogSection read) and this address's open PND
+  // auctions (a filter over the cached site-wide list). Every one degrades
+  // to null instead of throwing, so a cold DB never 500s the profile; null
+  // keeps the tab listed with a "could not load" panel.
   //
-  // Each expensive call is wrapped in `withSingleFlight` so that a burst
-  // of concurrent same-artist renders (e.g., a Discord/Twitter share that
+  // Expensive calls are wrapped in `withSingleFlight` so that a burst of
+  // concurrent same-artist renders (e.g., a Discord/Twitter share that
   // funnels 50 visitors at the same artist within seconds) collapses to
   // one cold-cache fetch followed by N-1 cache hits, instead of N
-  // parallel RPC fan-outs racing each other to populate the same caches.
-  // `getArtistIdentity` is already cached and cheap, so it's left bare.
-  const [identity, firstPage, activeAuctionCount, sovereignHouse] =
+  // parallel fan-outs racing each other to populate the same caches.
+  const lower = address.toLowerCase()
+  const [identity, refs, holdings, catalog, available, activeAuctionCount, sovereignHouse] =
     await Promise.all([
-      getArtistIdentity(address),
-      withSingleFlight(`artist-gallery:${address.toLowerCase()}:0:${INITIAL_PAGE_SIZE}`, () =>
-        getArtistGalleryPage(address, 0, INITIAL_PAGE_SIZE),
+      getArtistIdentity(address).catch(() => fallbackIdentity(address)),
+      withSingleFlight(`artist-refs:${lower}`, () => getCachedTokenRefs(address)).catch(
+        (err) => {
+          console.error("[artist] token refs read failed:", err)
+          return null
+        },
       ),
-      withSingleFlight(`artist-auctions:${address.toLowerCase()}`, () =>
+      withSingleFlight(`profile-holdings:${lower}:${COLLECTED_PAGE_SIZE}`, () =>
+        getCollectorTokens(address, { limit: COLLECTED_PAGE_SIZE, excludeOwnWorks: true }),
+      ).catch((err) => {
+        console.error("[artist] holdings read failed:", err)
+        return null
+      }),
+      getCachedCatalog(lower).catch(() => null),
+      getSellerOpenAuctions(address),
+      withSingleFlight(`artist-auctions:${lower}`, () =>
         getActiveAuctionCount(address),
       ).catch(() => null),
       getSovereignHouseOf(address).catch(() => null),
@@ -171,7 +240,15 @@ async function ArtistPageBody({ address }: { address: string }) {
   // noise. null hides the element in ArtistHeader.
   const activeAuctions = sovereignHouse ? activeAuctionCount : null
 
-  // This page is the artist's public face — gallery first, no admin
+  const counts: ProfileTabCounts = {
+    available: available?.length ?? null,
+    created: refs?.length ?? null,
+    collected: holdings?.total ?? null,
+    catalog: catalog ? catalogEntryCount(catalog) : null,
+  }
+  const { active, tabs, defaultTab } = selectProfileTabs(requestedTab, counts)
+
+  // This page is the person's public face — their record first, no admin
   // chrome. Management lives in /studio/[address]; the only owner
   // affordance here is the slim StudioBar ribbon (which renders null
   // for everyone else).
@@ -179,24 +256,86 @@ async function ArtistPageBody({ address }: { address: string }) {
     <div className="mx-auto max-w-[2000px] px-6 py-12">
       <ArtistHeader
         identity={identity}
-        totalWorks={firstPage.total}
+        totalWorks={refs?.length ?? 0}
         activeAuctions={activeAuctions}
+        collected={holdings?.total ?? null}
       />
 
       <div className="mt-8">
         <StudioBar artistAddress={address} />
       </div>
 
-      <div className="mt-12">
-        <ArtistGallery
-          artistAddress={address}
-          initialPage={firstPage}
+      <div className="mt-10">
+        <ProfileTabs
+          address={address}
+          tabs={tabs}
+          active={active}
+          defaultTab={defaultTab}
+          counts={counts}
         />
       </div>
 
-      <div className="mt-12">
-        <CatalogSection address={address as `0x${string}`} />
+      <div className="mt-8">
+        <PanelErrorBoundary key={active} label={PROFILE_TAB_LABELS[active].toLowerCase()}>
+          <Suspense fallback={<PanelSkeleton />}>
+            {active === "available" ? (
+              <AvailablePanel auctions={available} />
+            ) : active === "collected" ? (
+              <CollectedPanel address={address} page={holdings} />
+            ) : active === "catalog" ? (
+              <CatalogPanel address={address} count={counts.catalog} />
+            ) : (
+              <CreatedPanel address={address} refsKnown={refs !== null} />
+            )}
+          </Suspense>
+        </PanelErrorBoundary>
       </div>
+    </div>
+  )
+}
+
+/**
+ * The Created tab: the existing gallery. SSR only the first page;
+ * subsequent pages load client-side via /api/artist/[address]/tokens?page=N.
+ */
+async function CreatedPanel({
+  address,
+  refsKnown,
+}: {
+  address: string
+  refsKnown: boolean
+}) {
+  if (!refsKnown) return <PanelUnavailable label="created works" />
+  const firstPage = await withSingleFlight(
+    `artist-gallery:${address.toLowerCase()}:0:${INITIAL_PAGE_SIZE}`,
+    () => getArtistGalleryPage(address, 0, INITIAL_PAGE_SIZE),
+  ).catch((err) => {
+    console.error("[artist] gallery page read failed:", err)
+    return null
+  })
+  if (!firstPage) return <PanelUnavailable label="created works" />
+  return <ArtistGallery artistAddress={address} initialPage={firstPage} />
+}
+
+/** Identity when the ENS store and live resolution both fail: the bare address. */
+function fallbackIdentity(address: string): ArtistIdentity {
+  return {
+    address: address as Address,
+    ensName: null,
+    displayName: `${address.slice(0, 6)}…${address.slice(-4)}`,
+    avatarUrl: null,
+  }
+}
+
+function PanelSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="space-y-3">
+          <div className="aspect-square rounded skeleton" />
+          <div className="h-3 w-2/3 rounded skeleton" />
+        </div>
+      ))}
     </div>
   )
 }

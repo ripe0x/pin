@@ -60,7 +60,7 @@ export function ListingGroupRow({ group }: { group: EnrichedListingGroup }) {
         <div className="min-w-0 flex-1">
           <p className="text-sm leading-snug">
             <Link
-              href={`/profile/${newest.artist}`}
+              href={`/artist/${newest.artist}`}
               className="font-medium underline-offset-2 hover:underline"
             >
               {newest.artistDisplayName}
@@ -109,7 +109,7 @@ export function BidGroupRow({ group }: { group: EnrichedBidGroup }) {
             )}
             <span className="text-gray-600"> by </span>
             <Link
-              href={`/profile/${newest.artist}`}
+              href={`/artist/${newest.artist}`}
               className="font-medium underline-offset-2 hover:underline"
             >
               {newest.artistDisplayName}

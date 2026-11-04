@@ -58,6 +58,11 @@ const nextConfig: NextConfig = {
       { source: "/record/:address", destination: "/catalog/:address", permanent: true },
       { source: "/api/record/:address", destination: "/api/catalog/:address", permanent: true },
       { source: "/api/record/:address/revalidate", destination: "/api/catalog/:address/revalidate", permanent: true },
+      // One person profile (#299): /artist/[address] grew Collected,
+      // Available and Catalog tabs, so /profile is an alias. The incoming
+      // query string (?tab=) passes through. /collector opens on Collected.
+      { source: "/profile/:address", destination: "/artist/:address", permanent: true },
+      { source: "/collector/:address", destination: "/artist/:address?tab=collected", permanent: true },
     ]
   },
 }
