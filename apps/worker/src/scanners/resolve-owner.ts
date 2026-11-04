@@ -9,6 +9,12 @@
  *
  * Cost: one `ownerOf` per new mint. Bounded by mint rate, not by
  * visit rate.
+ *
+ * This is a snapshot at mint time, not an owner index. Per-artist
+ * contracts get later transfers from scan-token-transfers; the shared
+ * Foundation / SR V2 1/1s (which that task never scans) get them from
+ * mirror-shared-owners, which copies Ponder's token_ownership over this
+ * row (stored at block 0, so any Transfer evidence wins; #296).
  */
 import type { Sql } from "postgres"
 import { getAddress, type Address, type PublicClient, erc721Abi } from "viem"
