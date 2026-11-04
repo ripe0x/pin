@@ -207,6 +207,30 @@ name themselves; that is the accepted property of every open referral
 scheme and is not gatekept. It is a host reward, not a protocol fee:
 every party can route around it.
 
+**Receiver check context (step 7).** The token never calls out, so the
+sale performs the `onERC721Received` check itself: once per id, before
+`mintTo`, with `msg.sender == sale` (not the collection), `operator ==
+payer`, `from == address(0)` and the id that is about to be minted, which
+does not exist yet. A receiver that only checks the selector is
+unaffected. A receiver that verifies `ownerOf(tokenId)` inside the
+callback fails closed (the mint reverts). A receiver that records the
+deposit under `msg.sender` (the vault, escrow and lending pattern) or
+guards on `msg.sender == tokenContract` (ERC-6551 cycle checks) records the
+sale as the NFT contract; a later transfer it attempts through that record
+calls the sale, which has no ERC721 functions, so the token stays in the
+receiver. Mint surfaces should send to such contracts only if they key
+deposits on the collection address supplied out of band, or mint to an
+EOA and transfer in afterwards. Changing this would mean the token calling
+out after `_mint`, which the design rules out (section 2).
+
+**Referrers that cannot withdraw.** A referrer equal to the sale or the
+collection counts as no referrer (neither can ever withdraw). Any other
+address is accepted as named: `withdraw(account)` pays `account`, so a
+referrer that cannot receive ETH (a contract without a payable `receive`),
+or an address nobody controls, leaves its 5% unclaimed in the sale. The
+artist's proceeds are the same as with any other referrer; mint surfaces
+should pass the artist, PND or zero.
+
 **Payouts.** Pull payment only. `withdraw(address account)` sends the
 owed balance to `account`, callable by anyone. `withdrawTo(address to)`
 sends the caller's own balance to `to`. `pendingWithdrawal(account)`.
