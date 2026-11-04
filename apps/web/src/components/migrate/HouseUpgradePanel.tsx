@@ -11,7 +11,7 @@ import {
   sovereignAuctionHouseV2FactoryAbi,
 } from "@pin/abi"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
-import { useArtistHouseV2 } from "@/components/auction/useArtistHouseV2"
+import { useUpgradeTargetHouse } from "@/components/auction/useUpgradeTargetHouse"
 import { StatusChip } from "@/components/auction/tx"
 import { useBatchedCalls, type PreparedCall } from "@/lib/useBatchedCalls"
 import type { HouseUpgradeListing } from "@/lib/indexer-queries"
@@ -97,7 +97,7 @@ function Panel({ artistAddress }: Props) {
   const { address: connected } = useAccount()
   const publicClient = usePublicClient()
   const v1 = useArtistHouse(artistAddress)
-  const v2 = useArtistHouseV2(artistAddress)
+  const v2 = useUpgradeTargetHouse(artistAddress)
   const phase1 = useBatchedCalls()
   const phase2 = useBatchedCalls()
 

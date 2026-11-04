@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useArtistHouse } from "./useArtistHouse"
-import { useArtistHouseV2 } from "./useArtistHouseV2"
+import { useUpgradeTargetHouse } from "./useUpgradeTargetHouse"
 
 /**
  * Auction-house tab pointer to the V1 to V2 upgrade flow on the migrate
@@ -20,7 +20,7 @@ export function UpgradeHouseBanner({ artistAddress }: { artistAddress: string })
 
 function Banner({ artistAddress }: { artistAddress: string }) {
   const v1 = useArtistHouse(artistAddress)
-  const v2 = useArtistHouseV2(artistAddress)
+  const v2 = useUpgradeTargetHouse(artistAddress)
   const [v1ListingCount, setV1ListingCount] = useState<number | null>(null)
 
   useEffect(() => {

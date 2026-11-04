@@ -37,6 +37,7 @@ import {
 import type { PlatformId } from "@/lib/platforms/types"
 import { useResolvedArtistHouse } from "@/components/auction/useResolvedArtistHouse"
 import { canListStandard } from "@/lib/auction-policy"
+import { sovereignV2_1Factory } from "@/lib/sovereign-v2-1"
 import {
   FORK_MODE,
   PREFERRED_CHAIN,
@@ -209,10 +210,13 @@ function Inner({
 
   const { factoryAddress, houseAddress, version: houseVersion } =
     useResolvedArtistHouse(artistAddress)
-  // New deploys go to the V2 factory once its address is live.
+  // New deploys go to the newest live V2-family factory (V2.1, else V2):
+  // useResolvedArtistHouse's factoryAddress makes that pick, and the two
+  // factories share the V2 factory ABI.
   const v2FactoryLive =
+    sovereignV2_1Factory() !== null ||
     getAddressOrNull(SOVEREIGN_AUCTION_HOUSE_V2_FACTORY, MAINNET_CHAIN_ID) !==
-    null
+      null
   const targetVersion: 1 | 2 = houseVersion ?? (v2FactoryLive ? 2 : 1)
   // PND no longer creates listings on V1 houses (lib/auction-policy.ts): an
   // owner whose resolved house is still V1 upgrades first (HouseUpgradePanel,

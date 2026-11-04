@@ -3,6 +3,7 @@ import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { sql } from "./db"
 import { surfaceFactory } from "./collection"
 import { INDEXER_SCHEMA } from "./indexer-schema"
+import { PND_SOLD_STATUSES_SQL } from "./auction-policy"
 
 /** Foundation NFTMarket address — used as the `[house]` segment for FND auctions. */
 const FND_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
@@ -202,7 +203,7 @@ export async function getSettledAuctionForToken(
        FROM ${schema}.pnd_auctions
        WHERE token_contract = $1
          AND token_id = $2::numeric
-         AND status = 'settled'
+         AND status IN ${PND_SOLD_STATUSES_SQL}
        ORDER BY settled_at_time DESC
        LIMIT 1`,
       [contract, tokenId],
@@ -299,7 +300,7 @@ export async function getTokenAuctionSales(
                settled_at_time AS settled_at, lifecycle_tx_hash AS tx_hash
         FROM ${schema}.pnd_auctions
         WHERE lower(token_contract) = $1 AND token_id::text = $2
-          AND status = 'settled' AND winner IS NOT NULL)
+          AND status IN ${PND_SOLD_STATUSES_SQL} AND winner IS NOT NULL)
        UNION ALL
        (SELECT 'foundation' AS source, $3 AS market,
                auction_id::text AS auction_id,
@@ -580,7 +581,7 @@ export async function getPlatformStats(): Promise<PlatformStats | null> {
         db.unsafe(
           `SELECT COALESCE(SUM(seller_proceeds), 0)::text AS total
            FROM ${schema}.pnd_auctions
-           WHERE status = 'settled'`,
+           WHERE status IN ${PND_SOLD_STATUSES_SQL}`,
         ) as Promise<Array<{ total: string }>>,
         surfaceLive
           ? (db.unsafe(
@@ -945,7 +946,7 @@ export async function getActivityFeed(
             lifecycle_tx_hash::text,
             NULL::text
           FROM ${schema}.pnd_auctions
-          ${where("status = 'settled' AND settled_at_time IS NOT NULL", "settled_at_time")}
+          ${where(`status IN ${PND_SOLD_STATUSES_SQL} AND settled_at_time IS NOT NULL`, "settled_at_time")}
           ORDER BY settled_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})`)
 

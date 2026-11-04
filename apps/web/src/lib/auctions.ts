@@ -16,6 +16,7 @@ import { loggingFallbackTransport } from "./rpc-log"
 import { resolveDisplayNames } from "./artist-queries"
 import { toFndAuctionLite } from "./fnd-auction-lite"
 import { INDEXER_SCHEMA as schema } from "./indexer-schema"
+import { HELD_FOR_WINNER, houseFromIndexerVersion } from "./auction-policy"
 
 /**
  * v2 auctions module. The v1 file (1134 lines) probed both Foundation
@@ -82,7 +83,11 @@ export type AuctionState = {
   bidHistory: BidHistoryEntry[]
   // Sovereign house generation behind marketAddress; selects the write ABI
   // (V2 decodes its own custom errors). Always 1 for non-sovereign sources.
+  // V2.1 houses are 2 (same ABI) with houseIsV2_1 set.
   houseVersion: 1 | 2
+  // True only for a SovereignAuctionHouseV2_1 house (indexer version 21):
+  // held-for-winner settlement, ERC-1155 listings allowed.
+  houseIsV2_1: boolean
   tokenStandard: "erc721" | "erc1155"
   // ERC1155 lot size; 1 for ERC721.
   quantity: bigint
@@ -140,13 +145,15 @@ type V2Cols = {
 }
 function v2ColFields(r: V2Cols): {
   houseVersion: 1 | 2
+  houseIsV2_1: boolean
   tokenStandard: "erc721" | "erc1155"
   quantity: bigint
   fundsRecipient: Address | null
   listingExpiry: bigint
 } {
   return {
-    houseVersion: r.version === 2 ? 2 : 1,
+    // 1 = V1, 2 = V2, 21 = V2.1 (apps/indexer HOUSE_VERSION).
+    ...houseFromIndexerVersion(r.version),
     tokenStandard: r.standard === "erc1155" ? "erc1155" : "erc721",
     quantity: BigInt(r.quantity ?? "1"),
     fundsRecipient:
@@ -312,6 +319,7 @@ async function readFndAuctionForToken(
     fees,
     bidHistory,
     houseVersion: 1 as const,
+    houseIsV2_1: false,
     tokenStandard: "erc721" as const,
     quantity: 1n,
     fundsRecipient: null,
@@ -393,6 +401,7 @@ async function readFndSeedAuctionForToken(
     fees,
     bidHistory: [],
     houseVersion: 1 as const,
+    houseIsV2_1: false,
     tokenStandard: "erc721" as const,
     quantity: 1n,
     fundsRecipient: null,
@@ -438,6 +447,10 @@ export async function getSovereignAuctionByHouse(
 //   with the seller); terminal.
 // "unwound_return_pending", unwound, but the lot's return to the seller
 //   also failed; awaiting returnUnwoundLot.
+// V2.1-only:
+// "held_for_winner", the sale settled (seller paid) but delivery to the
+//   winner failed while the lot stayed transferable; the lot is escrowed
+//   until the winner's claimLot(id, to). No deadline, no refund path.
 export type AuctionDetailStatus =
   | "active"
   | "settled"
@@ -445,6 +458,7 @@ export type AuctionDetailStatus =
   | "deferred"
   | "unwound"
   | "unwound_return_pending"
+  | typeof HELD_FOR_WINNER
 
 /**
  * Full state of ONE auction, looked up by its on-chain identity (house +
@@ -476,6 +490,7 @@ export type AuctionDetail = {
   bids: BidHistoryEntry[]
   live: AuctionState | null
   houseVersion: 1 | 2
+  houseIsV2_1: boolean
   tokenStandard: "erc721" | "erc1155"
   quantity: bigint
   fundsRecipient: Address | null
@@ -496,7 +511,8 @@ function mapPndStatus(s: string): AuctionDetailStatus {
     s === "cancelled" ||
     s === "deferred" ||
     s === "unwound" ||
-    s === "unwound_return_pending"
+    s === "unwound_return_pending" ||
+    s === HELD_FOR_WINNER
     ? s
     : "active"
 }
@@ -570,8 +586,10 @@ async function getPndAuctionDetailById(
   // only fetch the standalone history for settled/cancelled auctions.
   const bids = status === "active" ? [] : await readPndBidHistory(r.id, displays)
 
+  // A held-for-winner lot (V2.1) is a completed sale: AuctionEnded already
+  // recorded the proceeds.
   const finalPriceWei =
-    status === "settled"
+    status === "settled" || status === HELD_FOR_WINNER
       ? BigInt(r.seller_proceeds ?? "0") + BigInt(r.protocol_fee ?? "0")
       : null
 
@@ -661,6 +679,7 @@ async function getFndAuctionDetailById(
     bids,
     live,
     houseVersion: 1 as const,
+    houseIsV2_1: false,
     tokenStandard: "erc721" as const,
     quantity: 1n,
     fundsRecipient: null,

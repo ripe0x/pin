@@ -1,6 +1,7 @@
 import "server-only"
 import { sql } from "./db"
 import { INDEXER_SCHEMA } from "./indexer-schema"
+import { PND_SOLD_STATUSES_SQL } from "./auction-policy"
 
 /**
  * The entire data-fetching surface for the v2 web app.
@@ -622,7 +623,7 @@ export async function getPlatformStats(): Promise<{
   )) as Array<{ n: number }>
   const settled = (await sql.unsafe(
     `SELECT COALESCE(SUM(amount), 0)::text AS total
-     FROM ${t("pnd_auctions")} WHERE status = 'settled'`,
+     FROM ${t("pnd_auctions")} WHERE status IN ${PND_SOLD_STATUSES_SQL}`,
   )) as Array<{ total: string }>
   return {
     housesDeployed: houses[0]?.n ?? 0,

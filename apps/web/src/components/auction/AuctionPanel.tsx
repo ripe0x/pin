@@ -36,10 +36,9 @@ import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import { parseListingExpiry } from "@/lib/listing-expiry"
 import { usePreflight } from "@/lib/use-preflight"
 import {
-  ERC1155_SETTLEMENT_NOTE,
   V1_BIDS_PAUSED_NOTICE,
   canBid,
-  showsSettlementDelayNote,
+  settlementNoteFor,
 } from "@/lib/auction-policy"
 import type {
   AuctionFees,
@@ -371,9 +370,10 @@ export function AuctionPanel({
           <V1BidsPausedNotice auction={auction} />
         )}
 
-        {phase !== "settled" && showsSettlementDelayNote(auction) && (
+        {/* V2 1155: settlement can be delayed. V2.1 1155: held-for-winner. */}
+        {phase !== "settled" && settlementNoteFor(auction) && (
           <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
-            {ERC1155_SETTLEMENT_NOTE}
+            {settlementNoteFor(auction)}
           </p>
         )}
 
