@@ -88,7 +88,7 @@ contract SovereignAuctionHouseV2_1 is
     /// @dev Revert payload of probeTransfer when the probe transfer and its
     ///      verification both succeeded. Only probeTransfer's own code can
     ///      produce it: every token call inside the probe is wrapped in
-    ///      try/catch, so a token cannot bubble a forged payload out.
+    ///      try/catch, so no token revert payload can reach the caller.
     error LotTransferable();
     /// @dev Revert payload of probeTransfer when the lot could not be moved.
     error LotNotTransferable();

@@ -25,7 +25,7 @@ contract V21Mock1155 is ERC1155 {
 ///      has switched acceptance on, and only inside a transaction its owner
 ///      started. Models a winner that chooses when (and whether) to take
 ///      delivery after the hammer.
-contract OptionBidder {
+contract DeferringBidder {
     address internal immutable _owner;
     bool public accept;
 
@@ -92,8 +92,8 @@ contract LargeRevertBidder {
 /// @dev ERC1155 whose outbound transfers (house to anyone) can be made to
 ///      revert with the house's LotTransferable selector, to show the probe
 ///      result cannot be produced by token revert data.
-contract ForgingERC1155 is ERC1155 {
-    bool public forge;
+contract SelectorRevertERC1155 is ERC1155 {
+    bool public revertWithSelector;
 
     constructor() ERC1155("") {}
 
@@ -101,15 +101,15 @@ contract ForgingERC1155 is ERC1155 {
         _mint(to, id, amount, "");
     }
 
-    function setForge(bool value) external {
-        forge = value;
+    function setRevertWithSelector(bool value) external {
+        revertWithSelector = value;
     }
 
     function safeTransferFrom(address from, address to, uint256 id, uint256 value, bytes memory data)
         public
         override
     {
-        if (forge && from == msg.sender) {
+        if (revertWithSelector && from == msg.sender) {
             bytes4 sel = SovereignAuctionHouseV2_1.LotTransferable.selector;
             assembly {
                 mstore(0, sel)
@@ -202,12 +202,12 @@ contract SovereignAuctionHouseV2_1Test is Test {
         auctionId = house.create1155Auction(ID, address(token), QUANTITY, DURATION, RESERVE, 0);
     }
 
-    function _optionBidder() internal returns (OptionBidder ob) {
+    function _deferringBidder() internal returns (DeferringBidder ob) {
         vm.prank(bidderOwner);
-        ob = new OptionBidder();
+        ob = new DeferringBidder();
     }
 
-    function _bidAs(OptionBidder ob, uint256 auctionId, uint256 amount) internal {
+    function _bidAs(DeferringBidder ob, uint256 auctionId, uint256 amount) internal {
         vm.prank(bidderOwner, bidderOwner);
         ob.bid{value: amount}(address(house), auctionId);
     }
@@ -259,19 +259,19 @@ contract SovereignAuctionHouseV2_1Test is Test {
         house.deliverERC1155(address(token), ID, QUANTITY, alice);
     }
 
-    // --------------------------------------------- audit finding 1 (PoCs)
+    // ------------------------------------- winner-side delivery failure
 
     /// @dev Regression for the 1155 refuse-then-unwind case. An honest bid is
     ///      displaced by a contract bidder that refuses delivery. In V2 it
     ///      could wait out the timeout and take a full refund. In V2.1 the
     ///      sale settles at endAuction: the seller and protocol are paid,
     ///      the lot is held for the winner, and no refund path exists.
-    function test_PoC_1155RefuseThenUnwind_PaysSellerAndHoldsLot() public {
+    function test_Regression_1155RefuseThenUnwind_PaysSellerAndHoldsLot() public {
         uint256 id = _list1155();
         vm.prank(alice, alice);
         house.createBid{value: 2 ether}(id);
 
-        OptionBidder ob = _optionBidder();
+        DeferringBidder ob = _deferringBidder();
         _bidAs(ob, id, 10 ether);
         assertEq(alice.balance, 100 ether, "outbid bidder refunded");
 
@@ -321,12 +321,12 @@ contract SovereignAuctionHouseV2_1Test is Test {
         assertEq(address(house).balance, 0);
     }
 
-    /// @dev Regression for the option-exercise case: the winner takes
+    /// @dev Regression for the late-claim case: the winner takes
     ///      delivery late, on its own terms, but it has already paid; there
     ///      is no outcome in which it gets the bid back instead.
-    function test_PoC_1155OptionExercise_NoRefundPossible() public {
+    function test_Regression_1155LateClaim_NoRefundPossible() public {
         uint256 id = _list1155();
-        OptionBidder ob = _optionBidder();
+        DeferringBidder ob = _deferringBidder();
         _bidAs(ob, id, 1 ether);
         vm.warp(block.timestamp + DURATION + 1);
         house.endAuction(id);
@@ -345,7 +345,7 @@ contract SovereignAuctionHouseV2_1Test is Test {
     /// @dev A held lot has no deadline: the winner can claim years later.
     function test_HeldLotHasNoDeadline() public {
         uint256 id = _list1155();
-        OptionBidder ob = _optionBidder();
+        DeferringBidder ob = _deferringBidder();
         _bidAs(ob, id, 1 ether);
         vm.warp(block.timestamp + DURATION + 1);
         house.endAuction(id);
@@ -464,7 +464,7 @@ contract SovereignAuctionHouseV2_1Test is Test {
         paused.setApprovalForAll(address(house), true);
         vm.prank(artist);
         uint256 id = house.create1155Auction(ID, address(paused), QUANTITY, DURATION, RESERVE, 0);
-        OptionBidder ob = _optionBidder();
+        DeferringBidder ob = _deferringBidder();
         _bidAs(ob, id, RESERVE);
         paused.pause();
         vm.warp(block.timestamp + DURATION + 1);
@@ -490,7 +490,7 @@ contract SovereignAuctionHouseV2_1Test is Test {
         assertEq(paused.balanceOf(address(ob), ID), QUANTITY);
     }
 
-    /// @dev Audit finding 3 (documented trade-off, unchanged from V2): the
+    /// @dev Documented trade-off, unchanged from V2: the
     ///      party that controls the collection can block every transfer after
     ///      the hammer and, once the timeout has passed, have the sale
     ///      unwound. The winner gets its full bid back; it loses only the
@@ -523,16 +523,16 @@ contract SovereignAuctionHouseV2_1Test is Test {
     /// @dev A token cannot fake a transferable result by reverting with the
     ///      probe's success selector: every token call in the probe is
     ///      caught, so the lot is treated as stuck and nobody is paid.
-    function test_ProbeResultCannotBeForgedByTokenRevertData() public {
-        ForgingERC1155 forging = new ForgingERC1155();
-        forging.mint(artist, ID, QUANTITY);
+    function test_ProbeResultIgnoresTokenRevertData() public {
+        SelectorRevertERC1155 selToken = new SelectorRevertERC1155();
+        selToken.mint(artist, ID, QUANTITY);
         vm.prank(artist);
-        forging.setApprovalForAll(address(house), true);
+        selToken.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 id = house.create1155Auction(ID, address(forging), QUANTITY, DURATION, RESERVE, 0);
+        uint256 id = house.create1155Auction(ID, address(selToken), QUANTITY, DURATION, RESERVE, 0);
         vm.prank(alice, alice);
         house.createBid{value: RESERVE}(id);
-        forging.setForge(true);
+        selToken.setRevertWithSelector(true);
         vm.warp(block.timestamp + DURATION + 1);
 
         house.endAuction(id);
@@ -590,7 +590,7 @@ contract SovereignAuctionHouseV2_1Test is Test {
         SovereignAuctionHouseV2_1 h = wallet.house();
 
         vm.prank(bidderOwner);
-        OptionBidder ob = new OptionBidder();
+        DeferringBidder ob = new DeferringBidder();
         vm.prank(bidderOwner, bidderOwner);
         ob.bid{value: RESERVE}(address(h), id);
         vm.warp(block.timestamp + DURATION + 1);
@@ -604,7 +604,7 @@ contract SovereignAuctionHouseV2_1Test is Test {
 
     function test_HeldLotIsLockedAgainstEveryOtherEntryPoint() public {
         uint256 id = _list1155();
-        OptionBidder ob = _optionBidder();
+        DeferringBidder ob = _deferringBidder();
         _bidAs(ob, id, RESERVE);
         vm.warp(block.timestamp + DURATION + 1);
         house.endAuction(id);

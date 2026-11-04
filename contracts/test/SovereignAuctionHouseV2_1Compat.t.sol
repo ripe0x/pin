@@ -232,7 +232,7 @@ contract Sovereign1155AuctionHouseV2_1CompatTest is Sovereign1155AuctionHouseTes
         assertEq(artist.balance - sellerBefore, RESERVE - _fee(), "no second payment on claim");
     }
 
-    /// @dev V2.1 regression for audit finding 1: a winner that always rejects
+    /// @dev V2.1 regression: a winner that always rejects
     ///      delivery can no longer wait out the timeout for a refund. The
     ///      sale settled at endAuction; there is nothing to unwind.
     function test_UnwindStuckLotRefundsWinnerAndReturnsLotToSeller() public override {
