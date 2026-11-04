@@ -2,6 +2,16 @@ import "server-only"
 import { sql } from "./db"
 import { INDEXER_SCHEMA } from "./indexer-schema"
 import { artistTokenRefsSql } from "./artist-token-refs"
+import {
+  DEFAULT_GALLERY_SORT,
+  NO_AVAILABILITY_TABLES,
+  galleryOrderBySql,
+  loadAvailabilityTables,
+  saleStateSql,
+  type AvailabilityTables,
+  type GallerySort,
+  type SaleState,
+} from "./availability"
 
 /**
  * The entire data-fetching surface for the v2 web app.
@@ -35,12 +45,21 @@ export type ArtistTokenRow = {
   // MURI on-chain preservation overlay (null if the token isn't registered).
   muriPreserved: boolean
   muriUriCount: number | null
+  /** Live auction / listing from Postgres (lib/availability.ts), or null. */
+  sale: SaleState | null
 }
 
+/**
+ * One page of an artist's works. `sort` "availability" (default) ranks
+ * live auctions, then listed works, then the rest by mint recency across
+ * the artist's whole inventory before paginating (#297), so a live
+ * listing on the oldest token is on page one; "newest" is mint recency.
+ */
 export async function getArtistTokens(
   artist: string,
   page = 0,
   pageSize = 24,
+  sort: GallerySort = DEFAULT_GALLERY_SORT,
 ): Promise<{ tokens: ArtistTokenRow[]; total: number }> {
   if (!sql) return { tokens: [], total: 0 }
   const lower = artist.toLowerCase()
@@ -66,13 +85,21 @@ export async function getArtistTokens(
   )) as Array<{ n: number }>
   const total = totalRows[0]?.n ?? 0
 
-  const rows = (await sql.unsafe(
-    `WITH refs AS (${refsSql})
+  // Sale state joins only the sources that exist on this DB (Ponder
+  // tables follow INDEXER_SCHEMA; the SR/TL trackers are migrations
+  // 014/015). "newest" skips it entirely.
+  const db = sql
+  const pageQuery = (tables: AvailabilityTables) => db.unsafe(
+    `WITH refs AS (${refsSql}),
+          sale AS (${saleStateSql(INDEXER_SCHEMA, tables, "refs")})
      SELECT r.contract, r.token_id, r.platform,
             r.mint_block::text AS mint_block, r.mint_log_index,
             m.name, m.image_url, m.animation_url, o.owner,
-            mu.artist_uri_count AS muri_uri_count
+            mu.artist_uri_count AS muri_uri_count,
+            s.sale_rank, s.source AS sale_source, s.ends_at::text AS sale_ends_at
      FROM refs r
+     LEFT JOIN sale s
+       ON s.contract = r.contract AND s.token_id = r.token_id
      LEFT JOIN token_metadata m
        ON m.contract = r.contract AND m.token_id = r.token_id
      LEFT JOIN token_owners o
@@ -81,12 +108,22 @@ export async function getArtistTokens(
        ON lower(mu.contract) = r.contract AND mu.token_id::text = r.token_id
      WHERE COALESCE(m.burned, false) = false
        AND (o.owner IS NULL OR o.owner <> '0x0000000000000000000000000000000000000000')
-     -- contract/token_id break ties (e.g. fast-backfilled rows share
+     -- contract/token_id end every order (e.g. fast-backfilled rows share
      -- mint_log_index 0) so OFFSET pages never overlap or skip.
-     ORDER BY r.mint_block DESC, r.mint_log_index DESC, r.contract, r.token_id
+     ORDER BY ${galleryOrderBySql(sort, "r", "s")}
      LIMIT $2 OFFSET $3`,
     [lower, pageSize, offset],
-  )) as Array<{
+  )
+  const tables = sort === "availability"
+    ? await loadAvailabilityTables(db, INDEXER_SCHEMA).catch(() => NO_AVAILABILITY_TABLES)
+    : NO_AVAILABILITY_TABLES
+  // A sale-state failure must not take the gallery down: fall back to
+  // the same page without it (mint recency).
+  const rows = (await pageQuery(tables).catch((err) => {
+    if (tables === NO_AVAILABILITY_TABLES) throw err
+    console.error("[reads] artist sale state failed; ordering by recency:", err)
+    return pageQuery(NO_AVAILABILITY_TABLES)
+  })) as unknown as Array<{
     contract: string
     token_id: string
     platform: string
@@ -97,6 +134,9 @@ export async function getArtistTokens(
     animation_url: string | null
     owner: string | null
     muri_uri_count: number | null
+    sale_rank: number | null
+    sale_source: string | null
+    sale_ends_at: string | null
   }>
 
   return {
@@ -112,6 +152,14 @@ export async function getArtistTokens(
       owner: r.owner,
       muriPreserved: r.muri_uri_count != null,
       muriUriCount: r.muri_uri_count,
+      sale:
+        r.sale_rank == null
+          ? null
+          : {
+              rank: Number(r.sale_rank) === 0 ? 0 : 1,
+              source: r.sale_source ?? "",
+              endsAt: r.sale_ends_at == null ? null : Number(r.sale_ends_at),
+            },
     })),
     total,
   }

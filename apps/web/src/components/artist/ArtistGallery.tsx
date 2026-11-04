@@ -29,16 +29,20 @@ export function ArtistGallery({
     !!connectedAddress &&
     connectedAddress.toLowerCase() === artistAddress.toLowerCase()
 
+  // Server-side order for every page (lib/availability.ts): the SSR page
+  // and each fetched page must agree or OFFSET pages would overlap.
+  const sort = initialPage.sort ?? "availability"
+
   const {
     data,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<GalleryPage>({
-    queryKey: ["artist-tokens", artistAddress.toLowerCase()],
+    queryKey: ["artist-tokens", artistAddress.toLowerCase(), sort],
     queryFn: async ({ pageParam = 0 }) => {
       const res = await fetch(
-        `/api/artist/${artistAddress}/tokens?page=${pageParam}&pageSize=${initialPage.pageSize}`,
+        `/api/artist/${artistAddress}/tokens?page=${pageParam}&pageSize=${initialPage.pageSize}&sort=${sort}`,
       )
       if (!res.ok) throw new Error("Failed to load tokens")
       return res.json()
@@ -55,10 +59,12 @@ export function ArtistGallery({
   // response somehow returning a token already shown on a prior page (e.g.
   // a CDN cache-key bug serving the same page twice).
   //
-  // Sort: works currently in a Sovereign auction cluster at the top in
-  // active → ending → listed order, then everything else. Within every
-  // bucket, newest mint first (discovery order from `ORDER BY mint_block
-  // DESC`).
+  // The server already ranks the whole inventory by availability (live
+  // auctions, then listed, then the rest) before paginating. On top of
+  // that, in "availability" mode, loaded works in a Sovereign/FND auction
+  // cluster in active → ending → listed order (live bid state the server
+  // ranking doesn't carry); within every bucket, server order is kept.
+  // "newest" keeps the server's pure mint-recency order.
   const items = useMemo<GalleryItem[]>(() => {
     const seen = new Set<string>()
     const deduped = (data?.pages ?? [])
@@ -69,6 +75,7 @@ export function ArtistGallery({
         seen.add(key)
         return true
       })
+    if (sort === "newest") return deduped
     const bucketRank = (item: GalleryItem) => {
       if (!item.auction) return 3
       if (item.auction.bucket === "active") return 0
@@ -80,12 +87,11 @@ export function ArtistGallery({
       .sort((a, b) => {
         const r = bucketRank(a.item) - bucketRank(b.item)
         if (r !== 0) return r
-        // Within a bucket, preserve discovery order, which is mint-recency
-        // (newest first) from the `ORDER BY mint_block DESC` query.
+        // Within a bucket, preserve the server's order.
         return a.idx - b.idx
       })
       .map((entry) => entry.item)
-  }, [data])
+  }, [data, sort])
 
   // Pin-status check across all loaded items. Re-runs as more pages load.
   const [pinStatuses, setPinStatuses] = useState<Map<string, PinStatus>>(
@@ -163,6 +169,24 @@ export function ArtistGallery({
 
   return (
     <div className="space-y-6">
+      <nav aria-label="Sort works" className="flex gap-4 text-xs text-gray-500">
+        {(
+          [
+            ["availability", "Available first", `/artist/${artistAddress}`],
+            ["newest", "Newest", `/artist/${artistAddress}?sort=newest`],
+          ] as const
+        ).map(([key, label, href]) => (
+          <Link
+            key={key}
+            href={href}
+            scroll={false}
+            aria-current={sort === key ? "page" : undefined}
+            className={sort === key ? "text-fg" : "hover:text-fg transition-colors"}
+          >
+            {label}
+          </Link>
+        ))}
+      </nav>
       <div className="columns-1 sm:columns-2 lg:columns-4 gap-6 [&>*]:mb-6 [&>*]:break-inside-avoid">
         {items.map((item) => (
           <GalleryCard

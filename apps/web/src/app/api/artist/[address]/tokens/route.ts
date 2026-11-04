@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getArtistGalleryPage } from "@/lib/artist-queries"
+import { parseGallerySort } from "@/lib/availability"
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
 import { isCrawlerUserAgent } from "@/lib/crawler"
 import { withSingleFlight } from "@/lib/single-flight"
@@ -50,6 +51,9 @@ export async function GET(
     Math.max(1, Number.isFinite(requestedSize) ? requestedSize | 0 : DEFAULT_PAGE_SIZE),
     MAX_PAGE_SIZE,
   )
+  // "availability" (default): live/listed works first across the whole
+  // inventory; "newest": mint recency (lib/availability.ts).
+  const sort = parseGallerySort(url.searchParams.get("sort"))
 
   try {
     // Single-flight: concurrent same-(address,page,pageSize) callers
@@ -59,8 +63,8 @@ export async function GET(
       "/api/artist/[address]/tokens",
       () =>
         withSingleFlight(
-          `gallery-page:${address.toLowerCase()}:${page}:${pageSize}`,
-          () => getArtistGalleryPage(address, page, pageSize),
+          `gallery-page:${address.toLowerCase()}:${page}:${pageSize}:${sort}`,
+          () => getArtistGalleryPage(address, page, pageSize, sort),
         ),
     )
 

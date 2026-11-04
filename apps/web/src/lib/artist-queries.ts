@@ -33,6 +33,12 @@ import {
   type SovereignAuctionLite,
 } from "./auctions"
 import { getMuriUriCounts } from "./reads"
+import { getArtistSaleStates } from "./artist-availability"
+import {
+  DEFAULT_GALLERY_SORT,
+  rankRefsByAvailability,
+  type GallerySort,
+} from "./availability"
 import { extractCid, ipfsToHttp } from "@pin/shared"
 
 // Module-level singleton used for ENS lookups + a multicall in
@@ -531,25 +537,39 @@ export type GalleryPage = {
   page: number
   pageSize: number
   hasMore: boolean
+  /** Order the pages are in (see getArtistGalleryPage). */
+  sort: GallerySort
 }
 
 /**
  * Fetch one page of an artist's gallery: refs (cached), enriched metadata
  * (cached per page), and buy-prices (one multicall per request). Used by
  * both SSR (initial paint) and the paginated API route.
+ *
+ * `sort` "availability" (default, #297) ranks the artist's WHOLE
+ * inventory by Postgres sale state before slicing: live auctions (ending
+ * soonest first), then listed works, then the rest, newest mint first
+ * within each tier. So an old token with a live listing lands on page
+ * one instead of wherever its mint block puts it. "newest" is plain mint
+ * recency. If the sale-state read fails the order degrades to "newest".
  */
 export async function getArtistGalleryPage(
   artistAddress: string,
   page: number,
   pageSize: number,
+  sort: GallerySort = DEFAULT_GALLERY_SORT,
 ): Promise<GalleryPage> {
-  const refs = await getCachedTokenRefs(artistAddress)
+  const allRefs = await getCachedTokenRefs(artistAddress)
+  const refs =
+    sort === "availability"
+      ? rankRefsByAvailability(allRefs, await getArtistSaleStates(artistAddress), sort)
+      : allRefs
   const total = refs.length
   const start = page * pageSize
   const slice = refs.slice(start, start + pageSize)
 
   if (slice.length === 0) {
-    return { tokens: [], total, page, pageSize, hasMore: false }
+    return { tokens: [], total, page, pageSize, hasMore: false, sort }
   }
 
   const [enriched, prices, auctionMap, fndAuctionMap, muriCounts] = await Promise.all([
@@ -596,6 +616,7 @@ export async function getArtistGalleryPage(
     page,
     pageSize,
     hasMore: start + slice.length < total,
+    sort,
   }
 }
 
