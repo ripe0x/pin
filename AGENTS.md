@@ -15,7 +15,8 @@ apps/web      Next.js. Reads Postgres ONLY. Never scans the chain for
 apps/worker   Node. Owns ALL per-token chain scanning + enrichment.
               Writes the public-schema tables web reads: artist_tokens,
               token_owners, token_transfers, token_metadata,
-              token_1155_stats, token_1155_mints, contract_identity,
+              token_1155_stats, token_1155_mints, token_1155_transfers,
+              token_1155_balances, contract_identity,
               ens_identities, worker_cursors/iterations.
 apps/indexer  Ponder. DISCOVERY ONLY for the long tail (which artist
               deployed which contract): mint_creators, tl_creators,

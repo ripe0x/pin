@@ -40,6 +40,8 @@ the **`public` schema** — different tables, never touched by Ponder.
     artist deployed (platforms: `manifold`, `mint`, `tl`, `fnd-collection`)
   - `token_metadata` — name/description/image (tokenURI + IPFS resolve)
   - `token_owners`, `token_transfers` — ownership + transfer history
+  - `token_1155_transfers`, `token_1155_balances` — ERC-1155 ledger and
+    per-holder balances (`scan-1155-balances`, migration 034)
   - `contract_identity`, `ens_identities` — contract + ENS lookups
   - `manifold_contracts` — Manifold contract classification cache
   - `worker_cursors`, `worker_iterations` — scan progress + audit log
@@ -67,6 +69,25 @@ the **`public` schema** — different tables, never touched by Ponder.
 - `GET /health` is per task (`task-health.ts`): 503 when any task has
   failed 3 runs in a row, is running past its timeout, or hasn't run in
   3× its interval. `/metrics` adds backoff and backfill-queue summaries.
+- Ownership (#296):
+  - Shared Foundation / SR V2 1/1s: `scan-token-transfers` never scans
+    those contracts. `mirror-shared-owners` copies Ponder's
+    `<INDEXER_SCHEMA>.token_ownership` (ponder_v5+, every Transfer on
+    both contracts) into `token_owners`, finalized blocks only, ordered
+    by (block, log index), zero RPC. It is a no-op while the schema
+    lacks the table. FND tokens minted before Ponder's FND start block
+    that never moved since get one bounded `ownerOf` each, never a
+    recurring sweep (`owner-mirror.ts` explains why one is enough).
+  - ERC-1155: `scan-1155-balances` scans every TransferSingle /
+    TransferBatch on the 1155 contracts known artists deployed (Mint
+    clones, Manifold 1155 cores) into a raw ledger, and recomputes the
+    touched tokens' balances from it in the same transaction, so replay
+    and out-of-order ranges are idempotent (`erc1155-balances.ts`).
+    `scan-1155-stats` derives `owner_count` from the balances once a
+    contract has caught up.
+  - Web: `getCollectorTokens` (reads.ts) unions `token_owners`, 1155
+    balances and Surface `collection_tokens.owner` (guarded), keyset
+    paginated; `GET /api/collector/[address]/holdings` serves it.
 - `prune-retention` (hourly) prunes expired `cache_entries`, old
   `worker_iterations`, stale `rate_limits` and `scan_backoff` rows.
 
