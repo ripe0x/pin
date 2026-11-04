@@ -9,8 +9,8 @@ caller-supplied seed with no token existing. A preview is a pure function of
 chain state, like the live view, so an integrator can `eth_call` sample outputs
 without a token.
 
-A renderer that can render from `(tokenId, seed)` alone implements this;
-[ScriptyRenderer](/docs/surface/contracts/scripty-renderer) does. A renderer
+A renderer that can render from `(tokenId, seed)` alone, such as an artist's
+seed-driven SVG or onchain HTML renderer, can implement this. A renderer
 whose output depends on state a seed cannot supply (sibling tokens, companion
 contracts, mint-time data recorded by a mint hook) does not. Detection is a
 try/catch `eth_call`, the repo convention, not ERC-165.

@@ -106,9 +106,9 @@ in `SaleConfig`: the minter initializes `referralShareBps` to its cap,
 own renderer: deploy a work-specific `IRenderer` that owns its algorithm and
 dependency references (however it chooses to store them), then point the
 collection's `renderer` slot at it, either as `cfg.renderer` at deploy or later
-with `setRenderer`. Edition presets and Solidity-SVG works point `cfg.renderer` at a shared
-metadata renderer or a self-contained SVG renderer, where the renderer contract
-itself is the work. Leaving `cfg.renderer` at zero only works when the factory
+with `setRenderer`. Editions and Solidity-SVG works point `cfg.renderer` at the
+artist's own metadata renderer or self-contained SVG renderer, where the
+renderer contract itself is the work; PND ships no shared renderer. Leaving `cfg.renderer` at zero only works when the factory
 carries a `defaultRenderer`, and the mainnet factory does not. See
 [Write a renderer](/docs/surface/guides/write-a-renderer) and the
 [Injection convention](/docs/surface/reference/injection-convention).
@@ -172,11 +172,10 @@ call it through a contract rather than an EOA transaction.
 On the token, the owner can still call `setRenderer` and the config setters
 until they lock things down with `lockRenderer` and `lockSupply`, and manage
 minters with `setMinter` / `lockMinter`. On the minter, the owner (or an admin
-they grant on the collection) can change the sale config. Presentation data is
-published separately: a generative work lives in the artist's own renderer, and
-cover art and captures go to
-[RenderAssets](/docs/surface/contracts/render-assets). Nothing about either
-clone's code changes; only its slot pointers and stored config do. See:
+they grant on the collection) can change the sale config. Presentation data
+lives in the artist's own renderer: the work's algorithm, each token's `image`,
+and the cover in `contractURI`; the token stores none of it. Nothing about
+either clone's code changes; only its slot pointers and stored config do. See:
 
 - [Slots and modules](/docs/surface/concepts/four-slots) for the renderer
   slot, the minter, and the price-strategy slot

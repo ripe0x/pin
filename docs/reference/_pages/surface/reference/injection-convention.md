@@ -32,7 +32,7 @@ window.tokenData = {
 - `"preview"`: a render from a caller-supplied seed with no token existing (`previewURI` onchain, test seeds in the studio, a mint page's pre-mint explore). Composition MUST be exactly what the same seed would produce as a token, but presentation MAY adapt (e.g. skip a long intro).
 - `"capture"`: an offchain headless render for a static image (thumbnail, OG). Code MAY jump straight to the canonical still (skip animation), and MUST settle on it deterministically.
 
-Previews are also an onchain capability: renderers that can render faithfully from `(tokenId, seed)` alone implement the OPTIONAL [IPreviewRenderer](/docs/surface/contracts/i-preview-renderer) extension ([ScriptyRenderer](/docs/surface/contracts/scripty-renderer) does; a bespoke [IRenderer](/docs/surface/contracts/i-renderer) implements it directly when its art is a pure function of the seed). A renderer whose output depends on state a seed cannot supply (sibling tokens, companion contracts, mint-time data recorded by a mint hook) does not implement it; detection is a try/catch `eth_call`. A preview document MUST inject `context: "preview"`, and preview metadata carries no provenance attributes.
+Previews are also an onchain capability: renderers that can render faithfully from `(tokenId, seed)` alone implement the OPTIONAL [IPreviewRenderer](/docs/surface/contracts/i-preview-renderer) extension (an artist's [IRenderer](/docs/surface/contracts/i-renderer) implements it directly when its art is a pure function of the seed). A renderer whose output depends on state a seed cannot supply (sibling tokens, companion contracts, mint-time data recorded by a mint hook) does not implement it; detection is a try/catch `eth_call`. A preview document MUST inject `context: "preview"`, and preview metadata carries no provenance attributes.
 
 ## Determinism rules for pure works
 
@@ -59,7 +59,7 @@ Body tag order in the assembled HTML:
 3. the artist's code (the work's code files, each per its code kind)
 4. gunzip helper (plain script, from onchain storage), LAST, present only when any tag is gzipped. The helper decompresses at its own parse time by scanning the gzip tags that PRECEDE it and replacing each with an executing script tag in document order; placed earlier it would find nothing. Gzipped tags do not execute at parse time, so execution order remains: deps, then (already-parsed) context, then code, with libraries like p5 auto-starting off the late load.
 
-A generative renderer typically emits the document with ScriptyBuilderV2 (`getEncodedHTMLString`) and returns it as `data:text/html;base64,…` in the metadata `animation_url`. See [Write a renderer](/docs/surface/guides/write-a-renderer) for how a collection's `renderer` slot points at a generative renderer and how such a renderer stores and locks its work.
+A generative renderer typically emits the document with ScriptyBuilderV2 (`getEncodedHTMLString`) and returns it as `data:text/html;base64,…` in the metadata `animation_url`. The renderer is the artist's own contract; PND ships no assembler template. See [Write a renderer](/docs/surface/guides/write-a-renderer) for how a collection's `renderer` slot points at a generative renderer and how such a renderer stores and locks its work.
 
 ## Offchain parity implementations
 
@@ -83,12 +83,16 @@ Every token's canonical entropy is stored once, at mint, on the collection
 core, and read via `tokenSeed(tokenId)`:
 
 ```solidity
+// Surface v2
+seed = keccak256(abi.encode(block.prevrandao, collectionAddress, tokenId))
+// Surface v1
 seed = keccak256(abi.encode(block.prevrandao, collectionAddress, tokenId, mintIndex))
 ```
 
 The inputs: `prevrandao` gives block-level freshness; `collectionAddress`
-prevents cross-collection reuse; `tokenId` and `mintIndex` give per-token and
-per-instance uniqueness (the index re-rolls a pooled re-mint of the same id).
+prevents cross-collection reuse; `tokenId` gives per-token uniqueness. On v1,
+`mintIndex` adds per-instance uniqueness (it re-rolls a pooled re-mint of the
+same id); v2 has no pooled mode, so it drops the index.
 The recipient is not mixed in: it adds no unpredictability, and including it
 would make the seed depend on the minter.
 

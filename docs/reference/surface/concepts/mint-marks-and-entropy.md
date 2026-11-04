@@ -41,6 +41,11 @@ as:
 keccak256(abi.encode(block.prevrandao, address(this), tokenId, mintIndex))
 ```
 
+[Surface v2](/docs/surface/contracts/surface-v2) has no pooled mode, so it
+drops `mintIndex`: `keccak256(abi.encode(block.prevrandao, address(this),
+tokenId))`. Either way a renderer reads the stored value through `tokenSeed`
+and never re-derives it.
+
 - **The only per-token storage**: the seed is the one fact that can never be
   reconstructed later, since randomness only exists at mint time. Everything
   else about a mint is derivable or event-recorded, so nothing else is stored,
