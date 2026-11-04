@@ -16,18 +16,28 @@
  * Read-only; every change is a wallet transaction the panels send.
  */
 
-import { NextResponse } from "next/server"
+import { NextResponse, type NextRequest } from "next/server"
 import { isAddress, type Address } from "viem"
 import { getSurfaceV2State } from "@/lib/collection-onchain"
 import { allowlistCount } from "@/lib/allowlist"
 import { NOT_SURFACE_BODY } from "@/lib/not-surface"
 import { ZERO_ROOT } from "@/lib/surface-v2-studio"
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
 
 type Params = { params: Promise<{ address: string }> }
 
 export const dynamic = "force-dynamic"
 
-export async function GET(_req: Request, { params }: Params) {
+export async function GET(req: NextRequest, { params }: Params) {
+  // Uncached live chain reads: bound them per client. The studio panels
+  // re-read after each confirmed write, well inside this budget.
+  const rl = checkRateLimit("collection-v2-state", getClientIp(req), 60_000, 30)
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "rate-limited" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    )
+  }
   const { address } = await params
   if (!isAddress(address)) {
     return NextResponse.json({ error: "Bad collection address." }, { status: 400 })
