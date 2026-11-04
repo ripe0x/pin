@@ -34,6 +34,8 @@ import { scanPndAuctionTokens } from "./tasks/scan-pnd-auction-tokens.ts"
 import { probeCidAvailability } from "./tasks/probe-cid-availability.ts"
 import { captureCollectionMedia } from "./tasks/capture-collection-media.ts"
 import { deriveTokenMedia } from "./tasks/derive-token-media.ts"
+import { pruneRetention } from "./tasks/prune-retention.ts"
+import { defaultTaskTimeoutMs, type TaskHealthInput } from "./task-health.ts"
 
 type TaskName =
   | "seed-known-artists"
@@ -54,6 +56,7 @@ type TaskName =
   | "ponder-drift-check"
   | "capture-collection-media"
   | "derive-token-media"
+  | "prune-retention"
 
 export type TaskResult = {
   rpcCalls?: number
@@ -86,6 +89,11 @@ type Task = {
   intervalMs: number
   fn: () => Promise<TaskResult>
   dependsOnPonder?: boolean
+  /**
+   * A run longer than this makes /health report the task as stuck.
+   * Defaults to 6x the interval, at least 2 hours (task-health.ts).
+   */
+  timeoutMs?: number
 }
 
 const MIN = 60_000
@@ -117,10 +125,39 @@ const tasks: Task[] = [
   // run is bounded by CAPTURE_BATCH_SIZE.
   { name: "capture-collection-media", intervalMs: 10 * MIN, fn: captureCollectionMedia, dependsOnPonder: true },
   { name: "derive-token-media", intervalMs: 5 * MIN, fn: deriveTokenMedia, dependsOnPonder: true },
+  // Retention for the shared DB: expired cache_entries, old
+  // worker_iterations, stale rate_limits / scan_backoff (#351 phase 0).
+  // Pure SQL, bounded batches; no RPC.
+  { name: "prune-retention", intervalMs: 60 * MIN, fn: pruneRetention },
 ]
 
-const runState = new Map<TaskName, { running: boolean; lastRun: Date | null }>()
+type RunState = {
+  running: boolean
+  runningSince: Date | null
+  /** Last time a run finished (ok or not). */
+  lastRun: Date | null
+  lastOkAt: Date | null
+  /** Last time a run was skipped because Ponder wasn't ready. */
+  lastSkippedAt: Date | null
+  consecutiveFailures: number
+  lastError: string | null
+}
+
+const runState = new Map<TaskName, RunState>()
 let lastTickAt: Date | null = null
+const bootAt = new Date()
+
+function stateOf(name: TaskName): RunState {
+  return runState.get(name) ?? {
+    running: false,
+    runningSince: null,
+    lastRun: null,
+    lastOkAt: null,
+    lastSkippedAt: null,
+    consecutiveFailures: 0,
+    lastError: null,
+  }
+}
 
 // Refresh-artist HTTP jobs queue. Single-flight per address.
 const refreshQueue = new Set<string>()
@@ -134,12 +171,35 @@ export function getLastTickAt(): Date | null {
   return lastTickAt
 }
 
+export function getBootAt(): Date {
+  return bootAt
+}
+
 export function getTaskStats(): Record<string, { running: boolean; lastRun: string | null }> {
   const out: Record<string, { running: boolean; lastRun: string | null }> = {}
   for (const [k, v] of runState) {
     out[k] = { running: v.running, lastRun: v.lastRun?.toISOString() ?? null }
   }
   return out
+}
+
+/** Per-task inputs for /health (task-health.ts evaluates them). */
+export function getTaskHealthInputs(): TaskHealthInput[] {
+  return tasks.map((t) => {
+    const st = stateOf(t.name)
+    return {
+      name: t.name,
+      intervalMs: t.intervalMs,
+      timeoutMs: t.timeoutMs ?? defaultTaskTimeoutMs(t.intervalMs),
+      running: st.running,
+      runningSince: st.runningSince,
+      lastFinishedAt: st.lastRun,
+      lastOkAt: st.lastOkAt,
+      lastSkippedAt: st.lastSkippedAt,
+      consecutiveFailures: st.consecutiveFailures,
+      lastError: st.lastError,
+    }
+  })
 }
 
 export function enqueueRefreshArtist(address: string): boolean {
@@ -172,34 +232,17 @@ async function isPonderReady(): Promise<boolean> {
   }
 }
 
-let lastPruneAt = 0
-const PRUNE_INTERVAL_MS = 24 * 60 * 60_000
-const RETENTION_DAYS = 30
-
-async function pruneIterations(): Promise<void> {
-  if (Date.now() - lastPruneAt < PRUNE_INTERVAL_MS) return
-  lastPruneAt = Date.now()
-  try {
-    const result = await sql.unsafe(
-      `DELETE FROM worker_iterations WHERE finished_at < NOW() - INTERVAL '${RETENTION_DAYS} days'`,
-    )
-    if (result.count > 0) {
-      console.log(`[worker.audit] pruned ${result.count} iterations older than ${RETENTION_DAYS}d`)
-    }
-  } catch (err) {
-    console.error("[worker.audit] prune failed:", err)
-  }
-}
-
 async function runTask(task: Task): Promise<void> {
-  const state = runState.get(task.name)
-  if (state?.running) return
+  const state = stateOf(task.name)
+  if (state.running) return
   if (task.dependsOnPonder && !(await isPonderReady())) {
-    // Indexer not ready yet — silently skip, next tick will retry.
+    // Indexer not ready yet — skip, next tick will retry. Recorded so
+    // /health can tell "waiting on Ponder" from "never runs".
+    runState.set(task.name, { ...stateOf(task.name), lastSkippedAt: new Date() })
     return
   }
 
-  runState.set(task.name, { running: true, lastRun: state?.lastRun ?? null })
+  runState.set(task.name, { ...state, running: true, runningSince: new Date() })
   const startedAt = new Date()
   let ok = true
   let error: string | null = null
@@ -219,7 +262,16 @@ async function runTask(task: Task): Promise<void> {
   }
 
   const finishedAt = new Date()
-  runState.set(task.name, { running: false, lastRun: finishedAt })
+  const prev = stateOf(task.name)
+  runState.set(task.name, {
+    ...prev,
+    running: false,
+    runningSince: null,
+    lastRun: finishedAt,
+    lastOkAt: ok ? finishedAt : prev.lastOkAt,
+    consecutiveFailures: ok ? 0 : prev.consecutiveFailures + 1,
+    lastError: ok ? prev.lastError : error,
+  })
   lastTickAt = finishedAt
 
   // Audit log; powers /metrics and weekly cost-invariant checks.
@@ -233,8 +285,6 @@ async function runTask(task: Task): Promise<void> {
   `.catch((err) => {
     console.error(`[worker.audit] failed to log ${task.name}:`, err)
   })
-
-  await pruneIterations()
 }
 
 async function drainRefreshQueue(): Promise<void> {

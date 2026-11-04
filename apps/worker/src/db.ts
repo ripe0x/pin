@@ -7,6 +7,7 @@
  * `worker_iterations.duration_ms` first).
  */
 import postgres from "postgres"
+import { connectionParameters } from "./db-config.ts"
 
 const url = process.env.DATABASE_URL
 if (!url) {
@@ -20,4 +21,8 @@ export const sql = postgres(url, {
   max: 10,
   idle_timeout: 30,
   connect_timeout: 10,
+  // Session settings sent in the startup packet: statement_timeout
+  // (30s default, WORKER_STATEMENT_TIMEOUT_MS) and application_name, so
+  // worker sessions are identifiable in pg_stat_activity. See db-config.ts.
+  connection: connectionParameters(),
 })

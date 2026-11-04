@@ -159,7 +159,9 @@ export async function pgCacheHas(key: string): Promise<boolean> {
 
 /**
  * Garbage-collect rows whose TTL elapsed more than `graceDays` ago.
- * Called by a scheduled Netlify function (or run manually). Stale entries
+ * The scheduled pruning runs in the worker (apps/worker/src/tasks/
+ * prune-retention.ts, same one-day grace, in bounded batches); this
+ * helper is for running it manually. Stale entries
  * are also overwritten on the next miss for their key, so this is purely
  * for storage hygiene — runs daily, not hot path.
  */
