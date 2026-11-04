@@ -541,9 +541,10 @@ contract SovereignAuctionHouseV2_1Test is Test {
         assertEq(artist.balance, 0);
     }
 
-    /// @dev A winner hook that reverts with a large payload does not make
-    ///      settlement expensive: none of the capped calls copy unbounded
-    ///      revert data into the outer frame.
+    /// @dev A winner hook that reverts with a large payload pays for that
+    ///      payload inside the capped delivery frame; the outer frame copies
+    ///      none of it (try/catch with an empty catch, and a four-byte read
+    ///      of the probe result), so settlement still completes.
     function test_LargeRevertPayloadFromWinnerKeepsEndAuctionBounded() public {
         uint256 id = _list1155();
         LargeRevertBidder b = new LargeRevertBidder();
