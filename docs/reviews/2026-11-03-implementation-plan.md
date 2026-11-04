@@ -318,3 +318,52 @@ updates AGENTS.md.
    - **#268:** secondary data source (worker Seaport indexing is the default)
    - **#267:** the named drop
    - **#152:** whether to ship it
+
+## Status (2026-11-04)
+
+Every planned item now has an open PR, except the ones waiting on a
+maintainer decision or on ops. Nothing is merged yet. Stacked PRs name
+their base.
+
+| Plan item | PR | Base |
+|---|---|---|
+| A1 Web hardening | #369 | main |
+| A2 Dependency security | #366 | main |
+| A3 Data integrity I (#295, #297 bug) | #368 | main |
+| A4 Auction mitigations (#289) | #372 | main |
+| A4 Template parity | #378 | #376 |
+| A5 CI repair | #367 | main |
+| A6 Small fixes (includes #124, #125, #324) | #373 | main |
+| B1 `ponder_v5` replay set (adds `launch_owner`, `token_ownership.last_block` index) | #370 | #358 |
+| B2 Deploy record fixes | #371 | #357 |
+| B3 Web v2 rebind fixes | #374 | #360 |
+| B5 Studio v2 rebind (#364) | #382 | #374 |
+| B6 Template rebind (#264, #274) | #376 | main |
+| C1 Data integrity II (#295) | #377 | #368 |
+| C2 Ownership, worker side (#296) | #380 | #377 |
+| C3 Refresh jobs and availability (#297) | #381 | #377 |
+| D1 Discovery (#262) | #385 | #374 |
+| D3 Secondary links, phases 1 and 2a (#268) | #386 | #374 |
+| D4 Attribution (#261) | #388 | #374 |
+| D5 Preservation grade (#265) | #387 | #374 |
+| D7 Profiles (#299) | #384 | #380 |
+| D8 Route pruning (#351) | #383 | main |
+| E2 Thumbnails design note (#365) | #375 | main |
+| Docs: v2 renderers | #379 | main |
+| E1 Auction house V2.1 | local branch, held until #372 is deployed | — |
+
+**Waiting on a decision or on ops:**
+- #267 CommitRevealSale: needs a named drop.
+- #365 build issues: need the two decisions in #375.
+- C4 gallery derivatives (#298): needs R2 and `MEDIA_OBJECT_*` provisioned.
+- D2 gallery owned-by filter (#269) and D6 launch consolidation (#270): wait for the #358 → #360 → #374 stack to land. Doing them now would conflict with five open PRs.
+- D3 phase 2b (#268): secondary-sale indexing, after the `ponder_v5` cutover.
+- D8, the remaining #351 increments (Result-typed reads, one Artwork component, `chain_logs`): after the read-layer PRs (#368, #377, #381, #384) merge.
+
+**Known merge conflicts:**
+- #369 and #383 (`/api/activity`): keep the deletion.
+- #369 and #381 (the two refresh routes): keep #369's limiter.
+- #381 and #384 (`artist/[address]/page.tsx`): parse both `sort` and `tab`.
+- #382 and #367 (CI e2e job name): move the Postgres service to `web-e2e`.
+- #379 and #371 (generated docs): rerun `pnpm generate:docs`.
+- #385–#388: textual conflicts only, in the collection page, `collection-onchain.ts` and `collection.ts`.
