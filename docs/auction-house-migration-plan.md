@@ -294,6 +294,31 @@ Other changes:
 - **Uniform for ERC721 and ERC1155.** The same probe and states apply to
   both standards; for ERC721 it covers recipient-dependent transfer rules.
 
+### Product decision: the winning bid binds (2026-11-04)
+
+A winning bid binds. After the hammer the winner, like any token owner,
+carries the risk of the token contract's own behaviour. If a collection's
+admin pauses, blocklists or upgrades transfers after settlement, the winner
+has paid and may be unable to claim. This is the same exposure a buyer has
+to an admin who can pause or seize after a normal delivery.
+
+The decision follows established practice. networked.art's
+`NetworkedAuctions` (mainnet `0xab48082d28049873ce54f672541d29779a3392ef`,
+verified, solc 0.8.36) auctions ERC721, ERC1155 and Punks. Its `settle()`
+tries delivery, marks `pendingDelivery` on failure, and pays the seller
+unconditionally. The winner claims later with
+`claimSettledToken(auctionId, to)`, and there is no refund path.
+
+V2.1 binds the bid the same way, and adds one protection on top: when the
+lot cannot move at all at settlement (the token is already paused or
+blocked), the winner is refunded instead of paying for an undeliverable
+lot.
+
+The rejected alternative, "nobody loses what they put in", is V2's
+behaviour. It is what gives an ERC1155 winner the free option. Reviewers
+should treat post-settlement token-contract risk as accepted by design, not
+as a finding.
+
 ### Accepted properties (documented, not changed)
 
 - **Collection control decides the branch.** Whoever controls a
