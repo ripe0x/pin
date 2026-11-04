@@ -68,7 +68,18 @@ the **`public` schema** — different tables, never touched by Ponder.
   failed 3 runs in a row, is running past its timeout, or hasn't run in
   3× its interval. `/metrics` adds backoff and backfill-queue summaries.
 - `prune-retention` (hourly) prunes expired `cache_entries`, old
-  `worker_iterations`, stale `rate_limits` and `scan_backoff` rows.
+  `worker_iterations`, stale `rate_limits` and `scan_backoff` rows, and
+  finished `refresh_jobs` older than 30 days.
+- On-demand refreshes ("Refresh my work", per-token "Refresh metadata")
+  are durable jobs in `refresh_jobs` (migration 035, #297). The web
+  INSERTs a queued row (one active job per target; per-target cooldown
+  in `apps/web/src/lib/refresh-jobs-core.ts`) and never calls the
+  worker. The worker (`refresh-queue.ts`) claims jobs with `FOR UPDATE
+  SKIP LOCKED`, heartbeats while running, retries failures with backoff
+  up to `max_attempts`, and reclaims jobs whose heartbeat stopped (crash
+  or restart). `GET /api/refresh-artist/[address]` reports the latest
+  job; the first read of a done job evicts that artist's refs cache
+  (`artist-refs:<address>` tag).
 
 ### `known_artists` — bridges both
 

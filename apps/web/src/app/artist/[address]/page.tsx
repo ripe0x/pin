@@ -13,6 +13,7 @@ import { getCachedTokenRefs } from "@/lib/artist-cache"
 import { isCrawler } from "@/lib/crawler"
 import { withSingleFlight } from "@/lib/single-flight"
 import { PLATFORMS } from "@/lib/platforms"
+import { parseGallerySort, type GallerySort } from "@/lib/availability"
 import { ArtistHeader } from "@/components/artist/ArtistHeader"
 import { ArtistGallery } from "@/components/artist/ArtistGallery"
 import { CatalogSection } from "@/components/artist/CatalogSection"
@@ -77,10 +78,14 @@ export async function generateMetadata({
 
 export default async function ArtistPage({
   params,
+  searchParams,
 }: {
   params: Params
+  searchParams: Promise<{ sort?: string | string[] }>
 }) {
   const { address: raw } = await params
+  const { sort: rawSort } = await searchParams
+  const sort = parseGallerySort(Array.isArray(rawSort) ? rawSort[0] : rawSort)
   const decoded = decodeURIComponent(raw)
   const address = await resolveParam(raw)
 
@@ -102,12 +107,18 @@ export default async function ArtistPage({
 
   return (
     <Suspense fallback={<ArtistFetchFallback />}>
-      <ArtistPageBody address={address} />
+      <ArtistPageBody address={address} sort={sort} />
     </Suspense>
   )
 }
 
-async function ArtistPageBody({ address }: { address: string }) {
+async function ArtistPageBody({
+  address,
+  sort,
+}: {
+  address: string
+  sort: GallerySort
+}) {
   // Crawlers (Twitterbot, Discord, Slack, etc.) only need the OG metadata
   // produced by `generateMetadata` — they don't render the gallery,
   // can't bid, and don't care about live state. Skipping the body
@@ -156,8 +167,8 @@ async function ArtistPageBody({ address }: { address: string }) {
   const [identity, firstPage, activeAuctionCount, sovereignHouse] =
     await Promise.all([
       getArtistIdentity(address),
-      withSingleFlight(`artist-gallery:${address.toLowerCase()}:0:${INITIAL_PAGE_SIZE}`, () =>
-        getArtistGalleryPage(address, 0, INITIAL_PAGE_SIZE),
+      withSingleFlight(`artist-gallery:${address.toLowerCase()}:0:${INITIAL_PAGE_SIZE}:${sort}`, () =>
+        getArtistGalleryPage(address, 0, INITIAL_PAGE_SIZE, sort),
       ),
       withSingleFlight(`artist-auctions:${address.toLowerCase()}`, () =>
         getActiveAuctionCount(address),

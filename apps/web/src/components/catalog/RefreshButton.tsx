@@ -1,27 +1,75 @@
 "use client"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useAccount } from "wagmi"
-import { refreshStateFromResponse, type RefreshState } from "./refresh-response"
+import {
+  POLL_DELAYS_MS,
+  applyStatusPoll,
+  describeJob,
+  isTerminal,
+  refreshStateFromResponse,
+  shouldPoll,
+  type RefreshState,
+} from "./refresh-response"
 
 /**
  * "Refresh my work" icon button. Visible only when the connected wallet
  * address matches the page's artist. Clicking POSTs to
- * `/api/refresh-artist/[address]`, which enqueues a worker job that
- * incrementally scans the artist's platforms (Foundation, Manifold, Mint,
- * Transient Labs) for new mints since the previous scan and writes them
- * to Postgres.
+ * `/api/refresh-artist/[address]`, which enqueues a durable worker job
+ * (refresh_jobs) that incrementally scans the artist's platforms
+ * (Foundation, Manifold, Mint, Transient Labs) for new mints and writes
+ * them to Postgres.
  *
- * The route only enqueues; it returns 202 before the scan runs, so there
- * are no counts to show. We say the refresh is queued and offer a reload
- * (see refresh-response.ts for the response contract).
+ * The route returns before the scan runs, so the button then polls
+ * `GET /api/refresh-artist/[address]` a few times with backoff
+ * (POLL_DELAYS_MS) and shows queued → running → done (N new) / failed.
+ * The first poll that sees the job done also evicts this artist's cached
+ * gallery, so a reload shows the new pieces. See refresh-response.ts for
+ * the response contract.
  *
  * Client-side address match is purely UX — hides the button from
  * collectors and crawlers. Cost protection lives on the server: the
- * route gates on `isKnownArtist`, and the worker dedups per address.
+ * route gates on `isKnownArtist`, a per-IP budget, and a per-artist
+ * cooldown; the queue allows one active job per artist.
  */
 export function RefreshButton({ artistAddress }: { artistAddress: string }) {
   const { address: connected } = useAccount()
   const [state, setState] = useState<RefreshState>({ kind: "idle" })
+  const pollIndex = useRef(0)
+
+  // Follow the job until it's terminal or the poll schedule runs out.
+  // Every poll result replaces `state`, which re-runs this effect and
+  // schedules the next poll.
+  useEffect(() => {
+    if (state.kind !== "job" || isTerminal(state.job) || state.gaveUp) return
+    if (!shouldPoll(state, pollIndex.current)) {
+      setState((s) => (s.kind === "job" ? { ...s, gaveUp: true } : s))
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      pollIndex.current++
+      let status = 0
+      let json: unknown = null
+      try {
+        const res = await fetch(`/api/refresh-artist/${artistAddress}`, { cache: "no-store" })
+        status = res.status
+        json = await res.json().catch(() => null)
+      } catch {
+        // Network blip: the next scheduled poll retries.
+      }
+      if (cancelled) return
+      setState((s) => {
+        const next = applyStatusPoll(s, status, json)
+        // A new object even when nothing changed, so the effect re-runs
+        // and the schedule advances.
+        return next === s && s.kind === "job" ? { ...s } : next
+      })
+    }, POLL_DELAYS_MS[pollIndex.current])
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [state, artistAddress])
 
   if (
     !connected ||
@@ -32,6 +80,7 @@ export function RefreshButton({ artistAddress }: { artistAddress: string }) {
 
   async function onClick() {
     setState({ kind: "loading" })
+    pollIndex.current = 0
     try {
       const res = await fetch(`/api/refresh-artist/${artistAddress}`, {
         method: "POST",
@@ -46,21 +95,22 @@ export function RefreshButton({ artistAddress }: { artistAddress: string }) {
     }
   }
 
-  const disabled = state.kind === "loading"
-  const tooltip =
-    state.kind === "loading" ? "Refreshing…" : "Refresh my work"
+  const busy =
+    state.kind === "loading" ||
+    (state.kind === "job" && !isTerminal(state.job) && !state.gaveUp)
+  const tooltip = busy ? "Refreshing…" : "Refresh my work"
 
   return (
     <div className="flex flex-col items-end gap-2">
       <button
         type="button"
         onClick={onClick}
-        disabled={disabled}
+        disabled={busy}
         aria-label={tooltip}
         title={tooltip}
         className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-gray-200 text-gray-500 hover:border-gray-400 hover:text-fg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        <RefreshIcon spinning={state.kind === "loading"} />
+        <RefreshIcon spinning={busy} />
       </button>
       <RefreshStatus state={state} />
     </div>
@@ -89,41 +139,55 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
   )
 }
 
+function ReloadLink() {
+  return (
+    <button
+      type="button"
+      onClick={() => window.location.reload()}
+      className="underline hover:no-underline"
+    >
+      Reload
+    </button>
+  )
+}
+
 function RefreshStatus({ state }: { state: RefreshState }) {
   if (state.kind === "idle" || state.kind === "loading") return null
+  const base = "text-[11px] text-right max-w-xs"
   if (state.kind === "rate-limited") {
     const min = Math.ceil(state.retryAfterSec / 60)
     return (
-      <span className="text-[11px] text-gray-500 text-right max-w-xs">
-        Wait {min} minute{min === 1 ? "" : "s"} before refreshing again
+      <span className={`${base} text-gray-500`}>
+        Refreshed recently. Wait {min} minute{min === 1 ? "" : "s"} before refreshing again
       </span>
     )
   }
   if (state.kind === "error") {
+    return <span className={`${base} text-red-600`}>{state.message}</span>
+  }
+  if (state.kind === "queued") {
+    // Legacy fallback: accepted, but no job to follow.
     return (
-      <span className="text-[11px] text-red-600 text-right max-w-xs">
-        {state.message}
+      <span className={`${base} text-gray-500`} role="status">
+        {state.alreadyQueued ? "A refresh is already running" : "Refresh queued"}
+        {" "}— new pieces appear within a few minutes. <ReloadLink /> to see them.
       </span>
     )
   }
-  // queued
+  const { job } = state
+  const text = describeJob(job, state.alreadyQueued)
+  if (job.status === "failed") {
+    return <span className={`${base} text-red-600`} role="status">{text}</span>
+  }
   return (
-    <span
-      className="text-[11px] text-gray-500 text-right max-w-xs"
-      role="status"
-    >
-      {state.alreadyQueued
-        ? "A refresh is already running"
-        : "Refresh queued"}{" "}
-      — new pieces appear within a few minutes.{" "}
-      <button
-        type="button"
-        onClick={() => window.location.reload()}
-        className="underline hover:no-underline"
-      >
-        Reload
-      </button>{" "}
-      to see them.
+    <span className={`${base} text-gray-500`} role="status">
+      {text}
+      {job.status === "done" && (job.added ?? 1) > 0 && (
+        <>. <ReloadLink /> to see them.</>
+      )}
+      {!isTerminal(job) && state.gaveUp && (
+        <> — still going; new pieces appear when it finishes. <ReloadLink /> later.</>
+      )}
     </span>
   )
 }

@@ -36,6 +36,21 @@ import { captureCollectionMedia } from "./tasks/capture-collection-media.ts"
 import { deriveTokenMedia } from "./tasks/derive-token-media.ts"
 import { pruneRetention } from "./tasks/prune-retention.ts"
 import { defaultTaskTimeoutMs, type TaskHealthInput } from "./task-health.ts"
+import {
+  DEFAULT_JOB_TIMEOUT_MS,
+  DEFAULT_LEASE_SECONDS,
+  artistTarget,
+  claimRefreshJob,
+  enqueueRefreshJob,
+  parseTokenTarget,
+  positiveIntEnv,
+  reclaimExpiredJobs,
+  releaseRefreshJob,
+  runClaimedRefreshJob,
+  tokenTarget,
+  type ClaimedJob,
+  type RefreshJobKind,
+} from "./refresh-queue.ts"
 
 type TaskName =
   | "seed-known-artists"
@@ -159,13 +174,35 @@ function stateOf(name: TaskName): RunState {
   }
 }
 
-// Refresh-artist HTTP jobs queue. Single-flight per address.
-const refreshQueue = new Set<string>()
-const refreshInFlight = new Set<string>()
-
-// Refresh-token HTTP jobs queue. Single-flight per `contract:tokenId`.
-const refreshTokenQueue = new Set<string>()
-const refreshTokenInFlight = new Set<string>()
+// On-demand refreshes run from the durable `refresh_jobs` queue
+// (refresh-queue.ts, migration 035). Jobs this process currently holds,
+// so a graceful shutdown can hand them back without spending an attempt.
+const heldJobs = new Map<string, ClaimedJob>()
+const REFRESH_CONCURRENCY: Record<RefreshJobKind, number> = {
+  artist: positiveIntEnv(process.env.REFRESH_ARTIST_CONCURRENCY, 2),
+  token: positiveIntEnv(process.env.REFRESH_TOKEN_CONCURRENCY, 4),
+}
+const REFRESH_TIMEOUT_MS: Record<RefreshJobKind, number> = {
+  artist: positiveIntEnv(process.env.REFRESH_ARTIST_TIMEOUT_MS, DEFAULT_JOB_TIMEOUT_MS.artist),
+  token: positiveIntEnv(process.env.REFRESH_TOKEN_TIMEOUT_MS, DEFAULT_JOB_TIMEOUT_MS.token),
+}
+// How often each kind polls for due jobs: one indexed UPDATE per poll
+// (refresh_jobs_claim_idx), a few seconds of pickup latency.
+const REFRESH_POLL_MS = positiveIntEnv(process.env.REFRESH_POLL_MS, 3_000)
+const REFRESH_LEASE_SECONDS = positiveIntEnv(
+  process.env.REFRESH_JOB_LEASE_SECONDS,
+  DEFAULT_LEASE_SECONDS,
+)
+const refreshHandlers: Record<RefreshJobKind, (target: string) => Promise<unknown>> = {
+  artist: (target) => refreshArtist(target),
+  token: async (target) => {
+    const { contract, tokenId } = parseTokenTarget(target)
+    return { outcome: await refreshToken(contract, tokenId) }
+  },
+}
+const refreshInFlight: Record<RefreshJobKind, number> = { artist: 0, token: 0 }
+const refreshPumping: Record<RefreshJobKind, boolean> = { artist: false, token: false }
+let refreshQueueErrorAt = 0
 
 export function getLastTickAt(): Date | null {
   return lastTickAt
@@ -202,18 +239,18 @@ export function getTaskHealthInputs(): TaskHealthInput[] {
   })
 }
 
-export function enqueueRefreshArtist(address: string): boolean {
-  const lower = address.toLowerCase()
-  if (refreshInFlight.has(lower) || refreshQueue.has(lower)) return false
-  refreshQueue.add(lower)
-  return true
+/**
+ * Enqueue a durable artist refresh. False when the address is invalid or
+ * a job for it is already queued or running.
+ */
+export async function enqueueRefreshArtist(address: string): Promise<boolean> {
+  const target = artistTarget(address)
+  return target ? enqueueRefreshJob(sql, "artist", target) : false
 }
 
-export function enqueueRefreshToken(contract: string, tokenId: string): boolean {
-  const key = `${contract.toLowerCase()}:${tokenId}`
-  if (refreshTokenInFlight.has(key) || refreshTokenQueue.has(key)) return false
-  refreshTokenQueue.add(key)
-  return true
+export async function enqueueRefreshToken(contract: string, tokenId: string): Promise<boolean> {
+  const target = tokenTarget(contract, tokenId)
+  return target ? enqueueRefreshJob(sql, "token", target) : false
 }
 
 let ponderReadyCached = false
@@ -287,37 +324,74 @@ async function runTask(task: Task): Promise<void> {
   })
 }
 
-async function drainRefreshQueue(): Promise<void> {
-  if (refreshQueue.size === 0) return
-  const next = refreshQueue.values().next().value as string | undefined
-  if (!next) return
-  refreshQueue.delete(next)
-  refreshInFlight.add(next)
+function logRefreshQueueError(err: unknown): void {
+  // Throttled: before migration 035 is applied every poll fails the same
+  // way, and the poll runs every 2s.
+  const now = Date.now()
+  if (now - refreshQueueErrorAt < 5 * 60_000) return
+  refreshQueueErrorAt = now
+  console.error("[worker.refresh-queue] poll failed (is migration 035 applied?):", err)
+}
+
+/**
+ * Claim and start due jobs of `kind` up to its concurrency. Each job
+ * runs detached; the next poll tops the slots back up.
+ */
+async function pumpRefreshJobs(kind: RefreshJobKind): Promise<void> {
+  if (refreshPumping[kind]) return
+  refreshPumping[kind] = true
   try {
-    await refreshArtist(next)
+    while (refreshInFlight[kind] < REFRESH_CONCURRENCY[kind]) {
+      const job = await claimRefreshJob(sql, kind)
+      if (!job) break
+      refreshInFlight[kind]++
+      heldJobs.set(job.id, job)
+      console.log(`[worker.refresh-${kind}] job ${job.id} ${job.target} attempt ${job.attempts}/${job.maxAttempts}`)
+      void runClaimedRefreshJob(sql, job, refreshHandlers[kind], {
+        timeoutMs: REFRESH_TIMEOUT_MS[kind],
+      })
+        .then((out) => {
+          if (out.kind === "done") {
+            console.log(`[worker.refresh-${kind}] job ${job.id} done`, JSON.stringify(out.result))
+          } else if (out.kind === "lost") {
+            console.warn(`[worker.refresh-${kind}] job ${job.id} lease was reclaimed mid-run`)
+          } else {
+            console.error(`[worker.refresh-${kind}] job ${job.id} ${out.kind}: ${out.error}`)
+          }
+        })
+        .catch((err) => console.error(`[worker.refresh-${kind}] job ${job.id}:`, err))
+        .finally(() => {
+          refreshInFlight[kind]--
+          heldJobs.delete(job.id)
+        })
+    }
   } catch (err) {
-    console.error(`[worker.refresh-artist] ${next}:`, err)
+    logRefreshQueueError(err)
   } finally {
-    refreshInFlight.delete(next)
+    refreshPumping[kind] = false
   }
 }
 
-async function drainRefreshTokenQueue(): Promise<void> {
-  if (refreshTokenQueue.size === 0) return
-  const next = refreshTokenQueue.values().next().value as string | undefined
-  if (!next) return
-  refreshTokenQueue.delete(next)
-  refreshTokenInFlight.add(next)
-  const sep = next.lastIndexOf(":")
-  const contract = next.slice(0, sep)
-  const tokenId = next.slice(sep + 1)
+async function reclaimRefreshJobs(): Promise<void> {
   try {
-    await refreshToken(contract, tokenId)
+    const rows = await reclaimExpiredJobs(sql, REFRESH_LEASE_SECONDS)
+    if (rows.length > 0) {
+      console.warn(`[worker.refresh-queue] reclaimed ${rows.length} job(s) with an expired lease: ${rows.map((r) => `${r.id}->${r.status}`).join(", ")}`)
+    }
   } catch (err) {
-    console.error(`[worker.refresh-token] ${next}:`, err)
-  } finally {
-    refreshTokenInFlight.delete(next)
+    logRefreshQueueError(err)
   }
+}
+
+/**
+ * Graceful shutdown: put the jobs this process is running back in the
+ * queue without spending an attempt, so the next worker picks them up
+ * right away instead of after the lease expires.
+ */
+export async function releaseHeldRefreshJobs(): Promise<void> {
+  const jobs = Array.from(heldJobs.values())
+  await Promise.allSettled(jobs.map((j) => releaseRefreshJob(sql, j)))
+  if (jobs.length > 0) console.log(`[worker.refresh-queue] released ${jobs.length} running job(s)`)
 }
 
 export async function startScheduler(): Promise<void> {
@@ -331,7 +405,11 @@ export async function startScheduler(): Promise<void> {
     setInterval(() => void runTask(t), t.intervalMs)
   }
 
-  // Refresh-artist + refresh-token queue workers — drain continuously.
-  setInterval(() => void drainRefreshQueue(), 2_000)
-  setInterval(() => void drainRefreshTokenQueue(), 2_000)
+  // Durable refresh queue (refresh_jobs): poll for due jobs, and reclaim
+  // jobs a crashed or restarted worker left 'running'. Reclaim once at
+  // boot too, so a crash's jobs return after at most one lease.
+  void reclaimRefreshJobs()
+  setInterval(() => void pumpRefreshJobs("artist"), REFRESH_POLL_MS)
+  setInterval(() => void pumpRefreshJobs("token"), REFRESH_POLL_MS)
+  setInterval(() => void reclaimRefreshJobs(), 60_000)
 }

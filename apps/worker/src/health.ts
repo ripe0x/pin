@@ -13,8 +13,13 @@
  *                                     scan_backoff / transfer backfill
  *                                     queue summaries.
  *   POST /jobs/refresh-artist/:address
- *                                     Enqueue immediate per-artist
- *                                     scanning. Dedup'd by the scheduler.
+ *   POST /jobs/refresh-token/:contract/:tokenId
+ *                                     LEGACY. Insert a durable job into
+ *                                     refresh_jobs (refresh-queue.ts). The
+ *                                     web now inserts directly (#297); this
+ *                                     stays so a web deploy older than the
+ *                                     queue keeps working during rollout.
+ *                                     Remove once web no longer calls it.
  *
  * No auth on /health and /metrics (Railway-internal). The /jobs endpoint
  * checks a bearer token so the web app can forward the existing "Refresh my
@@ -32,6 +37,7 @@ import {
 } from "./scheduler.ts"
 import { sql } from "./db.ts"
 import { evaluateHealth, maxConsecutiveFailures } from "./task-health.ts"
+import { QUEUE_STATS_SQL } from "./refresh-queue.ts"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 const TOKEN_ID_RE = /^[0-9]+$/
@@ -113,6 +119,8 @@ async function metrics(res: ServerResponse): Promise<void> {
            min(enqueued_at)          AS oldest
     FROM transfer_backfill_queue
   `.catch(() => null)
+  // Durable refresh queue (migration 035); null before it's applied.
+  const refreshJobs = await sql.unsafe(QUEUE_STATS_SQL).catch(() => null)
   res.statusCode = 200
   res.setHeader("content-type", "application/json")
   res.end(JSON.stringify({
@@ -120,6 +128,7 @@ async function metrics(res: ServerResponse): Promise<void> {
     runtime: stats,
     backoff,
     transferBackfill: backfill?.[0] ?? null,
+    refreshJobs,
   }))
 }
 
@@ -139,7 +148,11 @@ async function jobsRefreshArtist(req: IncomingMessage, res: ServerResponse): Pro
     return
   }
 
-  const enqueued = enqueueRefreshArtist(address)
+  const enqueued = await enqueueRefreshArtist(address).catch((err) => {
+    console.error("[worker.http] enqueue refresh-artist:", err)
+    return null
+  })
+  if (enqueued === null) return queueUnavailable(res)
   res.statusCode = 202
   res.setHeader("content-type", "application/json")
   res.end(JSON.stringify({ ok: true, enqueued }))
@@ -165,10 +178,20 @@ async function jobsRefreshToken(req: IncomingMessage, res: ServerResponse): Prom
     return
   }
 
-  const enqueued = enqueueRefreshToken(contract, tokenId)
+  const enqueued = await enqueueRefreshToken(contract, tokenId).catch((err) => {
+    console.error("[worker.http] enqueue refresh-token:", err)
+    return null
+  })
+  if (enqueued === null) return queueUnavailable(res)
   res.statusCode = 202
   res.setHeader("content-type", "application/json")
   res.end(JSON.stringify({ ok: true, enqueued }))
+}
+
+function queueUnavailable(res: ServerResponse): void {
+  res.statusCode = 503
+  res.setHeader("content-type", "application/json")
+  res.end(JSON.stringify({ ok: false, error: "refresh queue unavailable" }))
 }
 
 function hasValidBearerToken(req: IncomingMessage): boolean {

@@ -3,8 +3,8 @@
  * newly-discovered artists.
  *
  * This task detects artists who have JUST joined the set and fires a
- * one-shot Path B (mints-to-artist) scan for them via the refresh-artist
- * queue — the scheduled scan-manifold task no longer runs Path B on
+ * one-shot Path B (mints-to-artist) scan for them via the durable refresh
+ * queue (refresh_jobs) — the scheduled scan-manifold task no longer runs Path B on
  * every tick to avoid the per-artist Alchemy polling cost.
  *
  * Marker for "Path B has been run for this artist": a row in
@@ -69,7 +69,7 @@ export async function seedKnownArtists(): Promise<TaskResult> {
   let enqueued = 0
   const retried: string[] = []
   for (const r of newArtists) {
-    if (!enqueueRefreshArtist(r.address)) continue // already queued / in flight
+    if (!(await enqueueRefreshArtist(r.address))) continue // already queued / in flight
     enqueued++
     const prev = attempts.get(r.address)
     if (prev) retried.push(r.address)

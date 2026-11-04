@@ -13,7 +13,7 @@
  * Health/metrics on PORT (default 8080).
  */
 import { startHealthServer } from "./health.ts"
-import { startScheduler } from "./scheduler.ts"
+import { releaseHeldRefreshJobs, startScheduler } from "./scheduler.ts"
 import { sql } from "./db.ts"
 import { INDEXER_SCHEMA } from "./indexer-schema.ts"
 import { runStartupChecks } from "./startup-checks.ts"
@@ -42,6 +42,9 @@ async function main(): Promise<void> {
   for (const sig of ["SIGTERM", "SIGINT"] as const) {
     process.once(sig, async () => {
       console.log(`[worker] received ${sig}, shutting down`)
+      // Hand running refresh jobs back to the durable queue so the next
+      // worker resumes them now instead of after the lease expires.
+      await releaseHeldRefreshJobs().catch(() => {})
       try {
         await sql.end({ timeout: 5 })
       } catch {

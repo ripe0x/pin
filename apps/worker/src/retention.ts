@@ -72,4 +72,17 @@ export const RETENTION_STEPS: RetentionStep[] = [
     batchSize: 5_000,
     maxBatches: 4,
   },
+  {
+    // Finished on-demand refresh jobs (#297, migration 035). Active jobs
+    // have no finished_at and are never touched.
+    name: "refresh_jobs",
+    requiresTable: "public.refresh_jobs",
+    sql:
+      "DELETE FROM refresh_jobs WHERE id IN (" +
+      "SELECT id FROM refresh_jobs WHERE finished_at < NOW() - interval '30 days' " +
+      "ORDER BY finished_at LIMIT $1::int)",
+    params: () => [],
+    batchSize: 5_000,
+    maxBatches: 4,
+  },
 ]

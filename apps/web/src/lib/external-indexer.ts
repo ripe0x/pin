@@ -1,10 +1,9 @@
 /**
- * v2 thin shim. The orchestration in v1's external-indexer (refresh
- * loops, batch processing, per-artist cooldowns) moves to the worker
- * (apps/worker/src/scheduler.ts + tasks/refresh-artist.ts).
- *
- * This module exists so the existing /api/refresh-artist route can keep
- * the same import shape; the implementation now POSTs to the worker.
+ * LEGACY rollout fallback. The refresh routes now enqueue durable jobs
+ * straight into Postgres (`refresh_jobs`, lib/refresh-jobs.ts, #297) and
+ * never call the worker. These POSTs to the worker's /jobs endpoints are
+ * only used when migration 035 hasn't been applied yet (the routes see
+ * undefined_table); delete this module once 035 is applied everywhere.
  */
 import "server-only"
 import { isKnownArtist } from "./known-artists"
