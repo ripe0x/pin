@@ -167,3 +167,33 @@ test("an empty range (from > to) makes no calls", async () => {
   assert.equal(r.scannedTo, 9n)
   assert.equal(calls.length, 0)
 })
+
+test("a failed commit on the first chunk reports nothing as scanned", async () => {
+  const committed: bigint[] = []
+  const result = await scanRange({
+    from: 0n, to: 299n, chunkSize: 100n,
+    fetch: async () => [],
+    commit: async (n) => {
+      if (n === 99n) throw new Error("cursor transaction failed")
+      committed.push(n)
+    },
+  })
+  assert.deepEqual(committed, [])
+  assert.equal(result.scannedTo, -1n)
+  assert.ok(result.error instanceof ScanRangeError)
+})
+
+test("a failed commit on a later chunk stops at the last committed block", async () => {
+  const committed: bigint[] = []
+  const result = await scanRange({
+    from: 0n, to: 299n, chunkSize: 100n,
+    fetch: async () => [],
+    commit: async (n) => {
+      if (n === 199n) throw new Error("cursor transaction failed")
+      committed.push(n)
+    },
+  })
+  assert.deepEqual(committed, [99n])
+  assert.equal(result.scannedTo, 99n)
+  assert.ok(result.error instanceof ScanRangeError)
+})

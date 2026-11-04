@@ -124,8 +124,10 @@ export async function scanRange<T>(opts: ScanRangeOptions<T>): Promise<ScanRange
     }
     try {
       await process?.(data, a, b)
-      scannedTo = b
+      // Advance only once the commit (e.g. the cursor write) has landed, so
+      // the returned position never passes an uncommitted checkpoint.
       await commit?.(b)
+      scannedTo = b
     } catch (err) {
       error = new ScanRangeError(label, a, b, err)
       return false
