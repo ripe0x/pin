@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
 import {
+  auctionHouseStreams,
   buildFactoryAddressRows,
   factoryCandidates,
   missingAddresses,
@@ -84,6 +85,23 @@ test("missingAddresses returns empty when every source address already exists", 
   const source = ["0xaaa0000000000000000000000000000000aaaa"]
   const existing = ["0xAAA0000000000000000000000000000000AAAA"]
   assert.deepEqual(missingAddresses(source, existing), [])
+})
+
+test("auctionHouseStreams omits the V2.1 stream until its factory is configured", () => {
+  const streams = auctionHouseStreams({ v1: "0xv1", v2: "0xv2", v2_1: null })
+  assert.deepEqual(
+    streams.map((s) => [s.label, s.version, s.factory]),
+    [
+      ["PND V1 houses", 1, "0xv1"],
+      ["PND V2 houses", 2, "0xv2"],
+    ],
+  )
+})
+
+test("auctionHouseStreams checks V2.1 houses (version 21) against the V2.1 factory once set", () => {
+  const streams = auctionHouseStreams({ v1: "0xv1", v2: "0xv2", v2_1: "0xv21" })
+  assert.deepEqual(streams.at(-1), { label: "PND V2.1 houses", version: 21, factory: "0xv21" })
+  assert.equal(streams.length, 3)
 })
 
 test("buildFactoryAddressRows carries factory id, chain id, and block number through", () => {
