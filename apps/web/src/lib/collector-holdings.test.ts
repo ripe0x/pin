@@ -106,6 +106,14 @@ test("SQL: sources are optional and guarded, keyset matches the JS order", () =>
   assert.match(full, /ORDER BY d\.block DESC, d\.contract COLLATE "C" DESC, d\.token_id COLLATE "C" DESC/)
   assert.match(full, /LIMIT \$5::int/)
 
+  // Own-works filter is opt-in and applies before the count and the page.
+  assert.doesNotMatch(full, /artist_tokens/)
+  const collected = collectorHoldingsSql("ponder_v4", { surface: false, erc1155: false, excludeOwnWorks: true })
+  assert.match(collected, /FROM holdings h\s+WHERE NOT EXISTS \(SELECT 1 FROM artist_tokens a\s+WHERE a\.contract = h\.contract AND a\.token_id = h\.token_id AND a\.artist = \$1\)/)
+  assert.match(collected, /ponder_v4\.fnd_artist_tokens f/)
+  assert.match(collected, /ponder_v4\.srv2_artist_tokens v/)
+  assert.ok(collected.indexOf("NOT EXISTS (SELECT 1 FROM artist_tokens") < collected.indexOf("count(*)::int AS total"))
+
   assert.deepEqual(collectorHoldingsParams("0xABC", null, 5), ["0xabc", null, null, null, 5])
   assert.deepEqual(
     collectorHoldingsParams(C1, { block: 7n, contract: C2, tokenId: "3" }, 5),
