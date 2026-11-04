@@ -39,7 +39,11 @@ type Settings = {
   royaltyReceiver: Address
   cover: string
   renderAssets: Address | null
+  /** Absent from an older API response: treated as false. */
+  primitiveV2?: boolean
   creators: { creator: Address; confirmed: boolean }[]
+  /** Absent from an older API response: treated as false. */
+  creatorsIndexed?: boolean
 }
 
 /** The write ABI for a collection: surfaceV2Abi for a v2 row (adds
@@ -134,7 +138,10 @@ export function CollectionSettingsPanel({ collection }: { collection: `0x${strin
       <RoyaltySection collection={collection} s={s} onDone={refetch} />
       <CoverSection collection={collection} s={s} onDone={refetch} />
       <MintersSection collection={collection} s={s} onDone={refetch} />
-      <CreatorsSection collection={collection} s={s} onDone={refetch} />
+      {/* A primitive v2 Surface has no creator list (setCreators and
+          isListedCreator were removed): its credit is the owner's own
+          Catalog claim, so there is nothing to list here. */}
+      {!s.primitiveV2 && <CreatorsSection collection={collection} s={s} onDone={refetch} />}
     </div>
   )
 }
@@ -647,8 +654,9 @@ function CreatorsSection({
         </ul>
       ) : (
         <p className="text-xs text-gray-500">
-          Listed creators are not shown here yet. Listing or removing a
-          creator below writes that one address onchain.
+          {s.creatorsIndexed
+            ? "No creators listed yet. Listing a creator below writes that one address onchain."
+            : "Listed creators are not shown here yet. Listing or removing a creator below writes that one address onchain."}
         </p>
       )}
       <div className="space-y-2">

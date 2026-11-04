@@ -21,6 +21,7 @@ import {
   getAddressOrNull,
 } from "@pin/addresses"
 import { isNoReferralCollection } from "./referral-exemptions"
+import type { AttributionRoster } from "./attribution"
 
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
@@ -476,7 +477,18 @@ export type CollectionSettings = {
   royaltyReceiver: Address
   cover: string
   renderAssets: Address | null
+  /** A primitive-first v2 Surface: no creator list onchain, so the panel
+   *  hides its Creators section (credit there is the owner's own Catalog
+   *  claim). */
+  primitiveV2: boolean
+  /** The owner's listing as indexed (v1 with `collection_creators` in the
+   *  configured schema), each flagged confirmed when Catalog-claimed. Empty
+   *  for any other roster (v2's owner claim, or none), which is not an
+   *  owner listing and so never prefills here. */
   creators: { creator: Address; confirmed: boolean }[]
+  /** True when `creators` is the indexed listing (so empty means none
+   *  listed), false when the listing is not available to read. */
+  creatorsIndexed: boolean
 }
 
 /**
@@ -486,7 +498,8 @@ export type CollectionSettings = {
  * route's response shape is unit-testable against a fabricated Collection.
  */
 export function buildCollectionSettings(
-  c: Pick<
+  c: Partial<Pick<Collection, "primitiveV2">> &
+    Pick<
     Collection,
     | "name"
     | "owner"
@@ -501,9 +514,10 @@ export function buildCollectionSettings(
     | "cover"
     | "minted"
   >,
-  creators: { creator: Address; confirmed: boolean }[],
+  roster: AttributionRoster,
   renderAssets: Address | null,
 ): CollectionSettings {
+  const listed = roster.basis === "listed"
   return {
     name: c.name,
     owner: c.owner,
@@ -520,7 +534,9 @@ export function buildCollectionSettings(
     royaltyReceiver: c.cfg.royaltyReceiver,
     cover: c.cover,
     renderAssets,
-    creators,
+    primitiveV2: c.primitiveV2 === true,
+    creators: listed ? roster.entries.map((e) => ({ creator: e.creator, confirmed: e.confirmed })) : [],
+    creatorsIndexed: listed,
   }
 }
 

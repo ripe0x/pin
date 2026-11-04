@@ -45,7 +45,7 @@ const base: Pick<
 }
 
 test("v1 row: v2 flags are all false, bigints stringified", () => {
-  const settings = buildCollectionSettings(base, [], RENDER_ASSETS)
+  const settings = buildCollectionSettings(base, { basis: "none", entries: [] }, RENDER_ASSETS)
   assert.equal(settings.protocolVersion, 1)
   assert.equal(settings.isRoyaltyLocked, false)
   assert.equal(settings.isMinterLocked, false)
@@ -66,7 +66,7 @@ test("v2 row: every lock/seal flag carries through", () => {
     isRoyaltyLocked: true,
     sealed: true,
   }
-  const settings = buildCollectionSettings(v2, [{ creator: OWNER, confirmed: true }], null)
+  const settings = buildCollectionSettings(v2, { basis: "listed", entries: [{ creator: OWNER, confirmed: true }] }, null)
   assert.equal(settings.protocolVersion, 2)
   assert.equal(settings.isRendererLocked, true)
   assert.equal(settings.isSupplyLocked, true)
@@ -77,4 +77,21 @@ test("v2 row: every lock/seal flag carries through", () => {
   // deployed-guard notice keys off this being null, not "".
   assert.equal(settings.renderAssets, null)
   assert.deepEqual(settings.creators, [{ creator: OWNER, confirmed: true }])
+})
+
+test("creators: only the indexed listing prefills; primitive v2 flagged", () => {
+  const listed = buildCollectionSettings(base, { basis: "listed", entries: [] }, null)
+  assert.deepEqual(listed.creators, [])
+  assert.equal(listed.creatorsIndexed, true)
+  assert.equal(listed.primitiveV2, false)
+
+  // A v2 owner-claim roster is not an owner listing, so it never prefills.
+  const catalog = buildCollectionSettings(
+    { ...base, primitiveV2: true, protocolVersion: 2 },
+    { basis: "owner-claim", entries: [{ creator: OWNER, confirmed: true }] },
+    null,
+  )
+  assert.deepEqual(catalog.creators, [])
+  assert.equal(catalog.creatorsIndexed, false)
+  assert.equal(catalog.primitiveV2, true)
 })
