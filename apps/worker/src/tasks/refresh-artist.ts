@@ -7,7 +7,7 @@
  * triggers per address.
  */
 import { sql } from "../db.ts"
-import { client } from "../rpc.ts"
+import { client, safeHead } from "../rpc.ts"
 import { scanArtistTokensViaTransferFromZero } from "../scanners/transfer-from-zero.ts"
 import { scanErc1155MintsFromZero } from "../scanners/erc1155-mints.ts"
 import { scanManifoldArtistTokens, discoverMintsToArtist } from "../scanners/manifold.ts"
@@ -55,7 +55,7 @@ export async function refreshArtist(address: string): Promise<void> {
       const list = rows as Array<{ contract: string; deploy_block: string }>
       for (const r of list) {
         await scanArtistTokensViaTransferFromZero({
-          sql, client, taskName: "refresh-artist",
+          sql, client, safeHead, taskName: "refresh-artist",
           platform: "fnd-collection",
           artist: lower, contract: r.contract,
           contractDeployBlock: BigInt(r.deploy_block),
@@ -71,7 +71,7 @@ export async function refreshArtist(address: string): Promise<void> {
       const list = rows as Array<{ contract: string; deploy_block: string }>
       for (const r of list) {
         await scanErc1155MintsFromZero({
-          sql, client, taskName: "refresh-artist",
+          sql, client, safeHead, taskName: "refresh-artist",
           platform: "mint",
           artist: lower, contract: r.contract,
           contractDeployBlock: BigInt(r.deploy_block),
@@ -87,7 +87,7 @@ export async function refreshArtist(address: string): Promise<void> {
       const list = rows as Array<{ contract: string; deploy_block: string }>
       for (const r of list) {
         await scanArtistTokensViaTransferFromZero({
-          sql, client, taskName: "refresh-artist",
+          sql, client, safeHead, taskName: "refresh-artist",
           platform: "tl",
           artist: lower, contract: r.contract,
           contractDeployBlock: BigInt(r.deploy_block),

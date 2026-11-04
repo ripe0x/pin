@@ -1,9 +1,17 @@
 /**
  * Health + metrics + jobs HTTP surface.
  *
- *   GET  /health                      Railway healthcheck. 200 if loop has
- *                                     ticked within 5× expected idle.
- *   GET  /metrics                     Last 24h of worker_iterations.
+ *   GET  /health                      Railway healthcheck + alerting. 200
+ *                                     only if every scheduled task is
+ *                                     healthy (task-health.ts): not N
+ *                                     consecutive failed runs (default 3,
+ *                                     HEALTH_MAX_CONSECUTIVE_FAILURES), not
+ *                                     running past its timeout, and run
+ *                                     within 3x its interval. 503 with the
+ *                                     per-task report otherwise.
+ *   GET  /metrics                     Last 24h of worker_iterations, plus
+ *                                     scan_backoff / transfer backfill
+ *                                     queue summaries.
  *   POST /jobs/refresh-artist/:address
  *                                     Enqueue immediate per-artist
  *                                     scanning. Dedup'd by the scheduler.
@@ -17,10 +25,13 @@ import { timingSafeEqual } from "node:crypto"
 import {
   enqueueRefreshArtist,
   enqueueRefreshToken,
+  getBootAt,
   getLastTickAt,
+  getTaskHealthInputs,
   getTaskStats,
 } from "./scheduler.ts"
 import { sql } from "./db.ts"
+import { evaluateHealth, maxConsecutiveFailures } from "./task-health.ts"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 const TOKEN_ID_RE = /^[0-9]+$/
@@ -56,13 +67,20 @@ export async function startHealthServer(port: number): Promise<void> {
 }
 
 function health(res: ServerResponse): void {
-  const last = getLastTickAt()
-  const since = last ? Date.now() - last.getTime() : Infinity
-  // 30 min cap is generous; the slowest task is `scan-manifold` at 30m.
-  const ok = since < 30 * 60 * 1000
-  res.statusCode = ok ? 200 : 503
+  // In-memory only (no DB round trip), so the check itself can't hang.
+  const now = new Date()
+  const report = evaluateHealth(getTaskHealthInputs(), now, getBootAt(), {
+    maxConsecutiveFailures: maxConsecutiveFailures(process.env.HEALTH_MAX_CONSECUTIVE_FAILURES),
+  })
+  res.statusCode = report.ok ? 200 : 503
   res.setHeader("content-type", "application/json")
-  res.end(JSON.stringify({ ok, lastTickAt: last?.toISOString() ?? null }))
+  res.end(JSON.stringify({
+    ok: report.ok,
+    unhealthy: report.unhealthy,
+    lastTickAt: getLastTickAt()?.toISOString() ?? null,
+    bootAt: getBootAt().toISOString(),
+    tasks: report.tasks,
+  }))
 }
 
 async function metrics(res: ServerResponse): Promise<void> {
@@ -79,9 +97,30 @@ async function metrics(res: ServerResponse): Promise<void> {
     ORDER BY task
   `
   const stats = getTaskStats()
+  // Scopes currently backed off (backoff.ts) and backfill debt
+  // (transfer-backfill.ts). Best effort: tables absent before 030/031.
+  const backoff = await sql`
+    SELECT task,
+           count(*)                                  AS scopes,
+           count(*) FILTER (WHERE retry_at > NOW())  AS waiting,
+           max(failures)                             AS max_failures
+    FROM scan_backoff GROUP BY task ORDER BY task
+  `.catch(() => null)
+  const backfill = await sql`
+    SELECT count(*)                  AS tokens,
+           count(DISTINCT contract)  AS contracts,
+           count(*) FILTER (WHERE failures > 0) AS failing,
+           min(enqueued_at)          AS oldest
+    FROM transfer_backfill_queue
+  `.catch(() => null)
   res.statusCode = 200
   res.setHeader("content-type", "application/json")
-  res.end(JSON.stringify({ last24h: rows, runtime: stats }))
+  res.end(JSON.stringify({
+    last24h: rows,
+    runtime: stats,
+    backoff,
+    transferBackfill: backfill?.[0] ?? null,
+  }))
 }
 
 async function jobsRefreshArtist(req: IncomingMessage, res: ServerResponse): Promise<void> {

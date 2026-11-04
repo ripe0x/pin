@@ -21,12 +21,15 @@ export type ResolveOwnerArgs = {
 }
 
 export async function resolveNewTokenOwner(args: ResolveOwnerArgs): Promise<void> {
-  const { sql, client, contract, tokenId } = args
+  const { sql, client, tokenId } = args
+  // Every writer stores `contract` lowercase, so compare the column
+  // directly (a PK lookup); lower(contract) forced a seq scan (audit M8).
+  const contract = args.contract.toLowerCase()
 
   // Skip if a more-recent transfer already set the owner.
   const existing = (await sql`
     SELECT 1 FROM token_owners
-    WHERE lower(contract) = ${contract} AND token_id = ${tokenId}
+    WHERE contract = ${contract} AND token_id = ${tokenId}
     LIMIT 1
   `) as Array<{ "?column?": number }>
   if (existing.length > 0) return

@@ -47,6 +47,28 @@ the **`public` schema** — different tables, never touched by Ponder.
 - Every per-artist task is gated on `known_artists` — the spend ceiling.
 - RPC: multi-provider fallback (`apps/worker/src/rpc.ts`):
   publicnode → tenderly → llamarpc → drpc → Alchemy (last-resort backstop).
+- Scan integrity rules every cursored scanner follows (#295):
+  - Walk ranges through `scan-range.ts`: a failing range is split and
+    retried, never recorded as scanned.
+  - Scan up to a **safe head**, not `latest` (`finality.ts`): the
+    `finalized` tag, or `latest - SCAN_CONFIRMATIONS` (12) when a
+    provider can't serve it. The live auction trackers use the
+    confirmations head. Idempotent scanners replay `SCAN_REPLAY_OVERLAP`
+    (12) blocks below their cursor.
+  - Validate getLogs results before writing (`log-guard.ts`: in range,
+    mined, no placeholder log index).
+  - Cursor writes go through `cursors.ts` (`GREATEST`, never backwards).
+  - A scope that keeps failing backs off exponentially (`backoff.ts`,
+    `scan_backoff` table) instead of retrying every tick.
+- `scan-token-transfers` batches contracts into multi-address getLogs
+  (`transfer-batches.ts`) and backfills transfer history for tokens
+  discovered after its cursor passed them (`transfer_backfill_queue`,
+  fed by a trigger on `artist_tokens`; `transfer-backfill.ts`).
+- `GET /health` is per task (`task-health.ts`): 503 when any task has
+  failed 3 runs in a row, is running past its timeout, or hasn't run in
+  3× its interval. `/metrics` adds backoff and backfill-queue summaries.
+- `prune-retention` (hourly) prunes expired `cache_entries`, old
+  `worker_iterations`, stale `rate_limits` and `scan_backoff` rows.
 
 ### `known_artists` — bridges both
 

@@ -40,6 +40,7 @@
  */
 import { createPublicClient, fallback, http, type PublicClient } from "viem"
 import { mainnet } from "viem/chains"
+import { createSafeHeadReader, type SafeHeadReader } from "./finality.ts"
 
 function getTransports() {
   // drpc is stored under ALCHEMY_MAINNET_URL for legacy reasons — see the
@@ -80,6 +81,13 @@ export const client: PublicClient = createPublicClient({
   chain: mainnet,
   transport: fallback(getTransports(), { retryCount: 1, retryDelay: 200 }),
 })
+
+/**
+ * The block every cursored scanner scans up to (finality.ts): the
+ * `finalized` tag, or `latest - SCAN_CONFIRMATIONS` when it's
+ * unavailable / for the live auction trackers. Cached ~12s.
+ */
+export const safeHead: SafeHeadReader = createSafeHeadReader(client)
 
 /**
  * Dedicated trace_filter client. The free public RPCs in our fallback
