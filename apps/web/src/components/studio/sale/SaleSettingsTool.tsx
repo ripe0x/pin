@@ -15,10 +15,20 @@ import type { IndexedCollectionRow } from "@/lib/indexer-queries"
 import { shortAddress } from "@/lib/collection"
 import { BTN, ERROR, HELP, INPUT, LABEL } from "@/components/studio/create/wizard-ui"
 import { SaleSettingsPanel } from "./SaleSettingsPanel"
+import { V2Router } from "@/components/studio/v2/V2Router"
+import { SurfaceV2SalePanel } from "@/components/studio/v2/SurfaceV2SalePanel"
 
-export function SaleSettingsTool({ owned = [] }: { owned?: IndexedCollectionRow[] }) {
+export function SaleSettingsTool({
+  owned = [],
+  initialCollection = null,
+}: {
+  owned?: IndexedCollectionRow[]
+  /** Preselects a collection (`?collection=0x...`, e.g. from the create
+   *  wizard's done screen) instead of showing the picker. */
+  initialCollection?: `0x${string}` | null
+}) {
   const [input, setInput] = useState("")
-  const [collection, setCollection] = useState<`0x${string}` | null>(null)
+  const [collection, setCollection] = useState<`0x${string}` | null>(initialCollection)
 
   const trimmed = input.trim()
   const valid = isAddress(trimmed)
@@ -28,9 +38,10 @@ export function SaleSettingsTool({ owned = [] }: { owned?: IndexedCollectionRow[
       <header className="space-y-1.5">
         <h2 className="text-xl font-semibold tracking-tight">Sale settings</h2>
         <p className="text-sm text-gray-500 leading-relaxed">
-          Edit a collection&apos;s price, mint window, max mints, payout, and
-          referral share, directly on its canonical minter. Only the
-          collection&apos;s owner or an admin can change them.
+          Edit a collection&apos;s price, mint window, max mints and payout
+          directly on its sale: plus the referral share on a v1 minter, or
+          the wallet cap and closing the sale on a v2 sale. Only the
+          collection&apos;s owner (or, on v1, an admin) can change them.
         </p>
       </header>
 
@@ -110,7 +121,11 @@ export function SaleSettingsTool({ owned = [] }: { owned?: IndexedCollectionRow[
               </button>
             </div>
           </div>
-          <SaleSettingsPanel collection={collection} />
+          <V2Router
+            collection={collection}
+            renderV1={() => <SaleSettingsPanel collection={collection} />}
+            renderV2={(state, refetch) => <SurfaceV2SalePanel state={state} refetch={refetch} />}
+          />
         </div>
       )}
     </div>
