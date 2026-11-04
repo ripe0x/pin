@@ -35,6 +35,9 @@ import {
   type RenderableSample,
 } from "@/lib/collection-onchain"
 import { getCollectionMintedIdsFromIndexer } from "@/lib/indexer-queries"
+import { preservationFacts } from "@/lib/preservation"
+import { getMuriCollectionAnchor } from "@/lib/preservation.server"
+import { PreservationCard } from "@/components/collections/PreservationCard"
 import { selectCollectionHeroMode, selectPreMintHero } from "@/lib/collection-hero"
 import type { ContractMetadata } from "@/lib/collection-preview"
 import { selectGridTokenIds } from "@/lib/collection-grid-tokens"
@@ -282,7 +285,31 @@ export default async function CollectionPage({
   // The piece's own title, shown under the collection name when it differs.
   const pieceTitle = isEscape ? ESCAPE_PIECE_TITLE : null
 
-  const permanent = c.isRendererLocked
+  // Preservation card (issue #265). Every input is a read this page already
+  // makes or a cached one: the locks/owner/cap/sale come from getCollection,
+  // where the art lives is classified from token #1's renderer output
+  // (getRendererTokenPreview, pgCache 300s, the same read the edition hero
+  // uses), and the MURI line is two indexed SELECTs, v1 only.
+  const [storageSample, muriAnchor] = await Promise.all([
+    getRendererTokenPreview(addr, c.renderer, 1n).catch(() => null),
+    c.primitiveV2 ? Promise.resolve(null) : getMuriCollectionAnchor(addr).catch(() => null),
+  ])
+  const preservation = preservationFacts({
+    primitiveV2: c.primitiveV2,
+    protocolVersion: c.protocolVersion,
+    isRendererLocked: c.isRendererLocked,
+    isSupplyLocked: c.isSupplyLocked,
+    isRoyaltyLocked: c.isRoyaltyLocked,
+    sealed: c.sealed,
+    supplyCap: c.cfg.supplyCap,
+    saleClosed:
+      lifecycleStatus(saleWindowOf(c), c.minted, Math.floor(Date.now() / 1000)) === SurfaceStatus.Closed,
+    storage: storageSample?.storage ?? null,
+    storageSample: "token #1",
+    muri: muriAnchor,
+  })
+  const preservationCard = <PreservationCard facts={preservation} />
+
   // sellsViaMinterOnly(idMode) covers the structural pooled case;
   // `!c.primaryMinter` additionally covers a sequential collection with no
   // primary minter on record (bring-your-own, or not yet indexed) — both
@@ -414,6 +441,7 @@ export default async function CollectionPage({
             </p>
           ) : undefined
         }
+        preservation={preservationCard}
         facts={[
           { label: "Contract", value: addressLink(addr) },
           { label: "Owner", value: addressLink(c.owner) },
@@ -496,6 +524,7 @@ export default async function CollectionPage({
             )}
           </div>
         }
+        preservation={preservationCard}
         facts={[
           { label: "Contract", value: addressLink(addr) },
           { label: "Owner", value: addressLink(c.owner) },
@@ -872,6 +901,7 @@ export default async function CollectionPage({
                   Redeem a homage →
                 </Link>
               </div>
+              <div className="pt-6">{preservationCard}</div>
             </div>
           </div>
         </section>
@@ -889,28 +919,13 @@ export default async function CollectionPage({
               <Fact label="Contract" value={shortAddress(addr)} />
               <Fact label="Standard" value="ERC721" />
               <Fact label="Owner" value={shortAddress(c.owner)} />
-              <Fact
-                label="Renderer"
-                value={c.isRendererLocked ? "Locked forever" : "Swappable by the artist"}
-              />
-              <Fact
-                label="Supply"
-                value={c.isSupplyLocked ? "Locked forever" : "Adjustable by the artist"}
-              />
-              <Fact label="Permanence" value={permanent ? "Permanent" : "Not yet permanent"} />
+              {/* The lock, seal and "Permanence" rows that sat here are the
+                  Preservation card below now, which also says where the art
+                  lives instead of calling a renderer lock "Permanent". */}
               <Fact
                 label="Royalty"
                 value={c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none"}
               />
-              {c.protocolVersion === 2 && (
-                <Fact
-                  label="Royalty lock"
-                  value={c.isRoyaltyLocked ? "Locked forever" : "Adjustable by the artist"}
-                />
-              )}
-              {c.protocolVersion === 2 && (
-                <Fact label="Sealed" value={c.sealed ? "Sealed, ownership renounced" : "Not sealed"} />
-              )}
               <Fact
                 label="Referral share"
                 value={`${formatBps(c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS)} (to the referrer)`}
@@ -943,6 +958,7 @@ export default async function CollectionPage({
                   OpenSea ↗
                 </a>
               </div>
+              <div className="pt-4">{preservationCard}</div>
             </div>
           </div>
         </section>

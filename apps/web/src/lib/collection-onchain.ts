@@ -29,6 +29,7 @@ import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache, pgCacheHas } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
 import { buildEscapeArtwork, isEscapeRenderer } from "./escape-render"
+import { classifyArt, type ArtStorage } from "./preservation"
 import { decodeContractURI, decodePreviewURI, type ContractMetadata, type PreviewDecodeResult } from "./collection-preview"
 import {
   getCollectionAddressesFromIndexer,
@@ -740,6 +741,9 @@ export type CollectionTokenView = {
    *  animation_url (e.g. GenerativeRenderer's built HTML document); null for
    *  a static-image renderer (e.g. DefaultRenderer). */
   animationUrl: string | null
+  /** Where the tokenURI, image and animation live (lib/preservation.ts),
+   *  classified from the strings above; null when tokenURI did not resolve. */
+  storage: ArtStorage | null
 }
 
 /** Everything a token page needs: owner, seed, Mint Mark, art, tokenURI. */
@@ -801,6 +805,7 @@ export async function getCollectionToken(
             tokenURI: null,
             image: art.image,
             animationUrl: `/api/escape/${tokenId.toString()}?renderer=${collection.renderer}`,
+            storage: classifyArt({ image: art.image, assembled: { focMode: art.focMode } }),
           }
         }
       }
@@ -839,9 +844,12 @@ export async function getCollectionToken(
       // the live/generative work rather than just its poster image.
       let image = artwork
       let animationUrl: string | null = null
+      // The metadata's own image (not the RenderAssets fallback above), for
+      // the storage classification.
+      let metaImage: string | null = null
       if (rawTokenUri) {
         const meta = await fetchMetadataForUri(rawTokenUri, tokenId, 8_000).catch(() => null)
-        if (meta?.image) image = meta.image
+        if (meta?.image) image = metaImage = meta.image
         if (meta?.animation_url) animationUrl = meta.animation_url
       }
 
@@ -854,6 +862,7 @@ export async function getCollectionToken(
         tokenURI: rawTokenUri,
         image,
         animationUrl,
+        storage: rawTokenUri ? classifyArt({ tokenUri: rawTokenUri, image: metaImage, animationUrl }) : null,
       }
     } catch {
       return null
@@ -1241,7 +1250,7 @@ export async function getRendererTokenPreview(
   collection: Address,
   renderer: Address,
   tokenId: bigint,
-): Promise<{ image: string | null; animationUrl: string | null } | null> {
+): Promise<{ image: string | null; animationUrl: string | null; storage?: ArtStorage } | null> {
   // "escape (blue)" cannot be read through tokenURI at all: it assembles a
   // ~7.4MB string onchain, measured at 5.45B gas, past any provider's
   // eth_call ceiling. Its parts are cheap, so assemble them here and point
@@ -1249,7 +1258,12 @@ export async function getRendererTokenPreview(
   if (await isEscapeRenderer(renderer)) {
     const art = await buildEscapeArtwork(renderer, tokenId)
     if (!art) return null
-    return { image: art.image, animationUrl: `/api/escape/${tokenId.toString()}?renderer=${renderer}` }
+    return {
+      image: art.image,
+      animationUrl: `/api/escape/${tokenId.toString()}?renderer=${renderer}`,
+      // Built from the contract's own parts; the media follows the token's mode.
+      storage: classifyArt({ image: art.image, assembled: { focMode: art.focMode } }),
+    }
   }
   return pgCache(`sc-rtok:${lc(collection)}:${lc(renderer)}:${tokenId.toString()}`, 300, async () => {
     const client = getClient()
@@ -1272,7 +1286,14 @@ export async function getRendererTokenPreview(
     if (!uri) return null
     const meta = await fetchMetadataForUri(uri, tokenId, 8_000).catch(() => null)
     if (!meta) return null
-    return { image: meta.image ?? null, animationUrl: meta.animation_url ?? null }
+    return {
+      image: meta.image ?? null,
+      animationUrl: meta.animation_url ?? null,
+      // Where each part lives, classified from the URIs already in hand
+      // (no extra read). Only the classification is cached, never the
+      // tokenURI itself, which can be megabytes of onchain HTML.
+      storage: classifyArt({ tokenUri: uri, image: meta.image, animationUrl: meta.animation_url }),
+    }
   })
 }
 
