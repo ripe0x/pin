@@ -6,11 +6,14 @@
  *     contract. Mint protocol contracts implement it; Manifold Creator
  *     Cores typically do too. Contracts that don't implement it leave
  *     the column at 0.
- *   - `owner_count`: not surfaced. Computing it without an off-chain
- *     index requires either (a) Alchemy's getOwnersForNFT (out of
- *     scope on drpc-free) or (b) maintaining a per-(token, holder)
- *     balance ledger from all TransferSingle/Batch events (too
- *     expensive). UI renders "—" when owner_count is 0.
+ *   - `owner_count`: distinct holders with a positive balance in
+ *     `token_1155_balances` (scan-1155-balances, #296), once that
+ *     scanner's cursor for the contract has caught up to within
+ *     CAUGHT_UP_BLOCKS of the safe head. Before that (backfill still
+ *     running, or a contract outside the balance scanner's known-artist
+ *     scope) it stays 0 and the UI renders "—", rather than showing a
+ *     partial count. Supply and holder count stay separate numbers: one
+ *     wallet can hold many editions.
  *
  * Scope: tokens in `artist_tokens` flagged ERC-1155 (platform='mint'
  * OR contract_identity.is_erc1155 OR manifold_contracts.is_erc1155).
@@ -18,9 +21,14 @@
  * cycle.
  */
 import { sql } from "../db.ts"
-import { client } from "../rpc.ts"
+import { client, safeHead } from "../rpc.ts"
 import { getAddress, type Address } from "viem"
 import type { TaskResult } from "../scheduler.ts"
+import { TASK as BALANCES_TASK } from "./scan-1155-balances.ts"
+
+// A balance cursor this close to the safe head counts as caught up
+// (~1 day of blocks: a contract backed off for a few hours keeps its count).
+const CAUGHT_UP_BLOCKS = 7_200n
 
 const BATCH_SIZE = 50
 const STALE_AFTER = "12 hours"
@@ -71,7 +79,17 @@ export async function scan1155Stats(): Promise<TaskResult> {
     contracts: calls,
     allowFailure: true,
   })) as Array<{ status: "success"; result: unknown } | { status: "failure" }>
-  const rpcCalls = Math.max(1, Math.ceil(calls.length / 250))
+  let rpcCalls = Math.max(1, Math.ceil(calls.length / 250))
+
+  // Safe head for the holder-count coverage check (cached; usually free).
+  let headBlock: bigint | null = null
+  try {
+    const head = await safeHead.get()
+    rpcCalls += head.rpcCalls
+    headBlock = head.block
+  } catch (err) {
+    console.warn("[scan-1155-stats] safe head unavailable, holder counts left at 0:", err)
+  }
 
   let rowsWritten = 0
   for (let i = 0; i < candidates.length; i++) {
@@ -91,10 +109,20 @@ export async function scan1155Stats(): Promise<TaskResult> {
     const minted = BigInt(mintedRow[0]?.minted ?? "0")
     const ethCallSupply = r.status === "success" ? (r.result as bigint) : 0n
     const supply = minted > 0n ? minted : ethCallSupply
+    const holderRow = (await sql`
+      SELECT (SELECT count(*)::int FROM token_1155_balances
+               WHERE contract = ${c.contract} AND token_id = ${c.tokenId}) AS holders,
+             (SELECT last_block::text FROM worker_cursors
+               WHERE task = ${BALANCES_TASK} AND scope = ${c.contract}) AS cursor
+    `) as Array<{ holders: number; cursor: string | null }>
+    const balanceCursor = holderRow[0]?.cursor == null ? null : BigInt(holderRow[0].cursor)
+    const caughtUp = headBlock !== null && balanceCursor !== null &&
+      balanceCursor >= headBlock - CAUGHT_UP_BLOCKS
+    const ownerCount = caughtUp ? Number(holderRow[0]?.holders ?? 0) : 0
     await sql`
       INSERT INTO token_1155_stats
         (contract, token_id, total_supply, owner_count, fetched_at)
-      VALUES (${c.contract}, ${c.tokenId}, ${supply.toString()}, 0, NOW())
+      VALUES (${c.contract}, ${c.tokenId}, ${supply.toString()}, ${ownerCount}, NOW())
       ON CONFLICT (contract, token_id) DO UPDATE SET
         total_supply = EXCLUDED.total_supply,
         owner_count = EXCLUDED.owner_count,
