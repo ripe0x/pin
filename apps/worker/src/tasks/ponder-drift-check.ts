@@ -8,18 +8,32 @@
  * Covers every factory-watched child address PND ships: the PND V1 and V2
  * auction house factories, the Surface v1 factory's two child streams
  * (collection address, minter address), and the Surface v2 token and sale
- * CloneFactories (one `Created.instance` stream each). Factory ids in
- * `ponder_sync.factories` are assigned by Ponder at sync time and are not
- * stable across a fresh replay, so ids are resolved at runtime by matching
- * the factory contract address (and, for Surface, the childAddressLocation
- * that distinguishes the collection stream from the minter stream) rather
- * than hardcoded.
+ * CloneFactories (one `Created.instance` stream each). Each stream is
+ * matched against `ponder_sync.factories` deterministically (address,
+ * childAddressLocation, event selector, chain; then the row that covers the
+ * configured INDEXER_SCHEMA's own rows best, see resolveFactoryStream), not
+ * by "first row with this address": `ponder_sync` is shared by every
+ * indexer build writing to the database.
  *
- * If drift is detected, INSERT the missing rows with the child's actual
- * creation block; past events still need a manual reindex.
+ * MODES (env `PONDER_DRIFT_REPAIR`):
  *
- * Logs a structured warning per factory; exit code is informational only.
+ *   unset / anything else (default): detect-and-alert. Any child missing
+ *   from its watch set, any stream with source rows but no factories row,
+ *   and any ambiguous stream fails the iteration (worker_iterations.ok =
+ *   false, error names each stream). Nothing is written.
+ *
+ *   PONDER_DRIFT_REPAIR=1: additionally INSERT the missing rows with the
+ *   child's creation block. Only a stopgap: Ponder 0.16 reads child
+ *   addresses at startup (the insert takes effect after an indexer
+ *   restart) and never refetches intervals it already marked synced, so
+ *   the child's past events stay missing until a fresh schema replay. A
+ *   failed insert fails the iteration.
+ *
+ * The durable fix for a decayed watch set is a fresh ponder_vN replay
+ * (docs/ponder-schema-cutover.md); scripts/indexer-parity.mjs runs the same
+ * comparison read-only before a cutover.
  */
+import { toEventSelector } from "viem"
 import { sql } from "../db.ts"
 import { INDEXER_SCHEMA } from "../indexer-schema.ts"
 import type { TaskResult } from "../scheduler.ts"
@@ -34,12 +48,28 @@ import {
 } from "@pin/addresses"
 import {
   buildFactoryAddressRows,
+  factoryCandidates,
   missingAddresses,
-  resolveFactoryId,
+  repairEnabled,
+  resolveFactoryStream,
   type FactoryRow,
+  type FactoryStream,
 } from "./ponder-drift-check-lib.ts"
 
 const CHAIN_ID = MAINNET_CHAIN_ID
+
+// Factory events exactly as apps/indexer/ponder.config.ts declares them in
+// its factory() bindings. A signature change there changes the selector
+// Ponder stores, so keep these in sync.
+const AUCTION_HOUSE_CREATED = toEventSelector(
+  "event AuctionHouseCreated(address indexed owner, address indexed house, address feeRecipient, uint16 protocolFeeBps)",
+)
+const SURFACE_CREATED = toEventSelector(
+  "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)",
+)
+const CLONE_CREATED = toEventSelector(
+  "event Created(address indexed implementation, address indexed instance, address indexed caller)",
+)
 
 async function tableExists(table: string): Promise<boolean> {
   const rows = (await sql`
@@ -64,32 +94,97 @@ async function columnExists(table: string, column: string): Promise<boolean> {
 async function loadFactories(): Promise<FactoryRow[]> {
   const rows = (await sql`
     SELECT id, factory FROM ponder_sync.factories
-  `) as Array<{ id: number; factory: { address: string; childAddressLocation?: string } }>
-  return rows.map((r) => ({
-    id: r.id,
-    address: r.factory.address,
-    childAddressLocation: r.factory.childAddressLocation ?? null,
-  }))
+  `) as Array<{
+    id: number
+    factory: {
+      address?: string | string[]
+      childAddressLocation?: string
+      eventSelector?: string
+      chainId?: number
+      fromBlock?: number
+    }
+  }>
+  return rows
+    // An address-array factory is never one of PND's (each is one contract).
+    .filter((r) => typeof r.factory.address === "string")
+    .map((r) => ({
+      id: Number(r.id),
+      address: r.factory.address as string,
+      childAddressLocation: r.factory.childAddressLocation ?? null,
+      eventSelector: r.factory.eventSelector ?? null,
+      chainId: r.factory.chainId ?? null,
+      fromBlock: r.factory.fromBlock ?? null,
+    }))
 }
 
-/** Repair one factory's watch set against one set of source rows. Returns rows written. */
-async function repairFactory(
-  factoryId: number | undefined,
+function stream(
+  address: string | null,
+  childAddressLocation: string,
+  eventSelector: string,
+): FactoryStream | null {
+  return address ? { address, childAddressLocation, eventSelector, chainId: CHAIN_ID } : null
+}
+
+type SourceRow = { address: string; blockNumber: string | number }
+
+type StreamOutcome = { missing: number; written: number; problem: string | null }
+
+/** Check (and, in repair mode, repair) one stream's watch set against its source rows. */
+async function checkStream(
+  factories: FactoryRow[],
   label: string,
-  sourceRows: Array<{ address: string; blockNumber: string | number }>,
-): Promise<number> {
-  if (factoryId === undefined || sourceRows.length === 0) return 0
+  target: FactoryStream | null,
+  sourceRows: SourceRow[],
+  repair: boolean,
+): Promise<StreamOutcome> {
+  const ok: StreamOutcome = { missing: 0, written: 0, problem: null }
+  if (!target || sourceRows.length === 0) return ok
 
-  const existing = (await sql`
-    SELECT lower(address) AS address FROM ponder_sync.factory_addresses
-    WHERE chain_id = ${CHAIN_ID} AND factory_id = ${factoryId}
-  `) as Array<{ address: string }>
+  const candidates = factoryCandidates(factories, target)
+  if (candidates.length === 0) {
+    return {
+      missing: sourceRows.length,
+      written: 0,
+      problem:
+        `${label}: ${sourceRows.length} ${INDEXER_SCHEMA} rows but no ponder_sync.factories row for ` +
+        `${target.address} (${target.childAddressLocation}, ${target.eventSelector})`,
+    }
+  }
 
-  const missing = missingAddresses(
-    sourceRows.map((r) => r.address),
-    existing.map((e) => e.address),
+  const ids = candidates.map((c) => c.id)
+  const existingRows = (await sql`
+    SELECT factory_id, lower(address) AS address FROM ponder_sync.factory_addresses
+    WHERE chain_id = ${CHAIN_ID} AND factory_id = ANY(${ids})
+  `) as Array<{ factory_id: number; address: string }>
+  const existingById = new Map<number, Set<string>>(ids.map((id) => [id, new Set()]))
+  for (const r of existingRows) existingById.get(Number(r.factory_id))?.add(r.address)
+
+  const sourceAddresses = sourceRows.map((r) => r.address.toLowerCase())
+  const overlapById = new Map(
+    ids.map((id) => [id, sourceAddresses.filter((a) => existingById.get(id)!.has(a)).length]),
   )
-  if (missing.length === 0) return 0
+  const resolution = resolveFactoryStream(candidates, overlapById)
+  if (resolution.kind === "ambiguous") {
+    return {
+      missing: 0,
+      written: 0,
+      problem: `${label}: ambiguous ponder_sync.factories rows ${resolution.ids.join(",")} (equal overlap); not checked`,
+    }
+  }
+  if (resolution.kind === "none") return ok
+  const factoryId = resolution.id
+
+  const missing = missingAddresses(sourceAddresses, existingById.get(factoryId)!)
+  if (missing.length === 0) return ok
+
+  const sample = missing.slice(0, 5).join(",")
+  const summary =
+    `${label}: ${missing.length}/${sourceRows.length} children missing from factory_id=${factoryId} ` +
+    `watch set (e.g. ${sample})`
+  if (!repair) {
+    console.warn(`[ponder-drift] ${summary} (detect-only; set PONDER_DRIFT_REPAIR=1 to insert)`)
+    return { missing: missing.length, written: 0, problem: summary }
+  }
 
   const byAddress = new Map(sourceRows.map((r) => [r.address.toLowerCase(), r]))
   const toInsert = buildFactoryAddressRows(
@@ -97,24 +192,32 @@ async function repairFactory(
     CHAIN_ID,
     missing.map((address) => byAddress.get(address)!),
   )
-
   console.warn(
-    `[ponder-drift] forwarding ${toInsert.length} missing ${label} into factory_addresses (factory_id=${factoryId})`,
+    `[ponder-drift] ${summary}; inserting. Takes effect on the next indexer restart; ` +
+      "past events need a fresh schema replay.",
   )
-
   let written = 0
+  const failures: string[] = []
   for (const row of toInsert) {
-    await sql`
-      INSERT INTO ponder_sync.factory_addresses (chain_id, factory_id, address, block_number)
-      VALUES (${row.chain_id}, ${row.factory_id}, ${row.address}, ${row.block_number})
-      ON CONFLICT DO NOTHING
-    `
-      .then(() => { written += 1 })
-      .catch((err) => {
-        console.error(`[ponder-drift] insert ${row.address} (${label}):`, err)
-      })
+    try {
+      await sql`
+        INSERT INTO ponder_sync.factory_addresses (chain_id, factory_id, address, block_number)
+        VALUES (${row.chain_id}, ${row.factory_id}, ${row.address}, ${row.block_number})
+        ON CONFLICT DO NOTHING
+      `
+      written += 1
+    } catch (err) {
+      console.error(`[ponder-drift] insert ${row.address} (${label}):`, err)
+      failures.push(`${row.address}: ${(err as Error).message}`)
+    }
   }
-  return written
+  return {
+    missing: missing.length,
+    written,
+    problem: failures.length
+      ? `${label}: ${failures.length}/${toInsert.length} repair inserts failed (${failures.slice(0, 3).join("; ")})`
+      : null,
+  }
 }
 
 export async function ponderDriftCheck(): Promise<TaskResult> {
@@ -123,35 +226,16 @@ export async function ponderDriftCheck(): Promise<TaskResult> {
     return { scopeCount: 0, rpcCalls: 0, rowsWritten: 0 }
   }
 
+  const repair = repairEnabled(process.env.PONDER_DRIFT_REPAIR)
   const factories = await loadFactories()
 
   const v1FactoryAddr = getAddressOrNull(SOVEREIGN_AUCTION_HOUSE_FACTORY, CHAIN_ID)
   const v2FactoryAddr = getAddressOrNull(SOVEREIGN_AUCTION_HOUSE_V2_FACTORY, CHAIN_ID)
   const surfaceFactoryAddr = getAddressOrNull(SURFACE_FACTORY, CHAIN_ID)
-
-  const v1Id = v1FactoryAddr ? resolveFactoryId(factories, v1FactoryAddr) : undefined
-  const v2Id = v2FactoryAddr ? resolveFactoryId(factories, v2FactoryAddr) : undefined
-  // Surface's factory emits two child streams off the same creation log:
-  // topic2 carries the collection address, offset0 carries the minter
-  // address (zero when the collection has no separate minter).
-  const surfaceCollectionId = surfaceFactoryAddr
-    ? resolveFactoryId(factories, surfaceFactoryAddr, "topic2")
-    : undefined
-  const surfaceMinterId = surfaceFactoryAddr
-    ? resolveFactoryId(factories, surfaceFactoryAddr, "offset0")
-    : undefined
-  // Surface v2 CloneFactory: Created(implementation, instance, caller), all
-  // indexed, so the child address is topic2 on both factories.
   const tokenFactoryV2Addr = getAddressOrNull(SURFACE_TOKEN_FACTORY_V2, CHAIN_ID)
   const saleFactoryV2Addr = getAddressOrNull(SALE_FACTORY_V2, CHAIN_ID)
-  const surfaceV2CollectionId = tokenFactoryV2Addr
-    ? resolveFactoryId(factories, tokenFactoryV2Addr, "topic2")
-    : undefined
-  const surfaceV2SaleId = saleFactoryV2Addr
-    ? resolveFactoryId(factories, saleFactoryV2Addr, "topic2")
-    : undefined
 
-  let rowsWritten = 0
+  const checks: Array<{ label: string; target: FactoryStream | null; rows: SourceRow[] }> = []
 
   // pnd_houses.version only exists from the V2 schema onward; on an older
   // schema every house is implicitly V1.
@@ -163,24 +247,19 @@ export async function ponderDriftCheck(): Promise<TaskResult> {
       : `SELECT lower(house) AS address, created_at_block AS block_number, 1 AS version
          FROM ${INDEXER_SCHEMA}.pnd_houses WHERE created_at_block IS NOT NULL`,
   )) as Array<{ address: string; block_number: string; version: number }>
-
-  rowsWritten += await repairFactory(
-    v1Id,
-    "PND V1 houses",
-    houseRows.filter((r) => r.version === 1).map((r) => ({ address: r.address, blockNumber: r.block_number })),
-  )
-  rowsWritten += await repairFactory(
-    v2Id,
-    "PND V2 houses",
-    houseRows.filter((r) => r.version === 2).map((r) => ({ address: r.address, blockNumber: r.block_number })),
-  )
+  const housesOf = (version: number) =>
+    houseRows
+      .filter((r) => Number(r.version) === version)
+      .map((r) => ({ address: r.address, blockNumber: r.block_number }))
+  checks.push({ label: "PND V1 houses", target: stream(v1FactoryAddr, "topic2", AUCTION_HOUSE_CREATED), rows: housesOf(1) })
+  checks.push({ label: "PND V2 houses", target: stream(v2FactoryAddr, "topic2", AUCTION_HOUSE_CREATED), rows: housesOf(2) })
 
   // Surface tables are deploy-gated: absent until the Surface factory has
-  // synced its first collection.
-  // collections.protocol_version exists from ponder_v4 onward; on an older
-  // schema every collection is implicitly v1. Each version's rows repair
-  // only its own factory's watch set: a v2 address in a v1 stream would
-  // subscribe it under the v1 ABI.
+  // synced its first collection. collections.protocol_version exists from
+  // ponder_v4 onward; on an older schema every collection is implicitly v1.
+  // Each version's rows are checked only against its own factory's stream
+  // (protocol_version = 1 -> SurfaceFactory, 2 -> the v2 CloneFactories): a
+  // v2 address in a v1 stream would subscribe it under the v1 ABI.
   if (await tableExists("collections")) {
     const versionExpr = (await columnExists("collections", "protocol_version"))
       ? "c.protocol_version"
@@ -191,10 +270,10 @@ export async function ponderDriftCheck(): Promise<TaskResult> {
     )) as Array<{ address: string; block_number: string; version: number }>
     const ofVersion = (rows: typeof collectionRows, version: number) =>
       rows
-        .filter((r) => r.version === version)
+        .filter((r) => Number(r.version) === version)
         .map((r) => ({ address: r.address, blockNumber: r.block_number }))
-    rowsWritten += await repairFactory(surfaceCollectionId, "Surface collections", ofVersion(collectionRows, 1))
-    rowsWritten += await repairFactory(surfaceV2CollectionId, "Surface v2 collections", ofVersion(collectionRows, 2))
+    checks.push({ label: "Surface collections", target: stream(surfaceFactoryAddr, "topic2", SURFACE_CREATED), rows: ofVersion(collectionRows, 1) })
+    checks.push({ label: "Surface v2 collections", target: stream(tokenFactoryV2Addr, "topic2", CLONE_CREATED), rows: ofVersion(collectionRows, 2) })
 
     if (await tableExists("minters")) {
       // The collection's creation block is a safe lower bound for its
@@ -206,10 +285,28 @@ export async function ponderDriftCheck(): Promise<TaskResult> {
          WHERE c.created_at_block IS NOT NULL
            AND lower(m.minter) <> '0x0000000000000000000000000000000000000000'`,
       )) as Array<{ address: string; block_number: string; version: number }>
-      rowsWritten += await repairFactory(surfaceMinterId, "Surface minters", ofVersion(minterRows, 1))
-      rowsWritten += await repairFactory(surfaceV2SaleId, "Surface v2 sales", ofVersion(minterRows, 2))
+      // SurfaceCreated's primaryMinter is a non-indexed data field: offset0.
+      checks.push({ label: "Surface minters", target: stream(surfaceFactoryAddr, "offset0", SURFACE_CREATED), rows: ofVersion(minterRows, 1) })
+      checks.push({ label: "Surface v2 sales", target: stream(saleFactoryV2Addr, "topic2", CLONE_CREATED), rows: ofVersion(minterRows, 2) })
     }
   }
 
-  return { scopeCount: rowsWritten, rpcCalls: 0, rowsWritten }
+  let missing = 0
+  let written = 0
+  const problems: string[] = []
+  for (const check of checks) {
+    // One stream's failure must not hide another's, so collect, then throw.
+    const outcome = await checkStream(factories, check.label, check.target, check.rows, repair)
+    missing += outcome.missing
+    written += outcome.written
+    if (outcome.problem) problems.push(outcome.problem)
+  }
+
+  if (problems.length > 0) {
+    throw new Error(
+      `[ponder-drift] ${INDEXER_SCHEMA}: ${problems.join(" | ")}` +
+        (repair ? ` (repair mode, ${written} rows written)` : ""),
+    )
+  }
+  return { scopeCount: missing, rpcCalls: 0, rowsWritten: written }
 }

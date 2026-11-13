@@ -11,6 +11,7 @@ import { onchainTable, index } from "ponder"
  *     collections, shared-contract artist tokens)
  *   - catalog_* (on-chain Catalog registry)
  *   - srv2_artist_tokens (SR V2 shared 1/1; artist = mint recipient)
+ *   - token_ownership (current owner on the SR V2 and FND shared 1/1s)
  *   - mint_creators (Mint factory discovery only)
  *   - tl_creators (TL deployer discovery only)
  */
@@ -347,6 +348,48 @@ export const srv2ArtistTokens = onchainTable(
   }),
 )
 
+// Current ERC-721 owner for the two shared 1/1 contracts Ponder already
+// follows (ponder_v5+; design ported from draft PR #300's token_ownership,
+// indexer side only). One row per (contract, tokenId), upserted by every
+// Transfer the subscription sees, so a present row's `owner` is always the
+// current owner (the zero address once burned). What is NOT covered is a
+// token with no Transfer inside the subscription window:
+//
+//   - SuperRareNFT ("superrare-v2"): subscribed from block 8,000,000, below
+//     the contract's 2019 deploy, so every SR V2 token has a row. Complete.
+//   - FoundationNFT ("foundation-shared"): subscribed from FND_START_BLOCK
+//     (24,973,294, the PND factory deploy), not the contract's 2021 deploy.
+//     Tokens minted from that block on (every `fnd_artist_tokens` row) are
+//     complete; an older token has a row only if it moved after that block.
+//     An older token that has not moved since has no row here, and the
+//     worker's `public.token_owners` stays the source for it.
+//
+// Surface collections keep their owner on `collection_tokens.owner`
+// instead. Collector queries union the two.
+export const tokenOwnership = onchainTable(
+  "token_ownership",
+  (t) => ({
+    id: t.text().primaryKey(), // `${contract}-${tokenId}`, lowercase
+    contract: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    owner: t.hex().notNull(),
+    // "superrare-v2" | "foundation-shared"
+    source: t.text().notNull(),
+    // Position of the last Transfer applied, for ordering against other
+    // owner sources (the worker's token_owners carries block only).
+    lastBlock: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
+    blockTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    ownerIdx: index().on(table.owner),
+    contractTokenIdx: index().on(table.contract, table.tokenId),
+    // The worker's mirror-shared-owners task reads incrementally by block.
+    lastBlockIdx: index().on(table.lastBlock),
+  }),
+)
+
 // ─── MURI Protocol (on-chain media-permanence overlay) ───────────────────
 // Fixed shared singleton (0x0000000000C2A0B63ab4aA971B08B905E5875b01).
 // `muri_contracts` = which NFT contracts have registered with MURI (one row
@@ -435,6 +478,10 @@ export const collections = onchainTable(
     // The deployed Collection clone address.
     collection: t.hex().primaryKey(),
     owner: t.hex().notNull(),
+    // The owner named at creation. Written once and never updated, so it
+    // survives transfers and renounce (owner then reads 0x0). Attribution
+    // uses it to credit a renounced collection's launching owner.
+    launchOwner: t.hex(),
     // Which Surface generation created this collection: 1 (SurfaceFactory)
     // or 2 (the v2 token CloneFactory).
     protocolVersion: t.integer().notNull(),
@@ -445,6 +492,11 @@ export const collections = onchainTable(
     // call (setMinter/setRenderer/setSupplyCap/setRoyalty/setName). False
     // means a third party created or transferred the collection naming this
     // owner; treat the listing like an unclaimed v1 roster entry.
+    // Consent is read from tx.from, so a Safe or other contract owner starts
+    // false even when it launched the collection itself (tx.from is the
+    // executing EOA) and turns true on its first owner-only setter. A
+    // renounce keeps the prior value (true if unset): only the owner can
+    // renounce.
     ownerConfirmed: t.boolean(),
     // v2 only: the Launcher that emitted Launched for this collection, null
     // when the token factory was called directly (or for v1).
@@ -494,10 +546,19 @@ export const collectionTokens = onchainTable(
     id: t.text().primaryKey(), // `${collection}-${tokenId}`
     collection: t.hex().notNull(),
     tokenId: t.bigint().notNull(),
-    // Current holder, from the Minted event's `to`. Ponder does not track
-    // post-mint Transfer for this contract (that's an owner-tracking
-    // concern the web/worker layer can add via Transfer if/when needed).
+    // Mint recipient of the current instance (the Minted event's `to`).
+    // Provenance, not the live holder: see `owner`.
     mintedTo: t.hex().notNull(),
+    // Current holder (ponder_v5+). Seeded from Minted.to, then moved by
+    // every ERC-721 Transfer this collection emits (both Surface versions
+    // are factory children, so their Transfer stream is complete from the
+    // collection's creation block). The zero address once burned; a pooled
+    // re-mint sets it to the new recipient.
+    owner: t.hex().notNull(),
+    // Block of the last owner change (mint, transfer or burn). Separate
+    // from updatedAtBlock, which readers use as the mint/burn time and
+    // which a plain transfer must not move.
+    ownerUpdatedAtBlock: t.bigint().notNull(),
     // The minter contract that issued this token (Minted event's `minter`,
     // i.e. msg.sender on the token): cross-minter attribution with no
     // trace lookup. referrer/statusAtMint/mintBlock no longer exist: the
@@ -519,6 +580,7 @@ export const collectionTokens = onchainTable(
   (table) => ({
     collectionIdx: index().on(table.collection, table.tokenId),
     mintedToIdx: index().on(table.mintedTo),
+    ownerIdx: index().on(table.owner),
   }),
 )
 
@@ -591,6 +653,34 @@ export const collectionReferrals = onchainTable(
   (table) => ({
     collectionIdx: index().on(table.collection, table.blockNumber),
     referrerIdx: index().on(table.referrer),
+  }),
+)
+
+// v1 attribution, the owner's side (issue #261): one row per
+// (collection, creator) from Surface:CreatorListed, emitted at initialize
+// for `p.creators` and by every later setCreators(list, listed). `listed`
+// mirrors the collection's isListedCreator(creator). The creator's side is
+// the Catalog claim (`catalog_contracts`); a listed creator is confirmed
+// when both exist, which is what isConfirmedCreator computes onchain.
+// v2 tokens have no creator list (attribution there is the Catalog claim
+// alone), so this table is v1 only.
+export const collectionCreators = onchainTable(
+  "collection_creators",
+  (t) => ({
+    id: t.text().primaryKey(), // `${collection}-${creator}`, lowercase
+    collection: t.hex().notNull(),
+    creator: t.hex().notNull(),
+    listed: t.boolean().notNull(),
+    // First CreatorListed seen for this pair (the initialize block for
+    // creators passed at creation).
+    firstListedAtBlock: t.bigint().notNull(),
+    updatedAtBlock: t.bigint().notNull(),
+    updatedAtTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    collectionIdx: index().on(table.collection),
+    creatorIdx: index().on(table.creator),
   }),
 )
 

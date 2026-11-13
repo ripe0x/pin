@@ -2,6 +2,7 @@ import { ponder } from "ponder:registry"
 import type { Virtual } from "ponder"
 import {
   collections,
+  collectionCreators,
   collectionMints,
   collectionTokens,
   collectionReferrals,
@@ -10,6 +11,7 @@ import {
 } from "ponder:schema"
 import { surfaceTokenV2Abi } from "../abis/SurfaceTokenV2"
 import { fixedPriceSaleAbi } from "../abis/FixedPriceSale"
+import { ZERO_ADDRESS, ownerConfirmedAfterTransfer, surfaceOwnerAfterTransfer } from "./ownership"
 
 /**
  * PND Surface System handlers: v1 (contracts/src/surface/) and the v2
@@ -17,14 +19,17 @@ import { fixedPriceSaleAbi } from "../abis/FixedPriceSale"
  *
  * Kept minimal per AGENTS.md: handlers mirror onchain state into
  * `collections` / `collection_tokens` / `collection_mints` /
- * `collection_sales` / `collection_referrals` / `minters`. Metadata
+ * `collection_sales` / `collection_referrals` / `collection_creators` /
+ * `minters`. `collection_tokens.owner` follows each clone's ERC-721
+ * Transfer stream (the clones are factory children, so that stream is
+ * complete from creation; see ownership.ts for the transition rules). Metadata
  * enrichment, rendering, and anything beyond event data plus one
  * creation-time read per v2 clone is the worker's/web's job.
  *
  * v1 (SurfaceFactory/Surface/FixedPriceMinter) and v2
  * (SurfaceTokenFactoryV2/SurfaceSaleFactoryV2/LauncherV2/SurfaceV2/
  * FixedPriceSaleV2) share the handler functions whose events are
- * byte-identical (Burned, Sold, ReferralPaid); everything else is
+ * byte-identical (Burned, Transfer, Sold, ReferralPaid); everything else is
  * per-version.
  *
  * `HandlerFor<Name>` pins each shared function's parameter type to one
@@ -46,8 +51,6 @@ type HandlerFor<Name extends EventName> = (args: {
 const tokenRowId = (collection: string, tokenId: bigint) =>
   `${collection.toLowerCase()}-${tokenId.toString()}`
 
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
-
 // ─── Factory discovery ────────────────────────────────────────────────────
 
 ponder.on("SurfaceFactory:SurfaceCreated", async ({ event, context }) => {
@@ -58,6 +61,7 @@ ponder.on("SurfaceFactory:SurfaceCreated", async ({ event, context }) => {
     .values({
       collection,
       owner,
+      launchOwner: owner,
       protocolVersion: 1,
       ownerRenounced: false,
       name,
@@ -151,6 +155,8 @@ ponder.on("Surface:Minted", async ({ event, context }) => {
       // Pooled re-mint of a previously burned id: fresh mark, live again.
       await context.db.update(collectionTokens, { id }).set({
         mintedTo: to,
+        owner: to,
+        ownerUpdatedAtBlock: event.block.number,
         minter,
         mintIndex,
         burned: false,
@@ -163,6 +169,8 @@ ponder.on("Surface:Minted", async ({ event, context }) => {
         collection,
         tokenId,
         mintedTo: to,
+        owner: to,
+        ownerUpdatedAtBlock: event.block.number,
         minter,
         mintIndex,
         burned: false,
@@ -248,6 +256,50 @@ const burnedHandler: HandlerFor<"SurfaceV2:Burned"> = async ({ event, context })
 ponder.on("Surface:Burned", burnedHandler)
 ponder.on("SurfaceV2:Burned", burnedHandler)
 
+// Current holder (collection_tokens.owner). Both versions' _mint emits
+// Transfer(0, to) before Minted and _burn emits Transfer(owner, 0) before
+// Burned, so the mint leg is left to the Minted handler (which writes
+// owner = Minted.to) and a burn sets owner to 0x0 (Burned then sets
+// `burned`). updatedAtBlock/updatedAtTime are deliberately untouched: readers
+// order by them as the mint time.
+const transferHandler: HandlerFor<"SurfaceV2:Transfer"> = async ({ event, context }) => {
+  const { from, to, tokenId } = event.args
+  const owner = surfaceOwnerAfterTransfer(from, to)
+  if (owner === null) return
+  const id = tokenRowId(event.log.address, tokenId)
+  const existing = await context.db.find(collectionTokens, { id })
+  if (!existing) return
+  await context.db.update(collectionTokens, { id }).set({
+    owner,
+    ownerUpdatedAtBlock: event.block.number,
+  })
+}
+
+ponder.on("Surface:Transfer", transferHandler)
+ponder.on("SurfaceV2:Transfer", transferHandler)
+
+// v1 attribution, owner's side (collection_creators, issue #261). Not gated
+// on the `collections` row: initialize emits CreatorListed for the creators
+// passed at creation BEFORE the factory's SurfaceCreated log, and Ponder
+// delivers a factory child's logs from its creation block, so the init
+// listings arrive first and must still be recorded. Only factory children
+// reach this handler, so the log address is a genuine Surface collection.
+ponder.on("Surface:CreatorListed", async ({ event, context }) => {
+  const { creator, listed } = event.args
+  const collection = event.log.address
+  const id = `${collection.toLowerCase()}-${creator.toLowerCase()}`
+  const latest = {
+    listed,
+    updatedAtBlock: event.block.number,
+    updatedAtTime: event.block.timestamp,
+    txHash: event.transaction.hash,
+  }
+  await context.db
+    .insert(collectionCreators)
+    .values({ id, collection, creator, firstListedAtBlock: event.block.number, ...latest })
+    .onConflictDoUpdate(latest)
+})
+
 // ─── Surface v2 primitives ──────────────────────────────────────────────
 //
 // Ordering: a clone's initializer runs inside the factory's create call,
@@ -280,6 +332,7 @@ ponder.on("SurfaceTokenFactoryV2:Created", async ({ event, context }) => {
     .values({
       collection,
       owner,
+      launchOwner: owner,
       protocolVersion: 2,
       ownerRenounced: owner.toLowerCase() === ZERO_ADDRESS,
       // Anyone can create or launch naming any owner; only the owner sending
@@ -362,7 +415,12 @@ ponder.on("SurfaceV2:NameSet", async ({ event, context }) => {
 })
 
 // OZ Ownable pushes ownership without the new owner's acceptance, so the
-// new owner is unconfirmed until it acts (or sent this transaction).
+// new owner is unconfirmed until it acts (or sent this transaction). A
+// renounce keeps the previous value (true if unset): only the owner can
+// renounce, and a sealed collection must not drop out of listings that
+// filter on `owner_confirmed IS NOT FALSE`. A Safe or other contract owner
+// starts unconfirmed (tx.from is the executing EOA) until it calls an
+// owner-only setter. Rules: ownership.ts `ownerConfirmedAfterTransfer`.
 ponder.on("SurfaceV2:OwnershipTransferred", async ({ event, context }) => {
   const { newOwner } = event.args
   const collection = event.log.address
@@ -371,7 +429,11 @@ ponder.on("SurfaceV2:OwnershipTransferred", async ({ event, context }) => {
   await context.db.update(collections, { collection }).set({
     owner: newOwner,
     ownerRenounced: newOwner.toLowerCase() === ZERO_ADDRESS,
-    ownerConfirmed: event.transaction.from.toLowerCase() === newOwner.toLowerCase(),
+    ownerConfirmed: ownerConfirmedAfterTransfer(
+      existing.ownerConfirmed,
+      event.transaction.from,
+      newOwner,
+    ),
   })
 })
 
@@ -406,6 +468,8 @@ ponder.on("SurfaceV2:Minted", async ({ event, context }) => {
       collection,
       tokenId,
       mintedTo: to,
+      owner: to,
+      ownerUpdatedAtBlock: event.block.number,
       minter,
       mintIndex: Number(i),
       burned: false,
