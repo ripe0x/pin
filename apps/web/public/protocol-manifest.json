@@ -30,27 +30,6 @@
           "docs": "/docs/surface/contracts/fixed-price-minter",
           "role": "Fixed-price minter for a sequential [Surface](/docs/surface/contracts/surface) collection, deployed as one EIP-1167 clone per collection."
         },
-        "DefaultRenderer": {
-          "address": null,
-          "kind": "singleton",
-          "abi": "/abis/DefaultRenderer.json",
-          "docs": "/docs/surface/contracts/default-renderer",
-          "role": "The built-in renderer for [Surface](/docs/surface/contracts/surface)."
-        },
-        "RenderAssets": {
-          "address": null,
-          "kind": "singleton",
-          "abi": "/abis/RenderAssets.json",
-          "docs": "/docs/surface/contracts/render-assets",
-          "role": "Registry of static display assets for renderers: each collection's cover image, per-token captures (thumbnails of rendered output), and a capture template resolved per token id."
-        },
-        "ScriptyRenderer": {
-          "address": null,
-          "kind": "clone",
-          "abi": "/abis/ScriptyRenderer.json",
-          "docs": "/docs/surface/contracts/scripty-renderer",
-          "role": "A forkable [IRenderer](/docs/surface/contracts/i-renderer) template for script-based generative work."
-        },
         "IPriceStrategy": {
           "address": null,
           "kind": "interface",
@@ -84,21 +63,35 @@
           "kind": "clone",
           "abi": "/abis/SurfaceV2.json",
           "docs": "/docs/surface/contracts/surface-v2",
-          "role": "Second generation of the sequential-id ERC721 collection: the token core of the Surface v2 art protocol."
+          "role": "The v2 token primitive: an ERC721 collection deployed per artist as an EIP-1167 clone through the token [CloneFactory](/docs/surface/contracts/clone-factory), usually by the [Launcher](/docs/surface/contracts/launcher)."
         },
-        "SurfaceFactoryV2": {
-          "address": null,
-          "kind": "singleton",
-          "abi": "/abis/SurfaceFactoryV2.json",
-          "docs": "/docs/surface/contracts/factory-v2",
-          "role": "Deploys one [SurfaceV2](/docs/surface/contracts/surface-v2) collection per call as an EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, and one collection form (sequential ids)."
-        },
-        "FixedPriceMinterV2": {
+        "FixedPriceSale": {
           "address": null,
           "kind": "clone",
-          "abi": "/abis/FixedPriceMinterV2.json",
-          "docs": "/docs/surface/contracts/fixed-price-minter-v2",
-          "role": "Exact-payment fixed-price minter for a [SurfaceV2](/docs/surface/contracts/surface-v2) collection, deployed as one EIP-1167 clone per collection."
+          "abi": "/abis/FixedPriceSale.json",
+          "docs": "/docs/surface/contracts/fixed-price-sale",
+          "role": "The v2 sale primitive: one EIP-1167 clone per sale through the sale [CloneFactory](/docs/surface/contracts/clone-factory), bound to one [Surface (v2)](/docs/surface/contracts/surface-v2) collection at initialize."
+        },
+        "AllowlistGate": {
+          "address": "0xb3b0aBfeb588ab905f984a20e05784be8a35eF4f",
+          "kind": "singleton",
+          "abi": "/abis/AllowlistGate.json",
+          "docs": "/docs/surface/contracts/allowlist-gate",
+          "role": "One ownerless singleton gate serving every collection: a Merkle root per collection, set by that collection's owner."
+        },
+        "CloneFactory": {
+          "address": null,
+          "kind": "clone",
+          "abi": "/abis/CloneFactory.json",
+          "docs": "/docs/surface/contracts/clone-factory",
+          "role": "Plumbing, deployed once per implementation: the token factory (`{{addr:surfaceFactoryV2}}`) clones [Surface (v2)](/docs/surface/contracts/surface-v2) and the sale factory (`{{addr:saleFactoryV2}}`) clones [FixedPriceSale](/docs/surface/contracts/fixed-price-sale)."
+        },
+        "Launcher": {
+          "address": "0x924d16cDCB9037cE159D82923406Be161a6BCD1B",
+          "kind": "singleton",
+          "abi": "/abis/Launcher.json",
+          "docs": "/docs/surface/contracts/launcher",
+          "role": "The common wiring: one `launch` call deploys a [Surface (v2)](/docs/surface/contracts/surface-v2) collection and its [FixedPriceSale](/docs/surface/contracts/fixed-price-sale), already pointed at each other, through the two [CloneFactory](/docs/surface/contracts/clone-factory) instances."
         }
       }
     },

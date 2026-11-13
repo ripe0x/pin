@@ -2,7 +2,7 @@
 
 # FixedPriceSale
 
-Implementation not yet deployed to Ethereum mainnet; the address lands here at launch.
+Implementation `0xd97E71DAB49fb20F9b5d12DE3A49ce95fdfD086E` · [view on evm.now](https://evm.now/address/0xd97E71DAB49fb20F9b5d12DE3A49ce95fdfD086E?chainId=1) · Ethereum mainnet
 
 > Deployed per sale as an EIP-1167 clone of the implementation above through the sale [CloneFactory](/docs/surface/contracts/clone-factory); [`launch`](/docs/surface/contracts/launcher#launch) wires one to each new collection and `Launched.sale` records it. A sale has no canonical address of its own; substitute your sale address for `<SALE_ADDRESS>` in the examples below.
 
