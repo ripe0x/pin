@@ -97,16 +97,16 @@ emit({
 
 // Surface v2 primitives (docs/pnd-surface-v2-design.md). The token shares
 // its contract name with the v1 Surface, so forge writes it under out/v2/.
-// Not emitted to apps/indexer/abis (indexer v2 support ships separately).
+// The indexer binds the token, sale and both factories, plus the Launcher.
 emit({
   artifact: "v2/Surface.sol/Surface.json",
   exportName: "surfaceTokenV2Abi",
-  outFiles: ["packages/abi/src/surfaceTokenV2.ts"],
+  outFiles: ["packages/abi/src/surfaceTokenV2.ts", "apps/indexer/abis/SurfaceTokenV2.ts"],
 });
 emit({
   artifact: "FixedPriceSale.sol/FixedPriceSale.json",
   exportName: "fixedPriceSaleAbi",
-  outFiles: ["packages/abi/src/fixedPriceSale.ts"],
+  outFiles: ["packages/abi/src/fixedPriceSale.ts", "apps/indexer/abis/FixedPriceSale.ts"],
 });
 emit({
   artifact: "AllowlistGate.sol/AllowlistGate.json",
@@ -116,10 +116,10 @@ emit({
 emit({
   artifact: "CloneFactory.sol/CloneFactory.json",
   exportName: "cloneFactoryAbi",
-  outFiles: ["packages/abi/src/cloneFactory.ts"],
+  outFiles: ["packages/abi/src/cloneFactory.ts", "apps/indexer/abis/CloneFactory.ts"],
 });
 emit({
   artifact: "Launcher.sol/Launcher.json",
   exportName: "launcherAbi",
-  outFiles: ["packages/abi/src/launcher.ts"],
+  outFiles: ["packages/abi/src/launcher.ts", "apps/indexer/abis/Launcher.ts"],
 });

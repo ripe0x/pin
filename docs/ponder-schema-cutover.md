@@ -1,158 +1,120 @@
-# Ponder schema cutover: ponder_v3 to ponder_v4
+# Ponder schema cutover: ponder_v4 to ponder_v5
 
 This is a schema-changing indexer release. Follow the general procedure
 in `AGENTS.md` ("Production database" and "Bumping the schema again"):
-build a parallel `indexer-v4` Railway service writing a fresh
-`ponder_v4` schema from genesis, verify parity against `ponder_v3`,
+build a parallel `indexer-v5` Railway service writing a fresh
+`ponder_v5` schema from genesis, verify parity against `ponder_v4`,
 then flip `INDEXER_SCHEMA` in Netlify's production context and confirm
-the flip through `/api/health/indexer`. This doc adds the checks
-specific to the v4 change: Surface v2 support.
+the flip through `/api/health/indexer`. `indexer-v4`/`ponder_v4` stay as
+the rollback pair. This doc adds the checks specific to the v5 change:
+the indexer rebinds from the superseded first Surface v2
+(`SurfaceFactoryV2`/`SurfaceV2`/`FixedPriceMinterV2`, never on mainnet)
+to the primitive-first Surface v2 (`docs/pnd-surface-v2-design.md`).
 
 ## What changed
 
-- `apps/indexer/ponder.config.ts` adds `SurfaceFactoryV2`, `SurfaceV2`,
-  and `FixedPriceMinterV2` to `contracts`. Each is declared once, with
-  Ponder's per-chain `chain: { mainnet: {...}, sepolia: {...} }`
-  override: a network's key is present, with the real address and
-  block from `contracts/deployments.mainnet.json` or
-  `contracts/deployments.sepolia.json`'s `surfaceFactoryV2`/
-  `factoryDeployBlock`, only once that network has a deployment
-  recorded. A network with no deployment yet has its key omitted
-  entirely, not pointed at a placeholder address: Ponder's
-  `flattenSources` builds one source per key present in `chain`, so an
-  omitted network gets no source, no `eth_getLogs` call, and no
-  `ponder_sync.factories` row. The sepolia chain and the sepolia
-  entries of these three contracts are included only when
-  `INDEX_SEPOLIA=1` (or in sepolia-only mode). The flag is unset in
-  production, so the production `ponder_v4` schema indexes mainnet only:
-  `collections` and the `collection_*` tables have no chain column, and
-  sepolia rows would otherwise appear in production queries and in the
-  worker drift check. With `INDEX_SEPOLIA=1`, `SEPOLIA_RPC_URL` is
-  required in practice (an archive-capable endpoint, since the sepolia
-  deploy block predates the pruning window of the free public fallback)
-  and the sepolia rehearsal deploy is indexed into the same schema.
-- `apps/indexer/ponder.schema.ts` adds three columns to `collections`:
-  `protocolVersion` (integer, 1 for a v1 factory collection, 2 for v2),
-  `royaltyLocked` (boolean), `ownerRenounced` (boolean). Every existing
-  Surface v1 row gets `protocolVersion = 1`, `royaltyLocked = false`,
-  `ownerRenounced = false` on replay, since `apps/indexer/src/
-  Collections.ts` writes them explicitly on every `SurfaceCreated`
-  insert (Ponder's onchain tables have no column defaults).
-  `royaltyLocked` stays false for v1 rows for the life of the row: v1
-  has no `lockRoyalty` function, so nothing ever flips it.
-  `ownerRenounced` tracks `OwnershipTransferred` to the zero address for
-  BOTH versions (v2's `seal()` reaches it, and v1's OZ Ownable2Step base
-  still allows a direct `renounceOwnership` call).
-- `apps/indexer/src/Collections.ts` shares its handler functions between
-  v1 and v2 contract names (byte-identical event shapes; see
-  `docs/pnd-surface-v2-plan.md`), and adds one v2-only handler
-  (`SurfaceV2:RoyaltyLocked`) plus one shared handler registered for
-  both `Surface:OwnershipTransferred` and
-  `SurfaceV2:OwnershipTransferred`.
+- `apps/indexer/ponder.config.ts` declares five v2 contracts:
+  `SurfaceTokenFactoryV2` and `SurfaceSaleFactoryV2` (two instances of
+  `CloneFactory`, discovery via `Created`), `LauncherV2` (`Launched`),
+  and the clones as factory() children of their own factory:
+  `SurfaceV2` (token, child address `Created.instance` of the token
+  factory) and `FixedPriceSaleV2` (sale, `Created.instance` of the sale
+  factory). Addresses and start block come from
+  `contracts/deployments.<network>.json` keys `surfaceFactoryV2` (token
+  factory), `saleFactoryV2`, `launcherV2` and `factoryDeployBlock`. A
+  network gets sources only once all three addresses are recorded; until
+  then its key is omitted from each `chain: {...}` map (no source, no
+  `eth_getLogs`, no `ponder_sync.factories` row). The sepolia entries are
+  included only with `INDEX_SEPOLIA=1` or in sepolia-only mode.
+- `apps/indexer/ponder.schema.ts` `collections`: drops `royaltyLocked`
+  (v2 has no royalty lock; no reader), adds `ownerConfirmed` (v2 only,
+  null for v1) and `launcher` (v2 only). `minters` now also maps a v2
+  sale to its collection.
+- `apps/indexer/src/Collections.ts` v2 handlers:
+  - token `Created`: one multicall (a single `eth_call`) reads
+    `owner/name/symbol/minter` at the creation block, inserts the
+    collection with `protocol_version = 2`. `ownerConfirmed` starts true
+    only if the owner sent the transaction.
+  - sale `Created`: one `eth_call` reads `collection()`; the sale is
+    recorded in `minters` only if that collection is a v2 `collections`
+    row (so a sale bound to a collection the token factory never made is
+    ignored, along with its `Sold`).
+  - `Launched`: sets `collections.launcher`. `Launched.owner` is the
+    caller's claim, not consent, and is not used.
+  - token `MinterSet` (updates `primary_minter`), `NameSet` (updates
+    name/symbol), `RendererSet`/`SupplyCapSet`/`RoyaltySet`: each marks
+    `ownerConfirmed` true. `OwnershipTransferred` moves the owner and
+    resets `ownerConfirmed` unless the new owner sent the transaction.
+    The clone's own init logs precede `Created` in the same transaction
+    and are skipped because the row does not exist yet.
+  - `Minted`/`Burned` (token), `Sold`/`ReferralPaid` (sale) into the
+    existing `collection_*` tables.
+- `apps/worker/src/tasks/ponder-drift-check.ts` repairs v1 and v2 watch
+  sets separately by `protocol_version` (before, every `collections`
+  row was repaired into the v1 Surface factory's stream, which would
+  subscribe a v2 collection under the v1 ABI), and adds the two v2
+  streams (`topic2` of each CloneFactory) once `@pin/addresses` carries
+  `SURFACE_TOKEN_FACTORY_V2` / `SALE_FACTORY_V2` for mainnet.
+
+RPC cost: two `eth_call`s per v2 launch (one multicall on the token, one
+read on the sale), at the creation block, cached in `ponder_sync`. No
+per-mint reads.
 
 ## Parity checks before flipping INDEXER_SCHEMA
 
-Run these against both `ponder_v3` and `ponder_v4` on maglev and compare.
-
-Row counts per table (every table from ponder_v3 should match exactly,
-since no v1 handler or event shape changed):
+Row counts per table must match exactly between `ponder_v4` and
+`ponder_v5` for everything v1 (no v1 handler or event shape changed).
+Run against both schemas and diff:
 
 ```sql
-select 'collections' as table, count(*) from ponder_v3.collections
-union all select 'collection_tokens', count(*) from ponder_v3.collection_tokens
-union all select 'collection_mints', count(*) from ponder_v3.collection_mints
-union all select 'collection_sales', count(*) from ponder_v3.collection_sales
-union all select 'collection_referrals', count(*) from ponder_v3.collection_referrals
-union all select 'minters', count(*) from ponder_v3.minters;
+select 'collections' as table, count(*) from ponder_v4.collections where protocol_version = 1
+union all select 'collection_tokens', count(*) from ponder_v4.collection_tokens
+union all select 'collection_mints', count(*) from ponder_v4.collection_mints
+union all select 'collection_sales', count(*) from ponder_v4.collection_sales
+union all select 'collection_referrals', count(*) from ponder_v4.collection_referrals
+union all select 'minters', count(*) from ponder_v4.minters;
 ```
 
-Repeat against `ponder_v4` with the same query (schema name swapped) and
-diff the two result sets by hand or with a small script; every row count
-must match.
-
-`protocolVersion` distribution on `ponder_v4` (run only against v4,
-`ponder_v3` has no such column):
+`ponder_v4` has no v2 rows on mainnet (the superseded v2 factory never
+deployed there). While the mainnet v2 factories stay paused, `ponder_v5`
+should match `ponder_v4` exactly. Once collections exist:
 
 ```sql
-select protocol_version, count(*) from ponder_v4.collections group by 1;
+select protocol_version, owner_confirmed, (launcher is not null) as launched, count(*)
+from ponder_v5.collections group by 1, 2, 3 order by 1, 2, 3;
 ```
 
-Expect every mainnet row at `protocol_version = 1` until the mainnet v2
-factory is deployed and `contracts/deployments.mainnet.json` is updated
-with its `surfaceFactoryV2`/`factoryDeployBlock`; after that deploy and
-the next `ponder_v4` replay, expect `protocol_version = 2` rows for
-every collection created through the mainnet v2 factory. With
-`INDEX_SEPOLIA=1`, a sepolia rehearsal deploy also produces
-`protocol_version = 2` rows; distinguish mainnet from sepolia
-collections by joining `collection_mints.block_number` against each
-chain's known block ranges, or by the collection address against the
-two deploy records, since `collections` does not carry a chain id
-column.
+## factory_addresses check for the v2 factories
 
-`royaltyLocked`/`ownerRenounced` sanity (only meaningful once v2 has
-live collections; both columns are false on every v1 row by
-construction):
+Per `AGENTS.md`'s factory watch-set trap, confirm every v2 clone is in
+the watch set, not just in the discovery table. `ponder_sync.factories.id`
+is not stable across a replay, so resolve it by factory address:
 
 ```sql
-select protocol_version, royalty_locked, owner_renounced, count(*)
-from ponder_v4.collections
-group by 1, 2, 3
-order by 1, 2, 3;
-```
-
-## factory_addresses check for the v2 factory
-
-Per `AGENTS.md`'s factory watch-set trap: confirm Ponder actually added
-every v2 clone to its watch set, not just wrote the discovery row.
-`ponder_sync.factories.id` is a Ponder-assigned integer, not stable
-across a replay, so resolve it the same way
-`apps/worker/src/tasks/ponder-drift-check.ts` does: match the factory's
-own address (recorded as `surfaceFactoryV2` in the relevant
-`contracts/deployments.<network>.json`) and, for Surface's two child
-streams off the same `SurfaceCreated` log, the `childAddressLocation`
-that distinguishes them (`topic2` for the collection stream matching
-`parameter: "collection"`, `offset0` for the minter stream matching
-`parameter: "primaryMinter"`):
-
-```sql
-select id, factory->>'childAddressLocation' as child_address_location
+select id, factory->>'address' as factory, factory->>'childAddressLocation' as loc
 from ponder_sync.factories
-where lower(factory->>'address') = lower('<surfaceFactoryV2 from deployments.mainnet.json>');
+where lower(factory->>'address') in (
+  lower('<surfaceFactoryV2 from deployments.mainnet.json>'),
+  lower('<saleFactoryV2 from deployments.mainnet.json>')
+);
 ```
 
-Take the two returned ids (one per `child_address_location`) and count
-their watched addresses:
-
-```sql
-select factory_id, count(*)
-from ponder_sync.factory_addresses
-where chain_id = 1
-  and factory_id in (<collection_stream_id>, <minter_stream_id>)
-group by 1;
-```
-
-Compare the `topic2` (collection stream) count against
-`select count(*) from ponder_v4.collections where protocol_version = 2`
-for mainnet collections only, and the `offset0` (minter stream) count
-against
-`select count(*) from ponder_v4.minters m join ponder_v4.collections c on c.collection = m.collection where c.protocol_version = 2`,
-scoped the same way. They should match exactly. A mismatch means the
-same decayed-watch-set failure mode the v1 factories can hit: run
-`ponder-drift-check.ts`'s repair path (see `AGENTS.md`) before trusting
-the count. With `INDEX_SEPOLIA=1`, repeat the same two queries with the sepolia
-deploy record and `chain_id = 11155111` to check the rehearsal deploy's
-watch set too.
-
-Until a network's deploy record has a `surfaceFactoryV2`, that
-network's key is omitted from the contract's `chain: {...}` map (see
-"What changed" above), so it has no `ponder_sync.factories` row at all
-on that chain, and there is nothing to compare there yet.
+Both rows should read `loc = topic2`. Count each id's addresses in
+`ponder_sync.factory_addresses` (`chain_id = 1`) and compare: the token
+factory id against
+`select count(*) from ponder_v5.collections where protocol_version = 2`,
+the sale factory id against
+`select count(*) from ponder_v5.minters m join ponder_v5.collections c on c.collection = m.collection where c.protocol_version = 2`.
+The sale stream may be larger (it also watches sales bound to
+collections the token factory never made, which handlers ignore); the
+token stream must match exactly. A shortfall means a decayed watch set:
+run `ponder-drift-check.ts`'s repair path before trusting the count.
 
 ## Sepolia verification mode
 
 `PONDER_CHAIN_ID=11155111` restricts the indexer to the sepolia chain
-and the Surface v2 contracts (`SurfaceFactoryV2`, `SurfaceV2`,
-`FixedPriceMinterV2`), for verifying a live sepolia deploy without
+and the Surface v2 contracts (`SurfaceTokenFactoryV2`,
+`SurfaceSaleFactoryV2`, `LauncherV2`, `SurfaceV2`, `FixedPriceSaleV2`), for verifying a live sepolia deploy without
 touching mainnet. Unset (or `1`), the default, is production mode:
 every chain and contract in `ponder.config.ts`, unchanged.
 
@@ -160,7 +122,7 @@ Run it with:
 
 ```
 PONDER_CHAIN_ID=11155111 \
-SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com \
+SEPOLIA_RPC_URL=https://sepolia.gateway.tenderly.co \
 DATABASE_URL=postgres://<user>@localhost:5432/<db> \
 npx ponder dev --schema <a schema name, max 45 characters> --disable-ui
 ```
@@ -174,8 +136,8 @@ Every mainnet-only contract keeps its key in `contracts` (so
 codebase keep typechecking against real per-event argument types, not
 `unknown`), but its `chain` map is empty in this mode
 (`SEPOLIA_ONLY_MODE ? {} : "mainnet"`), the same "omit the key, not a
-placeholder address" mechanism `SurfaceFactoryV2`/`SurfaceV2`/
-`FixedPriceMinterV2` already use per network above: an empty chain map
+placeholder address" mechanism the Surface v2 contracts already use per
+network above: an empty chain map
 contributes no source, no `eth_getLogs` call, and no
 `ponder_sync.factories` row. `chains.mainnet` itself is also omitted in
 this mode, not just left with no contracts on it: a declared chain gets
@@ -184,7 +146,7 @@ whether any contract subscribes to it, so leaving `mainnet` declared
 would still send one mainnet RPC request.
 
 Schema naming: use a schema name distinct from any parity/production
-schema (`ponder_v3`, `ponder_v4`, …) so a sepolia-only run never
+schema (`ponder_v4`, `ponder_v5`, …) so a sepolia-only run never
 collides with a real replay. `apps/indexer/scripts/
 check-config-parity.ts` (`pnpm check:config-parity`) proves this mode
 does not change the config production mode produces, by diffing the
@@ -194,14 +156,14 @@ including the sepolia entries.
 
 ## Readiness check
 
-After the parity checks pass, flip `INDEXER_SCHEMA=ponder_v4` in
+After the parity checks pass, flip `INDEXER_SCHEMA=ponder_v5` in
 Netlify's production context, redeploy, and confirm on the live site:
 
 ```
 GET https://pnd.fyi/api/health/indexer
 ```
 
-The response's configured schema must read `ponder_v4` and its
+The response's configured schema must read `ponder_v5` and its
 freshness timestamp must be recent (the build guard,
 `scripts/check-indexer-schema.mjs`, already fails the build if the
 schema does not exist or has gone stale, but confirm on the deployed

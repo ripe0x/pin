@@ -3,24 +3,29 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 /**
- * Reads the Surface v2 factory address and deploy block for one network
+ * Reads the Surface v2 primitive addresses and deploy block for one network
  * out of the repo's deploy record (contracts/deployments.<network>.json,
- * written by contracts/script/DeploySurfaceV2.s.sol on a real broadcast).
+ * filled by contracts/script/deploy.sh from the broadcast receipts).
  *
- * Returns null when v2 has no factory recorded for that network yet.
- * ponder.config.ts calls this once per network (mainnet, sepolia) and
- * omits that network's key from the contract's `chain: {...}` map on
- * null, rather than pointing it at the zero address: Ponder's
- * `flattenSources` builds one source per key actually present in
- * `chain`, so an omitted network gets no source, no `eth_getLogs` call,
- * and no `ponder_sync.factories` row. See ponder.config.ts's per-chain
- * `chain: {mainnet, sepolia}` declarations for
- * SurfaceFactoryV2/SurfaceV2/FixedPriceMinterV2.
+ * Record keys: `surfaceFactoryV2` is the token CloneFactory, `saleFactoryV2`
+ * the sale CloneFactory, `launcherV2` the Launcher; `factoryDeployBlock`
+ * is the block all three were deployed in.
+ *
+ * Returns null unless all three addresses are recorded. ponder.config.ts
+ * calls this once per network (mainnet, sepolia) and omits that network's
+ * key from each v2 contract's `chain: {...}` map on null, rather than
+ * pointing it at the zero address: Ponder's `flattenSources` builds one
+ * source per key actually present in `chain`, so an omitted network gets no
+ * source, no `eth_getLogs` call, and no `ponder_sync.factories` row.
  */
+
+type Address = `0x${string}`
 
 export type SurfaceV2Deployment = {
   chainId: number
-  surfaceFactoryV2: `0x${string}`
+  tokenFactory: Address
+  saleFactory: Address
+  launcher: Address
   factoryDeployBlock: number
 }
 
@@ -33,6 +38,9 @@ const NETWORK_CHAIN_ID: Record<"mainnet" | "sepolia", number> = {
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..")
 
+const isAddress = (value: unknown): value is Address =>
+  typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value) && value.toLowerCase() !== ZERO_ADDRESS
+
 export function readSurfaceV2Deployment(
   network: "mainnet" | "sepolia",
 ): SurfaceV2Deployment | null {
@@ -40,19 +48,10 @@ export function readSurfaceV2Deployment(
   if (!existsSync(path)) return null
 
   const record = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>
-  const factory = record.surfaceFactoryV2
-  if (
-    typeof factory !== "string" ||
-    factory === "" ||
-    factory.toLowerCase() === ZERO_ADDRESS
-  ) {
-    return null
-  }
+  const { surfaceFactoryV2, saleFactoryV2, launcherV2, factoryDeployBlock, chainId } = record
+  if (!isAddress(surfaceFactoryV2) || !isAddress(saleFactoryV2) || !isAddress(launcherV2)) return null
+  if (typeof factoryDeployBlock !== "number") return null
 
-  const deployBlock = record.factoryDeployBlock
-  if (typeof deployBlock !== "number") return null
-
-  const chainId = record.chainId
   const expectedChainId = NETWORK_CHAIN_ID[network]
   if (chainId !== expectedChainId) {
     console.warn(
@@ -64,8 +63,10 @@ export function readSurfaceV2Deployment(
   }
 
   return {
-    chainId,
-    surfaceFactoryV2: factory as `0x${string}`,
-    factoryDeployBlock: deployBlock,
+    chainId: expectedChainId,
+    tokenFactory: surfaceFactoryV2,
+    saleFactory: saleFactoryV2,
+    launcher: launcherV2,
+    factoryDeployBlock,
   }
 }
