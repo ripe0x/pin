@@ -55,7 +55,8 @@ export const getCachedTokenRefs = unstable_cache(
   // v6: seed-backed discovery for unadmitted artists (FND shared mints +
   // on-demand collection enumeration) — clears every cached empty-refs
   // entry written while those artists had no indexed rows.
-  ["artist-token-refs", "v7"],
+  // v8: Surface collection tokens join the refs.
+  ["artist-token-refs", "v8"],
   { revalidate: 86_400, tags: ["artist-refs"] },
 )
 
