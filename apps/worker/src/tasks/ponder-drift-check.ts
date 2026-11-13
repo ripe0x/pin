@@ -5,8 +5,8 @@
  * factory_addresses, every per-clone subscription then silently never
  * fires for those clones.
  *
- * Covers every factory-watched child address PND ships: the PND V1 and V2
- * auction house factories, the Surface v1 factory's two child streams
+ * Covers every factory-watched child address PND ships: the PND V1, V2 and
+ * (once deployed) V2.1 auction house factories, the Surface v1 factory's two child streams
  * (collection address, minter address), and the Surface v2 token and sale
  * CloneFactories (one `Created.instance` stream each). Each stream is
  * matched against `ponder_sync.factories` deterministically (address,
@@ -41,12 +41,14 @@ import {
   MAINNET_CHAIN_ID,
   SOVEREIGN_AUCTION_HOUSE_FACTORY,
   SOVEREIGN_AUCTION_HOUSE_V2_FACTORY,
+  SOVEREIGN_AUCTION_HOUSE_V2_1_FACTORY,
   SURFACE_FACTORY,
   SURFACE_TOKEN_FACTORY_V2,
   SALE_FACTORY_V2,
   getAddressOrNull,
 } from "@pin/addresses"
 import {
+  auctionHouseStreams,
   buildFactoryAddressRows,
   factoryCandidates,
   missingAddresses,
@@ -231,6 +233,7 @@ export async function ponderDriftCheck(): Promise<TaskResult> {
 
   const v1FactoryAddr = getAddressOrNull(SOVEREIGN_AUCTION_HOUSE_FACTORY, CHAIN_ID)
   const v2FactoryAddr = getAddressOrNull(SOVEREIGN_AUCTION_HOUSE_V2_FACTORY, CHAIN_ID)
+  const v2_1FactoryAddr = getAddressOrNull(SOVEREIGN_AUCTION_HOUSE_V2_1_FACTORY, CHAIN_ID)
   const surfaceFactoryAddr = getAddressOrNull(SURFACE_FACTORY, CHAIN_ID)
   const tokenFactoryV2Addr = getAddressOrNull(SURFACE_TOKEN_FACTORY_V2, CHAIN_ID)
   const saleFactoryV2Addr = getAddressOrNull(SALE_FACTORY_V2, CHAIN_ID)
@@ -251,8 +254,12 @@ export async function ponderDriftCheck(): Promise<TaskResult> {
     houseRows
       .filter((r) => Number(r.version) === version)
       .map((r) => ({ address: r.address, blockNumber: r.block_number }))
-  checks.push({ label: "PND V1 houses", target: stream(v1FactoryAddr, "topic2", AUCTION_HOUSE_CREATED), rows: housesOf(1) })
-  checks.push({ label: "PND V2 houses", target: stream(v2FactoryAddr, "topic2", AUCTION_HOUSE_CREATED), rows: housesOf(2) })
+  // One stream per configured factory. V2.1 joins once
+  // SOVEREIGN_AUCTION_HOUSE_V2_1_FACTORY is filled (zero until deployed);
+  // its houses carry pnd_houses.version 21.
+  for (const h of auctionHouseStreams({ v1: v1FactoryAddr, v2: v2FactoryAddr, v2_1: v2_1FactoryAddr })) {
+    checks.push({ label: h.label, target: stream(h.factory, "topic2", AUCTION_HOUSE_CREATED), rows: housesOf(h.version) })
+  }
 
   // Surface tables are deploy-gated: absent until the Surface factory has
   // synced its first collection. collections.protocol_version exists from

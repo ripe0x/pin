@@ -129,6 +129,19 @@ function readSurfaceV2Mainnet() {
   return { tokenFactory: record.surfaceFactoryV2, saleFactory: record.saleFactoryV2 }
 }
 
+// Same record keys and gate as apps/indexer/src/auctionV2_1Deployment.ts:
+// the indexer subscribes V2.1 only once both the factory and its deploy
+// block are recorded, so the parity check follows the same rule.
+function readAuctionV2_1FactoryMainnet() {
+  const path = resolve(repoRoot, "contracts/deployments.mainnet.json")
+  if (!existsSync(path)) return null
+  const record = JSON.parse(readFileSync(path, "utf8"))
+  const ok = (v) => typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v) && !/^0x0{40}$/.test(v)
+  const block = record.auctionHouseV2_1FactoryDeployBlock
+  if (!ok(record.auctionHouseV2_1Factory) || !Number.isSafeInteger(block) || block <= 0) return null
+  return record.auctionHouseV2_1Factory
+}
+
 const report = { from: null, to: null, checks: [] }
 const add = (status, check, detail, data) => {
   report.checks.push({ status, check, detail, ...(data ? { data } : {}) })
@@ -289,6 +302,8 @@ async function checkSurfaceV1(sql, args, { toTables, toCols, fromCols }) {
 async function checkFactoryStreams(sql, args, { toTables, toCols }, viem) {
   const v2 = readSurfaceV2Mainnet()
   if (!v2) add("INFO", "factories", "contracts/deployments.mainnet.json has no Surface v2 factories; v2 streams skipped")
+  const sahV2_1Factory = readAuctionV2_1FactoryMainnet()
+  if (!sahV2_1Factory) add("INFO", "factories", "contracts/deployments.mainnet.json has no auction house V2.1 factory; V2.1 stream skipped")
   const sel = (sig) => viem.toEventSelector(sig).toLowerCase()
 
   const housesVersioned = toCols.get("pnd_houses")?.has("version")
@@ -305,6 +320,10 @@ async function checkFactoryStreams(sql, args, { toTables, toCols }, viem) {
   const streams = [
     { label: "PND V1 houses", address: SAH_V1_FACTORY, loc: "topic2", selector: sel(AUCTION_HOUSE_CREATED), table: "pnd_houses", source: houses(1), exact: true },
     { label: "PND V2 houses", address: SAH_V2_FACTORY, loc: "topic2", selector: sel(AUCTION_HOUSE_CREATED), table: "pnd_houses", source: houses(2), exact: true },
+    // V2.1 houses carry pnd_houses.version 21.
+    ...(sahV2_1Factory
+      ? [{ label: "PND V2.1 houses", address: sahV2_1Factory, loc: "topic2", selector: sel(AUCTION_HOUSE_CREATED), table: "pnd_houses", source: houses(21), exact: true }]
+      : []),
     { label: "Surface v1 collections", address: SURFACE_FACTORY, loc: "topic2", selector: sel(SURFACE_CREATED), table: "collections", source: colls(1), exact: true },
     // offset0 also watches address(0) for collections with no primary.
     { label: "Surface v1 minters", address: SURFACE_FACTORY, loc: "offset0", selector: sel(SURFACE_CREATED), table: "minters", source: mints(1), exact: false },

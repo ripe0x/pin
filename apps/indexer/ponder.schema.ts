@@ -38,12 +38,17 @@ export const pndAuctions = onchainTable(
     // via claimLot), "unwound" (unwindStuckLot unwound the sale and the
     // lot is back with the seller), and "unwound_return_pending" (unwound
     // but the lot return to the seller itself failed, awaiting
-    // returnUnwoundLot).
+    // returnUnwoundLot). V2.1-only: "held_for_winner" (LotHeldForWinner,
+    // the sale settled and the seller was paid, AuctionEnded set
+    // winner/sellerProceeds/settledAt*, but the lot is still escrowed in the
+    // house for the winner's claimLot(id, to); LotClaimed moves it to
+    // "settled").
     status: t.text().notNull(),
     winner: t.hex(),
     sellerProceeds: t.bigint(),
     protocolFee: t.bigint(),
-    // House generation: 1 = SovereignAuctionHouse, 2 = SovereignAuctionHouseV2.
+    // House generation: 1 = SovereignAuctionHouse, 2 = SovereignAuctionHouseV2,
+    // 21 = SovereignAuctionHouseV2_1 (V2-compatible: version >= 2).
     version: t.integer().notNull(),
     // "erc721" | "erc1155". A quantity-1 ERC1155 lot is otherwise
     // indistinguishable from an ERC721 auction.
@@ -65,7 +70,8 @@ export const pndAuctions = onchainTable(
     // V2 only: set by DeliveryDeferred when the row moves to "deferred".
     deferredAtTime: t.bigint(),
     // V2 only: set by LotClaimed, when a deferred lot is delivered via
-    // claimLot or unwindStuckLot's retry-to-winner.
+    // claimLot or unwindStuckLot's retry-to-winner (V2.1: also when the
+    // winner claims a held_for_winner lot).
     claimedAtBlock: t.bigint(),
     claimedAtTime: t.bigint(),
     claimTxHash: t.hex(),
@@ -87,7 +93,9 @@ export const pndHouses = onchainTable(
     owner: t.hex().notNull(),
     feeRecipient: t.hex().notNull(),
     protocolFeeBps: t.integer().notNull(),
-    // House generation: 1 = SovereignAuctionHouse, 2 = SovereignAuctionHouseV2.
+    // House generation: 1 = SovereignAuctionHouse, 2 = SovereignAuctionHouseV2,
+    // 21 = SovereignAuctionHouseV2_1 (from the V2.1 factory; V2-compatible:
+    // version >= 2, and auctionVersion() returns 2 on both).
     version: t.integer().notNull(),
     createdAtBlock: t.bigint().notNull(),
     createdAtTime: t.bigint().notNull(),
