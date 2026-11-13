@@ -12,10 +12,19 @@
   "auctionHouseImplementation": "0xC70D8a99b915BeDA52C5A952E29FFE152CbfCB34",
   "auctionHouseV2Factory": "0x77aB853543286C9Cdd7dd6c01222A7cC4Ac93d63",
   "auctionHouseV2Implementation": "0x88b48793f38EF7370F2e7BC12E2f73DC565C117F",
-  "surfaceImplV2": "",
-  "saleImplV2": "",
-  "allowlistGate": "",
-  "surfaceFactoryV2": "",
-  "saleFactoryV2": "",
-  "launcherV2": ""
+  "surfaceImplV2": "0x9E90a7dbE576f23d909B81d90ff939b5041930e4",
+  "saleImplV2": "0xd97E71DAB49fb20F9b5d12DE3A49ce95fdfD086E",
+  "allowlistGate": "0xb3b0aBfeb588ab905f984a20e05784be8a35eF4f",
+  "surfaceFactoryV2": "0xA104803fc2151BE0BFF18da7bb31938a5fdEd83c",
+  "saleFactoryV2": "0xc474809F9cDB51A01d757aA90fbfC245Ca8A5B66",
+  "launcherV2": "0x924d16cDCB9037cE159D82923406Be161a6BCD1B",
+  "factoryDeployBlock": 26308156,
+  "txHashes": {
+    "surfaceImplV2": "0xd6a411ab8660673bd9b8e06ab7dd41e117ca8547cb5ac081dcdcf3c01f76edf6",
+    "saleImplV2": "0x2501c8e299d087b793bf76a8251c37a64993df554d05cb79465272bfd62af0ec",
+    "allowlistGate": "0x54e32083f1692224cd2d61aaee7491db8afe1e95b2d9c43f3833ec6f68309bbf",
+    "surfaceFactoryV2": "0xf78fba9cc0548f8a6104c956c666aa473a3552e81029d577f2c978a4238e6fe6",
+    "saleFactoryV2": "0x170a149347690d9d39241bc1aa05b3ddb3599f057cbb74b51fb0b6c473a1b3ea",
+    "launcherV2": "0x2f3675474cf510152492641cc5947c689c4f79f8964dd04734c061951b3d6164"
+  }
 }
