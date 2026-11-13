@@ -166,7 +166,10 @@ contract FixedPriceSale is Initializable, ReentrancyGuardUpgradeable, IMinter, I
 
     /// @dev The receiver check the token deliberately skips (it never calls
     ///      out). Asked once for every id this call will mint, before any
-    ///      of them exists.
+    ///      of them exists. The callback therefore sees msg.sender == this
+    ///      sale (not the collection), and ownerOf(tokenId) does not resolve
+    ///      yet. A receiver that keys deposits on msg.sender records the sale
+    ///      as the token contract; see docs/pnd-surface-v2-design.md 3.2.
     function _checkReceiver(address collection_, address to, uint256 quantity) internal {
         // slither-disable-next-line unused-return
         (,,,,, uint256 mintedEver) = ISurface(collection_).config();

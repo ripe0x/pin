@@ -219,13 +219,20 @@ contract Sovereign1155AuctionHouseTest is Test {
     uint256 internal constant RESERVE = 1 ether;
     uint256 internal constant DURATION = 24 hours;
 
+    /// @dev The suite runs against V2 here; the V2.1 compatibility suites
+    ///      override this to run the same tests against a V2.1 house (same
+    ///      ABI, so the V2 type is used for both).
+    function _newHouse(address owner) internal virtual returns (SovereignAuctionHouseV2) {
+        SovereignAuctionHouseV2 impl = new SovereignAuctionHouseV2();
+        SovereignAuctionHouseV2Factory factory = new SovereignAuctionHouseV2Factory(address(impl), treasury, 250);
+        vm.prank(owner);
+        return SovereignAuctionHouseV2(payable(factory.createAuctionHouse()));
+    }
+
     function setUp() public {
         token = new MockAuctionERC1155();
         token.mint(artist, TOKEN_ID, 10);
-        SovereignAuctionHouseV2 impl = new SovereignAuctionHouseV2();
-        SovereignAuctionHouseV2Factory factory = new SovereignAuctionHouseV2Factory(address(impl), treasury, 250);
-        vm.prank(artist);
-        house = SovereignAuctionHouseV2(payable(factory.createAuctionHouse()));
+        house = _newHouse(artist);
         vm.prank(artist);
         token.setApprovalForAll(address(house), true);
         vm.deal(alice, 10 ether);
@@ -284,7 +291,7 @@ contract Sovereign1155AuctionHouseTest is Test {
     ///      attempted the same way regardless, and a bidder that cannot
     ///      accept the transfer only defers its own delivery. The seller is
     ///      not paid until delivery actually succeeds.
-    function test_ContractCodeOnBidderNoLongerBlocksSettlement() public {
+    function test_ContractCodeOnBidderNoLongerBlocksSettlement() public virtual {
         vm.prank(artist);
         uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
         vm.prank(alice, alice);
@@ -369,7 +376,7 @@ contract Sovereign1155AuctionHouseTest is Test {
     /// @dev A winner whose onERC1155Received reverts is deferred, not
     ///      refunded; the seller is paid only once the winner redirects its
     ///      own claim to a working EOA.
-    function test_RejectingContractWinnerIsDeferredThenClaimsToRedirect() public {
+    function test_RejectingContractWinnerIsDeferredThenClaimsToRedirect() public virtual {
         vm.prank(artist);
         uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
         RejectingERC1155Bidder bidder = new RejectingERC1155Bidder();
@@ -470,7 +477,7 @@ contract Sovereign1155AuctionHouseTest is Test {
     ///      retry fails the same way claimLot did, so the sale unwinds. The
     ///      winner's full bid is credited for withdrawal and the seller
     ///      (an ordinary EOA) gets the lot back; the seller is never paid.
-    function test_UnwindStuckLotRefundsWinnerAndReturnsLotToSeller() public {
+    function test_UnwindStuckLotRefundsWinnerAndReturnsLotToSeller() public virtual {
         vm.prank(artist);
         uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
         RejectingERC1155Bidder bidder = new RejectingERC1155Bidder();
@@ -578,7 +585,7 @@ contract Sovereign1155AuctionHouseTest is Test {
     ///      after PENDING_DELIVERY_TIMEOUT the griefer's own bid is credited
     ///      back to it (nobody needs to ban it or single it out) and the
     ///      seller's tokenId is relistable. The seller is never paid.
-    function test_BareContractGriefingResolvedByUnwind() public {
+    function test_BareContractGriefingResolvedByUnwind() public virtual {
         vm.prank(artist);
         uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
         BareERC1155Bidder griefer = new BareERC1155Bidder();
@@ -623,7 +630,7 @@ contract Sovereign1155AuctionHouseTest is Test {
     ///      InsufficientGas rather than let a gas-starved retry or return
     ///      attempt run under-stipend and be misclassified as a genuine
     ///      delivery failure.
-    function test_UnwindStuckLotRevertsWhenGasBelowDoubleDeliveryHeadroom() public {
+    function test_UnwindStuckLotRevertsWhenGasBelowDoubleDeliveryHeadroom() public virtual {
         vm.prank(artist);
         uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
         BareERC1155Bidder griefer = new BareERC1155Bidder();

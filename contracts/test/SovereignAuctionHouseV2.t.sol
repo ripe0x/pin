@@ -267,13 +267,20 @@ contract SovereignAuctionHouseV2Test is Test {
     uint256 internal constant RESERVE = 1 ether;
     uint256 internal constant DURATION = 24 hours;
 
+    /// @dev The suite runs against V2 here; the V2.1 compatibility suites
+    ///      override this to run the same tests against a V2.1 house (same
+    ///      ABI, so the V2 type is used for both).
+    function _newHouse(address owner) internal virtual returns (SovereignAuctionHouseV2) {
+        SovereignAuctionHouseV2 impl = new SovereignAuctionHouseV2();
+        SovereignAuctionHouseV2Factory factory = new SovereignAuctionHouseV2Factory(address(impl), treasury, 250);
+        vm.prank(owner);
+        return SovereignAuctionHouseV2(payable(factory.createAuctionHouse()));
+    }
+
     function setUp() public {
         nft = new MockERC721();
         nft.mint(artist, TOKEN_ID);
-        SovereignAuctionHouseV2 impl = new SovereignAuctionHouseV2();
-        SovereignAuctionHouseV2Factory factory = new SovereignAuctionHouseV2Factory(address(impl), treasury, 250);
-        vm.prank(artist);
-        house = SovereignAuctionHouseV2(payable(factory.createAuctionHouse()));
+        house = _newHouse(artist);
         vm.prank(artist);
         nft.setApprovalForAll(address(house), true);
         vm.deal(alice, 10 ether);
@@ -535,7 +542,7 @@ contract SovereignAuctionHouseV2Test is Test {
 
     /// @dev unwindStuckLot reverts before the auction has any deferred
     ///      delivery, and again before PENDING_DELIVERY_TIMEOUT has passed.
-    function test_UnwindStuckLotRevertsBeforeTimeout() public {
+    function test_UnwindStuckLotRevertsBeforeTimeout() public virtual {
         MutableERC721 bad = new MutableERC721();
         bad.mint(artist, TOKEN_ID);
         vm.prank(artist);
@@ -564,7 +571,7 @@ contract SovereignAuctionHouseV2Test is Test {
     ///      seller is never paid ETH for this auction, matching the product
     ///      rule that a seller must never be paid without the winner
     ///      receiving the lot.
-    function test_UnwindStuckLotRefundsWinnerAndReturnsLotToSeller() public {
+    function test_UnwindStuckLotRefundsWinnerAndReturnsLotToSeller() public virtual {
         MutableERC721 bad = new MutableERC721();
         bad.mint(artist, TOKEN_ID);
         vm.prank(artist);
@@ -652,7 +659,7 @@ contract SovereignAuctionHouseV2Test is Test {
     ///      unconditionally; the lot stays locked (pendingReturn) rather
     ///      than being lost, and every other entry point correctly refuses
     ///      to touch it until returnUnwoundLot succeeds.
-    function test_UnwindStuckLotDefersReturnWhenSellerTransferAlsoFails() public {
+    function test_UnwindStuckLotDefersReturnWhenSellerTransferAlsoFails() public virtual {
         MutableERC721 bad = new MutableERC721();
         bad.mint(artist, TOKEN_ID);
         vm.prank(artist);
@@ -724,7 +731,7 @@ contract SovereignAuctionHouseV2Test is Test {
     ///      InsufficientGas rather than let a gas-starved retry or return
     ///      attempt run under-stipend and be misclassified as a genuine
     ///      delivery failure.
-    function test_UnwindStuckLotRevertsWhenGasBelowDoubleDeliveryHeadroom() public {
+    function test_UnwindStuckLotRevertsWhenGasBelowDoubleDeliveryHeadroom() public virtual {
         MutableERC721 bad = new MutableERC721();
         bad.mint(artist, TOKEN_ID);
         vm.prank(artist);

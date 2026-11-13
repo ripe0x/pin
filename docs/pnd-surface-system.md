@@ -196,6 +196,15 @@ the token layer is new.
   (Zora's mint referrals included); closing it would mean a gatekept
   referrer registry, which is exactly the platform-ness this system
   exists to remove.
+  Stranded shares (deployed v1 `FixedPriceMinter`, not changeable): the
+  referral share accrues as a pull balance to whatever address the caller
+  names, with no filter. An address that can never withdraw keeps that
+  share out of circulation. The edge case inside the contract is a
+  referrer equal to the minter itself: the minter has no `receive` and
+  `rescueStrayETH` excludes pending balances, so up to `referralShareBps`
+  (default 10%) of that mint stays in the minter permanently. The artist's
+  proceeds are the same as for any other referral; the share is simply
+  unclaimable. Mint surfaces should pass the artist, PND or zero.
 - **Work config**: init-time fields on the collection, lockable by the
   artist: script refs (scripty v2 storage pointers, or URI + content
   hash for oversized code), dependency refs, render spec (aspect ratio,
