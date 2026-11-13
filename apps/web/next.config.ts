@@ -58,6 +58,26 @@ const nextConfig: NextConfig = {
       { source: "/record/:address", destination: "/catalog/:address", permanent: true },
       { source: "/api/record/:address", destination: "/api/catalog/:address", permanent: true },
       { source: "/api/record/:address/revalidate", destination: "/api/catalog/:address/revalidate", permanent: true },
+      // Retired routes (#351 route pruning). These used to be page files that
+      // only called redirect() (or, for /index-prev, the superseded landing).
+      // Config-level redirects answer with a real 308 before any rendering;
+      // the page stubs streamed a 200 with a client-side redirect whenever a
+      // loading.tsx boundary sat above them. Query strings carry through
+      // (e.g. /artist/:address/import?source=...).
+      { source: "/index-prev", destination: "/", permanent: true },
+      // Editions was retired in favor of Collections (Editions is a Surface
+      // preset); contract address and token id map straight across. /new has
+      // no dedicated equivalent (creation is the studio wizard), so it lands on
+      // the collections index like the old stub did. Order matters: /new
+      // must precede /:edition.
+      { source: "/editions", destination: "/collections", permanent: true },
+      { source: "/editions/new", destination: "/collections", permanent: true },
+      { source: "/editions/:edition", destination: "/collections/:edition", permanent: true },
+      { source: "/editions/:edition/:tokenId", destination: "/collections/:edition/:tokenId", permanent: true },
+      // The import planner and migrate flow moved into the studio; the studio
+      // layout handles ENS slugs and address canonicalization.
+      { source: "/artist/:address/import", destination: "/studio/:address/catalog/import", permanent: true },
+      { source: "/artist/:address/migrate", destination: "/studio/:address/migrate", permanent: true },
     ]
   },
 }
