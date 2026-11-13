@@ -5,13 +5,20 @@
       "collection": "0xb741055bd0467a5831b8b5f7df376cda93a76af1",
       "slug": "abstracts",
       "featured": true,
-      "featureOrder": 1
+      "featureOrder": 2
     },
     {
       "collection": "0xd938ff57d2c7111880a4ea5c8e6a92796c72a76e",
       "slug": "homage",
       "featured": false,
       "editorialSummary": "Ten thousand generative artworks, one for every CryptoPunk. Each is composed from the punk's onchain data and its live market state, rendered fully onchain."
+    },
+    {
+      "collection": "0x4490f1dadefa3234961404f5cc58056296eb4a89",
+      "slug": "form-of-solitude",
+      "featured": true,
+      "mintPage": "form-of-solitude",
+      "featureOrder": 1
     }
   ]
 }

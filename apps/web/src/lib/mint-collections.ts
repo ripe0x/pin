@@ -24,6 +24,7 @@ import type { RevealSource } from "./mint-reveal"
 // providers at module scope (the side-effect pattern mint-registries.ts
 // documents); the factory contributes the descriptor below.
 import { homageCollection } from "./mint-modules/homage"
+import { formOfSolitudeCollection } from "./mint-modules/form-of-solitude"
 
 export type { MintPhase } from "./mint-phases"
 export type { RevealSource } from "./mint-reveal"
@@ -170,6 +171,12 @@ export type MintCollection = {
    * name would mislabel the page.
    */
   identityFromHero?: boolean
+  /**
+   * Gallery thumbnails from `fn(tokenContract, tokenId)` on a separate
+   * contract (RenderAssets.imageFor) instead of decoding every tokenURI.
+   * For collections whose tokenURI is a heavy onchain render.
+   */
+  galleryImage?: { address: Address; abi: Abi; fn: string }
   /** Shared aggregate stat block source (Vouch cube getters). */
   aggregate?: { address: Address; abi: Abi }
   lifecycle?: MintLifecycle
@@ -286,6 +293,7 @@ function vouchCollection(): MintCollection | null {
 export const MINT_COLLECTIONS: MintCollection[] = [
   vouchCollection(),
   homageCollection(MINT_CHAIN_ID),
+  formOfSolitudeCollection(MINT_CHAIN_ID),
 ].filter((c): c is MintCollection => c !== null)
 
 /** Resolve a `/mint/[contract]` segment — either a slug or a contract address. */

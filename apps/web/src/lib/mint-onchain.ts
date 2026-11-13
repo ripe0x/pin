@@ -1,6 +1,8 @@
 import "server-only"
 import {
   createPublicClient,
+  decodeFunctionResult,
+  encodeFunctionData,
   http,
   type Address,
   type ContractFunctionParameters,
@@ -17,6 +19,7 @@ import {
 } from "./homage-queries"
 import { overlayPhaseWindows, overallStartFromWindows } from "./mint-snapshot-overlay"
 import { getMainnetTransport } from "./alchemy-rpc"
+import { arweaveToHttp } from "@pin/shared"
 
 /**
  * Live, cached onchain reads for the generic ERC-721 mint surface. Modeled on
@@ -43,6 +46,18 @@ function getClient(): PublicClient {
 }
 
 const lc = (a: string) => a.toLowerCase()
+
+// eth_call gas ceiling for single reads. Onchain renders (Form of Solitude's
+// WebGL HTML tokenURI) need 60M+ gas, above most nodes' default; matches
+// collection-onchain.ts. A ceiling only: cheap reads spend what they need.
+const READ_GAS = 300_000_000n
+
+/** readContract with the READ_GAS ceiling (readContract itself takes no gas). */
+async function readWithGas(client: PublicClient, c: ContractFunctionParameters): Promise<unknown> {
+  const { data } = await client.call({ to: c.address, data: encodeFunctionData(c as never), gas: READ_GAS })
+  if (!data) throw new Error(`${c.functionName}: empty result`)
+  return decodeFunctionResult({ abi: c.abi, functionName: c.functionName, data } as never)
+}
 
 /**
  * The contract that owns TOKEN-level state (ownerOf/tokenURI/balanceOf/
@@ -96,7 +111,7 @@ async function multicallResilient(
     results.map(async (r, i) => {
       if (r.status === "success") return
       try {
-        results[i] = { status: "success", result: await client.readContract(contracts[i]) }
+        results[i] = { status: "success", result: await readWithGas(client, contracts[i]) }
       } catch {
         /* leave as failure */
       }
@@ -141,7 +156,7 @@ export type TokenArt = {
 
 function artFromJson(json: Record<string, unknown> | null): TokenArt {
   return {
-    imageUrl: str(json?.image) ?? str(json?.image_url) ?? "",
+    imageUrl: arweaveToHttp(str(json?.image) ?? str(json?.image_url) ?? ""),
     animationUrl: str(json?.animation_url) ?? str(json?.animation),
     name: str(json?.name),
     description: str(json?.description),
@@ -214,6 +229,14 @@ async function applyIndexerSnapshotOverlay(
     mintStart: phases ? overallStart : base.mintStart,
     phases,
   }
+}
+
+/** The token contract's owner(), for an artist label (homepage venue). */
+export async function getMintOwner(desc: MintCollection): Promise<Address> {
+  return pgCache(`mint-owner:${lc(desc.address)}`, 300, async () => {
+    const tc = tokenSide(desc)
+    return (await getClient().readContract({ address: tc.address, abi: tc.abi, functionName: "owner" })) as Address
+  })
 }
 
 export async function getMintSnapshot(desc: MintCollection): Promise<MintSnapshot> {
@@ -340,12 +363,7 @@ async function readUriString(
   tokenId: bigint,
 ): Promise<string | null> {
   try {
-    return (await client.readContract({
-      address,
-      abi,
-      functionName: fn,
-      args: [tokenId],
-    })) as string
+    return (await readWithGas(client, { address, abi, functionName: fn, args: [tokenId] })) as string
   } catch {
     return null
   }
@@ -555,21 +573,22 @@ export async function getCollectionTokens(
     if (minted.length === 0) return []
 
     const tc = tokenSide(desc)
-    const calls: ContractFunctionParameters[] = minted.map((m) => ({
-      address: tc.address,
-      abi: tc.abi,
-      functionName: "tokenURI",
-      args: [BigInt(m.tokenId)],
-    }))
+    const gi = desc.galleryImage
+    const calls: ContractFunctionParameters[] = minted.map((m) =>
+      gi
+        ? { address: gi.address, abi: gi.abi, functionName: gi.fn, args: [tc.address, BigInt(m.tokenId)] }
+        : { address: tc.address, abi: tc.abi, functionName: "tokenURI", args: [BigInt(m.tokenId)] },
+    )
     const res = await multicallResilient(client, calls)
 
     return minted
       .map((m, i) => {
         const r = res[i]
-        const art = r?.status === "success" ? artFromJson(decodeDataUriJson(r.result as string)) : null
+        const ok = r?.status === "success"
+        const imageUrl = !ok ? "" : gi ? arweaveToHttp(r.result as string) : artFromJson(decodeDataUriJson(r.result as string)).imageUrl
         return {
           tokenId: m.tokenId,
-          imageUrl: art?.imageUrl ?? "",
+          imageUrl,
           active: m.active,
           owner: m.owner,
         }

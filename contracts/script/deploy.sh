@@ -25,6 +25,9 @@
 #                         refuse); every other guard still hard-fails. No
 #                         wallet flags, no --broadcast, no --verify. Nothing
 #                         is written.
+#   GAS_ESTIMATE_MULTIPLIER  percent passed to forge --gas-estimate-multiplier
+#                         (default 130) when the chain prices creation above
+#                         forge's local simulation (Sepolia since 2026-10-06).
 #   RECORD_ONLY=1         validate RECORD_BROADCAST_FILE against on-chain
 #                         receipts and update the record; never invokes forge.
 #   RECORD_BROADCAST_FILE  broadcast JSON to validate in RECORD_ONLY mode.
@@ -253,6 +256,10 @@ fi
 
 if [ "$RECORD_ONLY" != "1" ]; then
   FORGE_ARGS=(script script/DeploySurfaceV2.s.sol --tc DeploySurfaceV2 --rpc-url "$RPC_URL" "${WALLET_ARGS[@]}" "${SLOW_ARGS[@]}" --broadcast)
+  # Sepolia's 2026-10-06 fork reprices contract creation ~7x above forge's local
+  # EVM estimate; a caller-set multiplier (percent, forge default 130) raises
+  # every limit while staying under the 16,777,216 per-transaction cap.
+  [ -z "${GAS_ESTIMATE_MULTIPLIER:-}" ] || FORGE_ARGS+=(--gas-estimate-multiplier "$GAS_ESTIMATE_MULTIPLIER")
   [ "$RESUME_FLAG" = "1" ] && FORGE_ARGS+=(--resume)
   if [ "$VERIFY" = "1" ]; then
     # forge reads ETHERSCAN_API_KEY from the environment; the key stays out of argv.

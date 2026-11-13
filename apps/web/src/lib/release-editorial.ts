@@ -6,6 +6,9 @@ export type ReleaseEditorial = {
   featured: boolean
   featureOrder: number | null
   editorialSummary: string | null
+  /** `/mint/[slug]` page for a collection the venue cannot read as a
+   *  Surface v1 collection (Surface v2 before its indexer rebind). */
+  mintPage: string | null
 }
 
 type RawReleaseEditorial = {
@@ -14,6 +17,7 @@ type RawReleaseEditorial = {
   featured?: unknown
   featureOrder?: unknown
   editorialSummary?: unknown
+  mintPage?: unknown
 }
 
 const ADDRESS = /^0x[a-f0-9]{40}$/
@@ -70,12 +74,18 @@ function parseEditorial(): ReleaseEditorial[] {
       throw new Error(`release editorial entry ${index} has an overlong editorialSummary`)
     }
 
+    const mintPage = typeof entry.mintPage === "string" ? entry.mintPage : null
+    if (mintPage !== null && !SLUG.test(mintPage)) {
+      throw new Error(`release editorial entry ${index} has an invalid mintPage`)
+    }
+
     return {
       collection: entry.collection,
       slug,
       featured,
       featureOrder,
       editorialSummary,
+      mintPage,
     }
   })
 }

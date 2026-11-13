@@ -23,7 +23,9 @@ import {
   getLatestCollectionTokenIds,
   getTokenMediaFromMetadata,
 } from "./indexer-queries"
-import { featuredReleaseEditorial, getReleaseEditorial } from "./release-editorial"
+import { featuredReleaseEditorial, getReleaseEditorial, releaseEditorial } from "./release-editorial"
+import { resolveMintCollection } from "./mint-collections"
+import { getMintOwner, getMintSnapshot } from "./mint-onchain"
 
 /**
  * View model for the landing release venue. Everything a card renders is
@@ -34,6 +36,8 @@ import { featuredReleaseEditorial, getReleaseEditorial } from "./release-editori
  */
 export type VenueRelease = {
   address: string
+  /** The release page: /collections/[address], or a /mint/[slug] page. */
+  href: string
   name: string
   artistLabel: string
   /** Unix seconds; 0 when the sale has no start. */
@@ -54,7 +58,6 @@ export type VenueRelease = {
 
 export type VenueModel = {
   featured: VenueRelease & { summary: string | null; programmed: boolean }
-  upcoming: VenueRelease[]
   recent: VenueRelease[]
 }
 
@@ -78,13 +81,15 @@ async function buildVenueModel(): Promise<VenueModel | null> {
   if (!factory) return null
 
   const programmedEditorial = featuredReleaseEditorial()
-  const [recent, programmed] = await Promise.all([
+  const [recent, programmed, mintPages] = await Promise.all([
     getRecentCollections(factory, RECENT_LIMIT).catch(() => [] as Collection[]),
+    // Mint-page entries are not Surface collections; getMintPageReleases builds them.
     Promise.all(
-      programmedEditorial.map((entry) =>
+      programmedEditorial.filter((entry) => !entry.mintPage).map((entry) =>
         getCollection(entry.collection as Address).catch(() => null),
       ),
     ),
+    getMintPageReleases(),
   ])
 
   const byAddress = new Map<string, Collection>()
@@ -92,10 +97,10 @@ async function buildVenueModel(): Promise<VenueModel | null> {
     byAddress.set(c.address.toLowerCase(), c)
   }
   const all = Array.from(byAddress.values())
-  if (all.length === 0) return null
+  if (all.length === 0 && mintPages.length === 0) return null
 
   const [identities, artwork] = await Promise.all([
-    readEnsIdentities(all.map((c) => c.owner)),
+    readEnsIdentities([...all.map((c) => c.owner), ...mintPages.map((m) => m.owner)]),
     getCollectionArtwork(all),
   ])
 
@@ -106,6 +111,7 @@ async function buildVenueModel(): Promise<VenueModel | null> {
     const identity = identities.get(c.owner.toLowerCase())
     return {
       address: c.address,
+      href: `/collections/${c.address}`,
       name: c.name,
       artistLabel: identity?.ensName ?? `${c.owner.slice(0, 6)}…${c.owner.slice(-4)}`,
       mintStart: Number(window.mintStart),
@@ -119,36 +125,44 @@ async function buildVenueModel(): Promise<VenueModel | null> {
     }
   }
 
+  const label = (owner: string) =>
+    identities.get(owner.toLowerCase())?.ensName ?? `${owner.slice(0, 6)}…${owner.slice(-4)}`
+  const mintReleases = mintPages.map(({ owner, release }) => ({ ...release, artistLabel: label(owner) }))
+  const mintByAddress = new Map(mintReleases.map((r) => [r.address.toLowerCase(), r]))
+
   const now = Math.floor(Date.now() / 1000)
-  const recentReleases = recent.map(toRelease)
+  // Mint-page releases are listed as the newest.
+  const recentReleases = [...mintReleases, ...recent.map(toRelease)]
   const hasArt = (r: VenueRelease) => r.artwork.kind !== "none"
   const statusOf = (r: VenueRelease) => venueStatus(r, now)
 
   const programmedPick = programmedEditorial
-    .map((editorial) => ({
-      editorial,
-      release: byAddress.get(editorial.collection),
-    }))
+    .map((editorial) => {
+      const c = byAddress.get(editorial.collection)
+      return { editorial, release: c ? toRelease(c) : mintByAddress.get(editorial.collection) }
+    })
     .find((candidate) => candidate.release !== undefined)
 
   const featuredRelease =
-    (programmedPick?.release ? toRelease(programmedPick.release) : undefined) ??
+    programmedPick?.release ??
     recentReleases.find((r) => statusOf(r) === SurfaceStatus.Open && hasArt(r)) ??
     recentReleases.find((r) => statusOf(r) === SurfaceStatus.Scheduled && hasArt(r)) ??
     recentReleases.find(hasArt) ??
-    toRelease(all[0])
+    recentReleases[0]
 
   const editorial =
     programmedPick?.editorial ?? getReleaseEditorial(featuredRelease.address)
   const featuredKey = featuredRelease.address.toLowerCase()
   // Prefer the release's own description (its contractURI metadata) over
-  // editorial copy. One pgCached read for the featured collection only.
-  const featuredCollection = byAddress.get(featuredKey)
-  const contractDescription = featuredCollection
-    ? await getContractMetadata(featuredCollection.address, featuredCollection.renderer)
-        .then((m) => m.description)
-        .catch(() => null)
-    : null
+  // editorial copy. One pgCached read for the featured release only; a
+  // mint-page token is keyed on the zero renderer, as no Collection read
+  // gives its renderer.
+  const contractDescription = await getContractMetadata(
+    featuredRelease.address as Address,
+    byAddress.get(featuredKey)?.renderer ?? ZERO_ADDRESS,
+  )
+    .then((m) => m.description)
+    .catch(() => null)
   const others = recentReleases.filter((r) => r.address.toLowerCase() !== featuredKey)
 
   // Latest token's media for the featured release only, so its hero can play
@@ -174,15 +188,12 @@ async function buildVenueModel(): Promise<VenueModel | null> {
       animationUrl: featuredMedia?.animationUrl ?? null,
       programmed: programmedPick !== undefined,
     },
-    upcoming: others.filter((r) => statusOf(r) === SurfaceStatus.Scheduled).slice(0, SHELF_LIMIT),
     // Recent row leads with the featured release, then the most recent
-    // non-scheduled releases, so the featured also appears in the list.
-    // featuredRelease can be a programmed pick absent from recentReleases,
-    // so prepend it rather than relying on it being in `others`.
-    recent: [
-      featuredRelease,
-      ...others.filter((r) => statusOf(r) !== SurfaceStatus.Scheduled),
-    ].slice(0, SHELF_LIMIT),
+    // releases, scheduled ones included, so the featured also appears in
+    // the list. featuredRelease can be a programmed pick absent from
+    // recentReleases, so prepend it rather than relying on it being in
+    // `others`.
+    recent: [featuredRelease, ...others].slice(0, SHELF_LIMIT),
   }
 }
 
@@ -193,9 +204,44 @@ export const getVenueModel = unstable_cache(
     if (model === null) throw new Error("venue unavailable")
     return model
   },
-  ["landing-venue-v1"],
+  // v2: VenueRelease gained href; a v1 entry would render links with no href.
+  ["landing-venue-v2"],
   { revalidate: 60, tags: ["landing-venue"] },
 )
+
+/**
+ * Releases listed in releases.json with a `mintPage`: built from the
+ * /mint/[slug] descriptor and its cached snapshot, since the Surface reads
+ * above do not know these contracts. `address` is the token, matching the
+ * editorial entry. A failed read drops the entry instead of the venue.
+ */
+async function getMintPageReleases(): Promise<{ owner: string; release: VenueRelease }[]> {
+  const rows = await Promise.all(
+    releaseEditorial.map(async (entry) => {
+      const desc = entry.mintPage ? resolveMintCollection(entry.mintPage) : null
+      if (!desc) return null
+      try {
+        const [snap, owner] = await Promise.all([getMintSnapshot(desc), getMintOwner(desc)])
+        const release: VenueRelease = {
+          address: entry.collection,
+          href: `/mint/${desc.slug}`,
+          name: desc.name,
+          artistLabel: "",
+          mintStart: Number(snap.mintStart),
+          mintEnd: Number(snap.mintEnd),
+          minted: snap.minted,
+          cap: snap.cap,
+          priceLabel: formatPriceLabel(BigInt(snap.priceWei)),
+          artwork: desc.hero.kind === "static" ? { kind: "image", src: desc.hero.url, width: null, height: null } : { kind: "none" },
+        }
+        return { owner, release }
+      } catch {
+        return null
+      }
+    }),
+  )
+  return rows.filter((r) => r !== null)
+}
 
 function smallestPositive(a: bigint, b: bigint): bigint {
   if (a === 0n) return b
