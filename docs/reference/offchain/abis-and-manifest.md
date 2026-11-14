@@ -15,7 +15,7 @@ Four entry points, all served as static JSON:
 
 ## The protocol manifest
 
-`/protocol-manifest.json` is the single machine-readable root. It groups every contract under its protocol (`collections`, `auctions`, and more as they ship), and for each carries the address, ABI path, docs link, and the contract "kind" (a `singleton` factory or shared module, a per-owner `clone` template, or an ABI-only `interface`). Per-owner clones (an artist collection, an auction house) aren't individually listed, since there is no fixed set of them; discover them through the relevant factory instead (see [AI agents](/docs/offchain/ai-agents)).
+`/protocol-manifest.json` is the single machine-readable root. It groups every contract under its protocol (`surface`, `auctions`, `catalog`, and more as they ship), and for each carries the address, ABI path, docs link, and the contract "kind" (a `singleton` factory or shared module, a per-owner `clone` template, or an ABI-only `interface`). Per-owner clones (an artist collection, an auction house) aren't individually listed, since there is no fixed set of them; discover them through the relevant factory instead (see [AI agents](/docs/offchain/ai-agents)).
 
 ```json
 {
@@ -85,19 +85,17 @@ Four entry points, all served as static JSON:
 
 ABIs are served under `/abis/` for every contract and interface across the protocols:
 
-Surface token, factory, and canonical minter: `Surface`, `SurfaceFactory`, `FixedPriceMinter`
+Surface v1 token, factory, and canonical minter: `Surface`, `SurfaceFactory`, `FixedPriceMinter`
 
-Surface shared singletons: `DefaultRenderer`, `RenderAssets`
-
-Surface renderer template: `ScriptyRenderer`
+Surface v2 primitives: `SurfaceV2`, `FixedPriceSale`, `AllowlistGate`, `CloneFactory`, `Launcher`
 
 Surface slot and view interfaces: `IPriceStrategy`, `IRenderer`, `ISurfaceView`, `IPreviewRenderer`
 
-Auctions: `SovereignAuctionHouse`, `SovereignAuctionHouseFactory`
+Auctions: `SovereignAuctionHouse`, `SovereignAuctionHouseFactory`, `SovereignAuctionHouseV2`, `SovereignAuctionHouseV2Factory`
 
 Catalog: `Catalog`
 
-Fetch any of these directly, e.g. `/abis/Surface.json`, or import the typed version from the npm workspace package.
+Fetch any of these directly, e.g. `/abis/Surface.json`, or import the typed version from the npm workspace package. There is no renderer ABI beyond the interfaces: every collection's renderer is its artist's own contract, so read its ABI from that contract's verified source.
 
 ## The @pin/abi package
 
@@ -105,9 +103,10 @@ Every ABI is also shipped as a typed TypeScript export in the `@pin/abi` workspa
 
 ```ts
 import {surfaceAbi, surfaceFactoryAbi, fixedPriceMinterAbi} from '@pin/abi';
-import {defaultRendererAbi, renderAssetsAbi, scriptyRendererAbi} from '@pin/abi';
+import {surfaceTokenV2Abi, fixedPriceSaleAbi, allowlistGateAbi, cloneFactoryAbi, launcherAbi} from '@pin/abi';
 import {iPriceStrategyAbi, iRendererAbi, iSurfaceViewAbi, iPreviewRendererAbi} from '@pin/abi';
 import {sovereignAuctionHouseAbi, sovereignAuctionHouseFactoryAbi} from '@pin/abi';
+import {sovereignAuctionHouseV2Abi, sovereignAuctionHouseV2FactoryAbi} from '@pin/abi';
 ```
 
 If you're inside the monorepo, prefer this import over fetching JSON at runtime. Outside the monorepo, fetch `/abis/<Name>.json`; both sources are generated from the same compiled contracts and stay in sync.
@@ -121,7 +120,7 @@ import {mainnet} from 'viem/chains';
 const ORIGIN = 'https://pnd.ripe.wtf';
 
 const manifest = await fetch(`${ORIGIN}/protocol-manifest.json`).then((r) => r.json());
-const entry = manifest.protocols.collections.contracts.SurfaceFactory;
+const entry = manifest.protocols.surface.contracts.SurfaceFactory;
 const abi = await fetch(`${ORIGIN}${entry.abi}`).then((r) => r.json());
 
 const client = createPublicClient({
@@ -135,6 +134,6 @@ const total = await factory.read.totalSurfaces();
 
 ## Deployment status
 
-Catalog, the auction house factory, and the Surface System are deployed on Ethereum mainnet; their addresses are populated in `/protocol-manifest.json` and resolved in every `{{addr:...}}` placeholder. Two optional Surface render modules, `DefaultRenderer` and `RenderAssets`, are not deployed yet: their `address` is `null` in the manifest and they stay placeholders until deploy, at which point they populate automatically. A `null` address never means a missing ABI, every entry carries its ABI either way.
+Catalog, both auction house factories, and the Surface System are deployed on Ethereum mainnet; their addresses are populated in `/protocol-manifest.json` and resolved in every `{{addr:...}}` placeholder. Singletons not yet in this reference's deploy record, such as the Surface v2 `AllowlistGate` and `Launcher`, have a `null` address in the manifest and stay placeholders until their addresses are recorded, at which point they populate automatically. A `null` address never means a missing ABI, every entry carries its ABI either way. PND deploys no renderer module, so none appears in the manifest.
 
 See [AI agents](/docs/offchain/ai-agents) for task-oriented recipes using these surfaces.

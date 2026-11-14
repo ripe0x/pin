@@ -34,10 +34,10 @@ protocol charge beyond what each contract's reference documents.
 
 The Surface System, Auctions, and Catalog are live on Ethereum mainnet; their
 addresses are in [Addresses](/docs/introduction/addresses) and the
-[protocol manifest](/protocol-manifest.json). Two optional Surface render
-modules, `DefaultRenderer` and `RenderAssets`, are not deployed yet and read
-`_pending deploy_` in those tables; a collection sets its own renderer, so
-neither is required to deploy or mint.
+[protocol manifest](/protocol-manifest.json). Singletons not yet in this
+reference's deploy record, such as the Surface v2 primitives, read
+`_pending deploy_` in those tables. PND deploys no renderer: every collection
+points its renderer slot at a contract its artist deploys.
 
 New Surface deploys pass through the factory's reversible pause gate. Read
 `paused()` on [SurfaceFactory](/docs/surface/contracts/factory) for the current

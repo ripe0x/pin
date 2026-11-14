@@ -27,8 +27,20 @@ core with different minters and renderers attached. See
 | Contract | Role |
 | --- | --- |
 | `SurfaceFactory` | Clones the token and its canonical minter and wires them in one transaction |
-| `DefaultRenderer` | A stock `IRenderer` serving one static image per token, for collections that want no bespoke renderer. Not deployed yet |
-| `RenderAssets` | Shared registry of static display assets (covers + captures), written under each collection's own owner/admin authority. Algorithm-driven (Art Blocks-style) works ship as their own bring-your-own renderer, not a shared assembler. Not deployed yet |
+
+There is no shared renderer. Every collection's renderer is a contract its
+artist deploys and points the renderer slot at; it supplies each token's
+`image` and the collection's cover. See
+[Write a renderer](/docs/surface/guides/write-a-renderer).
+
+[Surface v2](/docs/surface/contracts/surface-v2) is a separate, smaller set of
+primitives that coexists with this system: the v2 token, a
+[FixedPriceSale](/docs/surface/contracts/fixed-price-sale) clone per sale, an
+[AllowlistGate](/docs/surface/contracts/allowlist-gate), two
+[CloneFactory](/docs/surface/contracts/clone-factory) instances, and the
+[Launcher](/docs/surface/contracts/launcher) that wires a priced drop. The
+renderer interface is the same for both; v2 has no default renderer and no
+no-code tier.
 
 **Per-collection clones** (deployed per collection):
 
@@ -84,8 +96,8 @@ minter set can never change). For a generative work, the artist's own renderer
 supplies the algorithm's permanence (deployed immutable, or with its own
 one-way lock); `lockRenderer` pins the pointer to it, so pointer lock plus an
 immutable renderer is full presentation permanence. The token stores no
-presentation data: a work's algorithm lives in the artist's renderer, and
-static images live in [RenderAssets](/docs/surface/contracts/render-assets).
+presentation data: a work's algorithm, its token images, and its cover all
+live in the artist's renderer.
 
 ## Id modes
 
@@ -110,10 +122,9 @@ The Surface System is live on Ethereum mainnet. `SurfaceFactory` and the three
 implementations it clones (sequential, pooled, `FixedPriceMinter`) are deployed;
 their addresses are in [Addresses](/docs/introduction/addresses).
 
-`DefaultRenderer` and `RenderAssets` are not deployed yet. They are optional: a
-collection points its renderer slot at whatever contract implements
-[`IRenderer`](/docs/surface/contracts/i-renderer), and nothing in the deploy or
-mint path reads either module.
+PND deploys no renderer. A collection points its renderer slot at whatever
+contract implements [`IRenderer`](/docs/surface/contracts/i-renderer), and
+nothing in the deploy or mint path reads any shared render module.
 
 New deploys pass through the factory's reversible pause gate. Read `paused()` on
 [SurfaceFactory](/docs/surface/contracts/factory) for the current setting.

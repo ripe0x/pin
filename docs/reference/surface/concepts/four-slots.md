@@ -25,6 +25,13 @@ Price, mint window, payment, referral, and gating are not token slots. They
 live in the minter, because they are sale-time concerns and the token holds
 no value.
 
+This page describes the v1 `Surface` core. [Surface v2](/docs/surface/contracts/surface-v2)
+keeps the same renderer interface but narrows the rest: one renderer pointer
+(owner-only `setRenderer`, never zero), one minter slot (`setMinter`, zero
+means no one can mint), no price-strategy slot, and no locks:
+`renounceOwnership` is the only way to make its config permanent. Its sale lives in a separate
+[FixedPriceSale](/docs/surface/contracts/fixed-price-sale) clone.
+
 ## Renderer (`IRenderer`)
 
 ```solidity
@@ -38,7 +45,9 @@ function contractURI(address collection) external view returns (string memory);
   default)
 - **Fallback**: the slot always holds a nonzero address. When the artist sets
   none at init, the collection uses the factory's `defaultRenderer`; a slot
-  left at zero with no factory default reverts `RendererRequired` at creation
+  left at zero with no factory default reverts `RendererRequired` at creation.
+  The mainnet factory's `defaultRenderer` is the zero address, so in practice
+  the artist names a renderer at deploy
 - **What it does**: `tokenURI` delegates entirely to
   `IRenderer(renderer()).tokenURI(address(this), tokenId)`. The collection
   address is passed explicitly rather than read from `msg.sender`, so one
@@ -47,17 +56,15 @@ function contractURI(address collection) external view returns (string memory);
 - **What it can do**: full EVM read access. A renderer can read the token's
   seed, the current owner, sibling tokens, companion contract state, foreign
   contracts, and block state. It is a view function, so it cannot alter state
-- **Reference implementations**: `DefaultRenderer` (the init-time fallback)
-  and `ScriptyRenderer`, a bring-your-own generative template for
-  algorithm-driven (Art Blocks-style) work: the artist deploys their own
-  instance (immutable by construction) and points the slot at it, following
-  the injection convention. A hand-written Solidity SVG work implements
-  `IRenderer` directly, with the shared `MetadataJson` library handling the
-  JSON envelope
+- **Whose contract**: the artist's. PND ships no renderer module and the
+  mainnet factory's `defaultRenderer` is zero, so every collection points the
+  slot at a renderer its artist deployed: a Solidity SVG work, an onchain
+  HTML assembler for algorithm-driven (Art Blocks-style) work following the
+  injection convention, or a renderer that serves stored image URIs. The
+  renderer, not the token, supplies each token's `image` and the
+  collection's cover (`contractURI`)
 
 See [IRenderer](/docs/surface/contracts/i-renderer),
-[DefaultRenderer](/docs/surface/contracts/default-renderer),
-[ScriptyRenderer](/docs/surface/contracts/scripty-renderer),
 [Write a renderer](/docs/surface/guides/write-a-renderer).
 
 ## Minter

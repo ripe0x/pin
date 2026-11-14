@@ -162,9 +162,9 @@ construction, no setter. Not used by `createSurfaceCustom` or
 
 ## function defaultRenderer
 
-The renderer a collection uses when its config names none. May be zero: with no
-factory default, a collection that names no renderer reverts `RendererRequired` at
-creation. A collection's owner can change its renderer after deploy; this is only
+The renderer a collection uses when its config names none. May be zero, and is
+zero on the mainnet factory: with no factory default, a collection that names no
+renderer reverts `RendererRequired` at creation. A collection's owner can change its renderer after deploy; this is only
 the value new collections start with.
 
 ## function catalog
