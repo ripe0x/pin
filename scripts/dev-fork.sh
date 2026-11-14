@@ -15,7 +15,7 @@
 #       NEXT_PUBLIC_ANVIL_RPC_URL=http://localhost:8545
 #       NEXT_PUBLIC_DEV_IMPERSONATE=0xe2374f3a3a10f73fb673ef1aa54a248d1e56517e
 #   - Restart the dev server (npm run dev --workspace=apps/web)
-#   - Visit http://localhost:<port>/artist/<artist>/migrate
+#   - Visit http://localhost:<port>/studio/<artist>/migrate
 #
 # Restore production env (revert .env.local + restart) when done.
 
