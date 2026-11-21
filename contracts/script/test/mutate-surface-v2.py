@@ -4,6 +4,7 @@
 The script copies contracts into a temporary directory. It never edits the
 checkout, and a compilation failure is not counted as a killed mutant.
 Usage: cd contracts && python3 script/test/mutate-surface-v2.py --output /tmp/mutations.json
+Anchor check only (no forge, seconds): python3 script/test/mutate-surface-v2.py --check-anchors
 """
 
 import argparse
@@ -44,8 +45,8 @@ MUTANTS = [
     mutant("sale_check_09_count", SALE, "totalMinted = minted + quantity;", "totalMinted = minted;"),
     mutant("sale_check_10_settle", SALE, "if (paid != 0) {", "if (false && paid != 0) {"),
     mutant("sale_reorder_03_05", SALE,
-           "if (maxMints != 0 && minted + quantity > maxMints) revert MaxMintsExceeded(maxMints, minted + quantity); // 3\n        address collection_ = collection;\n        if (gate != address(0) && !IGate(gate).check(collection_, to, quantity, data)) revert GateRejected(); // 4\n        uint256 mintedByTo = mintedBy[to];\n        if (walletCap != 0 && mintedByTo + quantity > walletCap) {\n            revert WalletCapExceeded(walletCap, mintedByTo + quantity); // 5\n        }",
-           "uint256 mintedByTo = mintedBy[to];\n        if (walletCap != 0 && mintedByTo + quantity > walletCap) {\n            revert WalletCapExceeded(walletCap, mintedByTo + quantity);\n        }\n        address collection_ = collection;\n        if (gate != address(0) && !IGate(gate).check(collection_, to, quantity, data)) revert GateRejected();\n        if (maxMints != 0 && minted + quantity > maxMints) revert MaxMintsExceeded(maxMints, minted + quantity);"),
+           "if (maxMints != 0 && minted + quantity > maxMints) revert MaxMintsExceeded(maxMints, minted + quantity); // 3\n        address collection_ = collection;\n        // Neither this sale nor the collection can ever withdraw a balance,\n        // so naming either as referrer counts as no referrer.\n        if (referrer == address(this) || referrer == collection_) referrer = address(0);\n        if (gate != address(0) && !IGate(gate).check(collection_, to, quantity, data)) revert GateRejected(); // 4\n        uint256 mintedByTo = mintedBy[to];\n        if (walletCap != 0 && mintedByTo + quantity > walletCap) {\n            revert WalletCapExceeded(walletCap, mintedByTo + quantity); // 5\n        }",
+           "uint256 mintedByTo = mintedBy[to];\n        if (walletCap != 0 && mintedByTo + quantity > walletCap) {\n            revert WalletCapExceeded(walletCap, mintedByTo + quantity);\n        }\n        address collection_ = collection;\n        if (referrer == address(this) || referrer == collection_) referrer = address(0);\n        if (gate != address(0) && !IGate(gate).check(collection_, to, quantity, data)) revert GateRejected();\n        if (maxMints != 0 && minted + quantity > maxMints) revert MaxMintsExceeded(maxMints, minted + quantity);"),
     mutant("sale_minted_by_dropped", SALE, "mintedBy[to] = mintedByTo + quantity;", "mintedBy[to] = mintedByTo;"),
     mutant("sale_minted_by_only_when_capped", SALE, "mintedBy[to] = mintedByTo + quantity;", "if (walletCap != 0) mintedBy[to] = mintedByTo + quantity;"),
     mutant("sale_referral_wrong_base", SALE, "(paid * REFERRAL_SHARE_BPS) / BPS", "(price * REFERRAL_SHARE_BPS) / BPS"),
@@ -92,8 +93,8 @@ for setter in ("setRenderer", "setMinter", "setSupplyCap", "setRoyalty", "setNam
     MUTANTS.append({"id": "surface_auth_" + setter, "file": SRC + TOKEN + ".sol", "regex": pattern, "new": r"\1", "note": ""})
 
 
-def apply_mutant(path, mutation):
-    original = path.read_text()
+def mutate_source(original, mutation):
+    """Return the mutated source text, or raise if an anchor does not match exactly once."""
     if "regex" in mutation:
         changed, count = mutation["regex"].subn(mutation["new"], original)
     elif "edits" in mutation:
@@ -108,8 +109,32 @@ def apply_mutant(path, mutation):
         changed = original.replace(mutation["old"], mutation["new"], 1)
     if count != 1 or changed == original:
         raise ValueError(f"{mutation['id']}: expected exactly one source match, got {count}")
-    path.write_text(changed)
+    return changed
+
+
+def apply_mutant(path, mutation):
+    original = path.read_text()
+    path.write_text(mutate_source(original, mutation))
     return original
+
+
+def check_anchors(mutants):
+    """Verify every anchor matches the checkout exactly once, without forge.
+
+    Cheap enough to run on every push, so a source edit that strands a
+    mutant is caught on the PR rather than on the weekly mutation run.
+    """
+    errors = []
+    for mutation in mutants:
+        try:
+            mutate_source((ROOT / mutation["file"]).read_text(), mutation)
+        except ValueError as error:
+            errors.append(str(error))
+    for error in errors:
+        print(f"FAIL {error}", flush=True)
+    print(f"Anchors: {len(mutants) - len(errors)}/{len(mutants)} match exactly once", flush=True)
+    if errors:
+        raise SystemExit(1)
 
 
 def run_forge(cwd, timeout):
@@ -141,7 +166,9 @@ def run_forge(cwd, timeout):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--check-anchors", action="store_true",
+                        help="Only verify every mutant anchor matches the source exactly once; run no forge")
     parser.add_argument("--ids", nargs="*", help="Run only the named mutants")
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--keep-workdir", action="store_true")
@@ -151,6 +178,11 @@ def main():
         parser.error("unknown or duplicate mutant id")
     if not selected:
         parser.error("no mutants selected")
+    if args.check_anchors:
+        check_anchors(selected)
+        return
+    if args.output is None:
+        parser.error("--output is required unless --check-anchors is set")
 
     temp = tempfile.mkdtemp(prefix="surface-v2-mutation-")
     work = Path(temp) / "contracts"

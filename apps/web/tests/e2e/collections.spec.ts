@@ -124,8 +124,11 @@ test.describe("Collections: create-and-mint", () => {
     await expect(page.getByText("Invalid address.")).toBeVisible()
     await expect(rendererContinue).toBeDisabled()
 
-    // A well-formed address with no deployed code (an EOA, or simply
-    // unused): rejected after the bytecode check settles.
+    // A well-formed address with no deployed code: rejected after the
+    // bytecode check settles. The impersonated wallet is a plain EOA on the
+    // fork only because globalSetup clears its mainnet EIP-7702 delegation
+    // (Anvil account 0's key is public); without that it has code and the
+    // check rightly reports "Contract found".
     await rendererInput.fill(state.impersonate)
     await expect(page.getByText("No contract found at this address.")).toBeVisible({
       timeout: 15_000,

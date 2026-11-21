@@ -8,7 +8,10 @@
  *      Forking mainnet means Multicall3 is present, which the collections
  *      server reads (getCollection et al) rely on.
  *   2. Deploys the Surface implementations + factory to the fork, reusing
- *      the mainnet Catalog already present in forked state.
+ *      the mainnet Catalog already present in forked state, plus one
+ *      bring-your-own renderer (contracts/script/mocks/MockRenderer.sol) for
+ *      the wizard's Renderer step. The shared RenderAssets/DefaultRenderer
+ *      modules were deleted in #353; DeploySurfaceSystem never deployed them.
  *   3. Next dev server on a fixed port (E2E_APP_PORT, default 3100) with the
  *      fork env + NEXT_PUBLIC_DEV_IMPERSONATE set, so the wagmi mock
  *      connector auto-connects as the impersonated account (no modal). This
@@ -27,7 +30,6 @@ export const STATE_FILE = resolve(__dirname, "../.e2e-state.json")
 export type GlobalState = {
   rpcUrl: string
   factory: `0x${string}`
-  renderAssets: `0x${string}`
   renderer: `0x${string}`
   appPort: number
   impersonate: `0x${string}`
@@ -131,10 +133,16 @@ export default async function globalSetup() {
   await waitFor("anvil", async () => {
     await rpc(rpcUrl, "eth_blockNumber")
     return true
-  }, 60_000)
+  }, 120_000)
 
   // 2) Fund the impersonated wallet + deploy the Surface system.
   await rpc(rpcUrl, "anvil_setBalance", [IMPERSONATE, "0x21e19e0c9bab2400000"])
+  // Anvil account 0's key is public, so on mainnet someone has pointed it at
+  // an EIP-7702 delegate (its code is `0xef0100…`). Forked, that makes the
+  // dev wallet look like a contract: the Renderer step's bytecode check
+  // accepts it, and ETH sent to it runs the delegate. Clear it so the
+  // impersonated wallet is a plain EOA on the fork.
+  await rpc(rpcUrl, "anvil_setCode", [IMPERSONATE, "0x"])
   console.log("[e2e] deploying collection contracts…")
   const out = execFileSync(
     "forge",
@@ -162,44 +170,23 @@ export default async function globalSetup() {
   const factory = m[1] as `0x${string}`
   console.log(`[e2e] factory: ${factory}`)
 
-  // The live factory has no default renderer, and the guided Edition and
-  // Generative presets are intentionally disabled. Deploy the two ownerless
-  // reference modules so the test can exercise today's supported
-  // Renderer-native path with a real IRenderer.
-  const renderAssets = deployedAddress(
-    execFileSync(
-      "forge",
-      [
-        "create",
-        "src/surface/renderers/RenderAssets.sol:RenderAssets",
-        "--rpc-url",
-        rpcUrl,
-        "--private-key",
-        DEPLOYER_PK,
-        "--broadcast",
-      ],
-      {
-        cwd: CONTRACTS_DIR,
-        env: ENV_WITH_FOUNDRY,
-        encoding: "utf8",
-        timeout: COMMAND_TIMEOUT_MS,
-      },
-    ),
-    "RenderAssets",
-  )
+  // The factory has no default renderer (matching mainnet): every collection
+  // brings its own via cfg.renderer. Deploy one minimal IRenderer for the
+  // wizard's Renderer step to point at.
   const renderer = deployedAddress(
     execFileSync(
       "forge",
       [
         "create",
-        "src/surface/renderers/DefaultRenderer.sol:DefaultRenderer",
+        "script/mocks/MockRenderer.sol:MockRenderer",
         "--rpc-url",
         rpcUrl,
         "--private-key",
         DEPLOYER_PK,
         "--broadcast",
         "--constructor-args",
-        renderAssets,
+        "E2E Renderer",
+        "#444444",
       ],
       {
         cwd: CONTRACTS_DIR,
@@ -208,7 +195,7 @@ export default async function globalSetup() {
         timeout: COMMAND_TIMEOUT_MS,
       },
     ),
-    "DefaultRenderer",
+    "MockRenderer",
   )
   execFileSync(
     "cast",
@@ -229,7 +216,6 @@ export default async function globalSetup() {
       timeout: COMMAND_TIMEOUT_MS,
     },
   )
-  console.log(`[e2e] renderAssets: ${renderAssets}`)
   console.log(`[e2e] renderer: ${renderer}`)
 
   // 3) Next dev server with the fork env + mock-connector impersonation.
@@ -245,7 +231,11 @@ export default async function globalSetup() {
         NEXT_PUBLIC_USE_LOCAL_RPC: "1",
         NEXT_PUBLIC_ANVIL_RPC_URL: rpcUrl,
         NEXT_PUBLIC_SURFACE_FACTORY: factory,
-        NEXT_PUBLIC_RENDER_ASSETS: renderAssets,
+        // Pin the stack to the fork-local v1 factory: blank out overrides a
+        // developer's .env.local may carry (process env wins over dotenv).
+        NEXT_PUBLIC_SURFACE_FACTORY_V2: "",
+        NEXT_PUBLIC_RENDER_ASSETS: "",
+        NEXT_PUBLIC_DEFAULT_RENDERER: "",
         NEXT_PUBLIC_DEV_IMPERSONATE: IMPERSONATE,
       },
       detached: true,
@@ -265,7 +255,6 @@ export default async function globalSetup() {
   const state: GlobalState = {
     rpcUrl,
     factory,
-    renderAssets,
     renderer,
     appPort: APP_PORT,
     impersonate: IMPERSONATE,

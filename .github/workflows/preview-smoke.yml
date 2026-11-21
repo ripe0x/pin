@@ -1,0 +1,150 @@
+name: Preview smoke
+
+# Playwright smoke test (apps/web/tests/smoke) against a deployed Netlify
+# preview: landing, an artist page, a token page, /collections, the Form of
+# Solitude mint page and /api/health/indexer must answer 200 and render
+# without an error boundary.
+#
+# Triggers:
+#   - deployment_status: a successful GitHub Deployment whose environment
+#     names a preview (Netlify's "Deploy Preview" style). Uses the
+#     deployment's environment_url.
+#   - check_run: the Netlify app's "Pages changed - <site>" check, posted
+#     once a deploy preview is live. As of 2026-11 Netlify reports this
+#     repo's previews through check runs only (no GitHub Deployments), so
+#     this is the trigger that actually fires today. The preview URL is
+#     derived from the PR number: deploy-preview-<n>--<site>.netlify.app.
+#   - workflow_dispatch: any https URL, for a manual run.
+# With no resolvable URL the job logs a notice and does nothing.
+#
+# The spec is always checked out from the default branch, never the PR
+# head, so a PR cannot change what runs here. The job has a read-only token
+# and uses no secrets.
+
+on:
+  deployment_status:
+  check_run:
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Site to smoke-test, e.g. https://deploy-preview-123--art-pin.netlify.app"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NETLIFY_SITE: art-pin
+
+jobs:
+  smoke:
+    # contains()/startsWith() are case-insensitive in expressions.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'deployment_status' &&
+        github.event.deployment_status.state == 'success' &&
+        contains(github.event.deployment.environment, 'preview')) ||
+      (github.event_name == 'check_run' &&
+        github.event.check_run.app.slug == 'netlify' &&
+        startsWith(github.event.check_run.name, 'Pages changed') &&
+        (github.event.check_run.conclusion == 'success' || github.event.check_run.conclusion == 'neutral'))
+    runs-on: ubuntu-24.04  # the locked Playwright release cannot install browsers on ubuntu-latest (26.04)
+    timeout-minutes: 15
+    # Job-level, and keyed on the check name too, so the sibling Netlify
+    # checks ("Redirect rules", "Header rules") that complete alongside
+    # "Pages changed" can never cancel the run that matters.
+    concurrency:
+      group: preview-smoke-${{ github.event.deployment.id || github.event.check_run.pull_requests[0].number || github.run_id }}-${{ github.event.check_run.name || github.event_name }}
+      cancel-in-progress: true
+    steps:
+      - name: Resolve preview URL
+        id: url
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_URL: ${{ inputs.base_url }}
+          DEPLOY_ENV_URL: ${{ github.event.deployment_status.environment_url }}
+          DEPLOY_TARGET_URL: ${{ github.event.deployment_status.target_url }}
+          PR_NUMBER: ${{ github.event.check_run.pull_requests[0].number }}
+        run: |
+          url=""
+          case "$EVENT" in
+            workflow_dispatch) url="$INPUT_URL" ;;
+            deployment_status) url="${DEPLOY_ENV_URL:-$DEPLOY_TARGET_URL}" ;;
+            check_run)
+              if [ -n "$PR_NUMBER" ]; then
+                url="https://deploy-preview-${PR_NUMBER}--${NETLIFY_SITE}.netlify.app"
+              fi
+              ;;
+          esac
+          url="${url%/}"
+          # A site origin only: https, a host, an optional port. Anything
+          # else (empty, a Netlify dashboard log URL, a path) is skipped.
+          if ! printf '%s' "$url" | grep -Eq '^https://[A-Za-z0-9.-]+(:[0-9]+)?$'; then
+            echo "::notice::No preview URL to smoke-test (event=$EVENT, url='${url}'); skipping."
+            url=""
+          elif [ "$EVENT" != workflow_dispatch ] && ! printf '%s' "$url" | grep -Eq '\.netlify\.app(:[0-9]+)?$'; then
+            echo "::notice::Deployment URL '$url' is not a Netlify preview; skipping."
+            url=""
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          [ -n "$url" ] && echo "Smoke-testing $url"
+          exit 0
+
+      - name: Check out repository (default branch)
+        if: steps.url.outputs.url != ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Set up pnpm
+        if: steps.url.outputs.url != ''
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.14.2
+
+      - name: Set up Node.js
+        if: steps.url.outputs.url != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.url.outputs.url != ''
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        if: steps.url.outputs.url != ''
+        run: pnpm --filter @pin/web exec playwright install --with-deps chromium
+
+      # The check can land a moment before the preview serves; wait for the
+      # landing page rather than fail on the first cold request.
+      - name: Wait for the preview to answer
+        if: steps.url.outputs.url != ''
+        env:
+          BASE_URL: ${{ steps.url.outputs.url }}
+        run: |
+          for _ in $(seq 1 18); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$BASE_URL/" || true)"
+            [ "$code" = 200 ] && exit 0
+            echo "preview answered ${code:-nothing}; retrying in 10s"
+            sleep 10
+          done
+          echo "::warning::$BASE_URL/ never answered 200; running the smoke test anyway"
+
+      - name: Run smoke test
+        if: steps.url.outputs.url != ''
+        env:
+          BASE_URL: ${{ steps.url.outputs.url }}
+        run: pnpm --filter @pin/web test:smoke
+
+      - name: Upload Playwright traces
+        if: failure() && steps.url.outputs.url != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-smoke-test-results
+          path: apps/web/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
