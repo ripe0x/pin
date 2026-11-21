@@ -1,6 +1,7 @@
 import "server-only"
 import { sql } from "./db"
 import { INDEXER_SCHEMA } from "./indexer-schema"
+import { artistTokenRefsSql } from "./artist-token-refs"
 
 /**
  * The entire data-fetching surface for the v2 web app.
@@ -45,21 +46,13 @@ export async function getArtistTokens(
   const lower = artist.toLowerCase()
   const offset = page * pageSize
 
-  // UNION every per-platform source.
+  // Every per-platform source, one row per (contract, token_id): the
+  // worker's fnd-shared rows and Ponder's fnd_artist_tokens overlap, so a
+  // plain UNION ALL double-counted (see artist-token-refs.ts). Count and
+  // page share the same deduped CTE, so totals and OFFSET agree.
+  const refsSql = artistTokenRefsSql(INDEXER_SCHEMA)
   const totalRows = (await sql.unsafe(
-    `WITH refs AS (
-       SELECT lower(contract) AS contract, token_id, platform,
-              mint_block, mint_log_index
-       FROM artist_tokens WHERE artist = $1
-       UNION ALL
-       SELECT lower(contract), token_id::text, 'fnd-shared'::text,
-              block_number, log_index
-       FROM ${t("fnd_artist_tokens")} WHERE lower(creator) = $1
-       UNION ALL
-       SELECT lower(contract), token_id::text, 'srv2-shared'::text,
-              block_number, log_index
-       FROM ${t("srv2_artist_tokens")} WHERE lower(creator) = $1
-     )
+    `WITH refs AS (${refsSql})
      SELECT count(*)::int AS n FROM refs r
      WHERE NOT EXISTS (
        SELECT 1 FROM token_metadata bm
@@ -74,19 +67,7 @@ export async function getArtistTokens(
   const total = totalRows[0]?.n ?? 0
 
   const rows = (await sql.unsafe(
-    `WITH refs AS (
-       SELECT lower(contract) AS contract, token_id, platform,
-              mint_block, mint_log_index
-       FROM artist_tokens WHERE artist = $1
-       UNION ALL
-       SELECT lower(contract), token_id::text, 'fnd-shared',
-              block_number, log_index
-       FROM ${t("fnd_artist_tokens")} WHERE lower(creator) = $1
-       UNION ALL
-       SELECT lower(contract), token_id::text, 'srv2-shared',
-              block_number, log_index
-       FROM ${t("srv2_artist_tokens")} WHERE lower(creator) = $1
-     )
+    `WITH refs AS (${refsSql})
      SELECT r.contract, r.token_id, r.platform,
             r.mint_block::text AS mint_block, r.mint_log_index,
             m.name, m.image_url, m.animation_url, o.owner,
@@ -100,7 +81,9 @@ export async function getArtistTokens(
        ON lower(mu.contract) = r.contract AND mu.token_id::text = r.token_id
      WHERE COALESCE(m.burned, false) = false
        AND (o.owner IS NULL OR o.owner <> '0x0000000000000000000000000000000000000000')
-     ORDER BY r.mint_block DESC, r.mint_log_index DESC
+     -- contract/token_id break ties (e.g. fast-backfilled rows share
+     -- mint_log_index 0) so OFFSET pages never overlap or skip.
+     ORDER BY r.mint_block DESC, r.mint_log_index DESC, r.contract, r.token_id
      LIMIT $2 OFFSET $3`,
     [lower, pageSize, offset],
   )) as Array<{

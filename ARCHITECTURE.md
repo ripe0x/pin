@@ -13,8 +13,9 @@ same Postgres database.** If you remember nothing else, remember that.
 An off-the-shelf indexing framework. You give it a fixed list of smart
 contracts; it watches their events as new blocks arrive and writes rows.
 
-- Writes into the **`ponder_v1` schema** (the `v1` is Ponder's own
-  safe-redeploy namespace; see "Why ponder_v1" below).
+- Writes into the schema named by **`INDEXER_SCHEMA`** (currently
+  `ponder_v4`; the `vN` is Ponder's safe-redeploy namespace, see "Why
+  `ponder_vN`?" below). Never hardcode the name.
 - Owns a **fixed, small set of contracts** — things we want fully
   indexed regardless of who's involved:
   - `pnd_houses`, `pnd_auctions`, `pnd_bids` — PND auction houses
@@ -58,6 +59,13 @@ Currently ~155 addresses. Both programs read it. The worker scans
 nothing for an address outside this set — that's how RPC spend stays
 bounded by artist count, not by traffic. See migration `011`.
 
+The view bakes in a Ponder schema name, so it must follow
+`INDEXER_SCHEMA` across cutovers. Migration `028` adds
+`pnd_known_artists_schema()` (which schema the view reads) and
+`pnd_rebuild_known_artists(schema)`; the worker compares the two with
+`INDEXER_SCHEMA` on startup and rebuilds the view if they differ
+(`apps/worker/src/startup-checks.ts`).
+
 ---
 
 ## "The worker writes to artist_tokens" — what that actually means
@@ -65,32 +73,38 @@ bounded by artist count, not by traffic. See migration `011`.
 When the docs/commits say *"the worker writes to `artist_tokens`,"* it
 means: program #2 (the custom Node worker) inserts rows into the
 `public.artist_tokens` table. Ponder never touches that table. The
-Ponder-owned equivalent (e.g. `ponder_v1.srv2_artist_tokens`) is a
+Ponder-owned equivalent (e.g. `<INDEXER_SCHEMA>.srv2_artist_tokens`) is a
 DIFFERENT table written by program #1.
 
 The web app reads BOTH:
 
 ```
-discoverArtistTokenRefs(artist) =
-    public.artist_tokens           (worker-owned: manifold/mint/tl/fnd-collection)
-  UNION ponder_v1.fnd_artist_tokens   (Ponder-owned: Foundation shared 1/1)
-  UNION ponder_v1.srv2_artist_tokens  (Ponder-owned: SuperRare V2 shared 1/1)
+discoverArtistTokenRefs(artist) = one row per (contract, token_id) from
+    public.artist_tokens                 (worker-owned: manifold/mint/tl/
+                                          fnd-collection/fnd-shared)
+  + <INDEXER_SCHEMA>.fnd_artist_tokens   (Ponder-owned: Foundation shared 1/1)
+  + <INDEXER_SCHEMA>.srv2_artist_tokens  (Ponder-owned: SuperRare V2 shared 1/1)
 ```
 
 So a token shows on an artist page whether it came from the worker or
-from Ponder.
+from Ponder. The worker's `fnd-shared` rows and Ponder's
+`fnd_artist_tokens` overlap for mints after Ponder's FND start block, so
+the sources are deduped on `(contract, token_id)` with the worker row
+winning (`apps/web/src/lib/artist-token-refs.ts`); a plain `UNION ALL`
+double-counts them.
 
 ---
 
-## Why `ponder_v1`?
+## Why `ponder_vN`?
 
 It's just the schema name Ponder writes into (set via `INDEXER_SCHEMA`).
 The `v` is Ponder's safe-redeploy versioning: when Ponder's config or
-schema changes materially, it can sync fresh into `ponder_v2`, `v3`, …
-before flipping over, so a bad redeploy doesn't corrupt live data. You
-may see empty `ponder_v2`/`ponder_v3` schemas on the DB — those are
-abandoned re-sync attempts. The live data is in `ponder_v1`. Nothing to
-fix; it's a namespace.
+schema changes materially, it syncs fresh into the next `ponder_vN`
+before flipping over, so a bad redeploy doesn't corrupt live data. The
+live schema is `ponder_v4` (as of 2026-10); `ponder_v3` and `ponder_v2`
+are rollback schemas and `ponder_v1` is dead (frozen since 2026-07-15).
+See AGENTS.md "Production database" for the current list and
+`docs/ponder-schema-cutover.md` for the cutover steps.
 
 ---
 

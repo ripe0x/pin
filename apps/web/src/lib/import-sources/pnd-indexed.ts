@@ -2,6 +2,7 @@ import "server-only"
 import type { Address } from "viem"
 import { sql } from "../db"
 import { INDEXER_SCHEMA } from "../indexer-schema"
+import { artistTokenRefsSql } from "../artist-token-refs"
 import type { ImportSource, RawWork, SkippedWork } from "./types.ts"
 
 /**
@@ -85,17 +86,10 @@ async function fetchPndIndexedWorks(
   // min DESC. Within a contract, ascending by token_id.
   const rows = (await sql.unsafe(
     `WITH src AS (
-       SELECT lower(contract) AS contract, token_id, platform,
-              mint_block AS mint_block
-       FROM artist_tokens WHERE artist = $1
-       UNION ALL
-       SELECT lower(contract), token_id::text, 'fnd-shared' AS platform,
-              block_number::bigint AS mint_block
-       FROM ${INDEXER_SCHEMA}.fnd_artist_tokens WHERE lower(creator) = $1
-       UNION ALL
-       SELECT lower(contract), token_id::text, 'srv2-shared' AS platform,
-              block_number::bigint AS mint_block
-       FROM ${INDEXER_SCHEMA}.srv2_artist_tokens WHERE lower(creator) = $1
+       -- One row per (contract, token_id); see artist-token-refs.ts for
+       -- why the sources overlap and which row wins.
+       SELECT r.contract, r.token_id, r.platform, r.mint_block::bigint AS mint_block
+       FROM (${artistTokenRefsSql(INDEXER_SCHEMA)}) r
      ),
      src_ranked AS (
        SELECT *,
