@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getArtistGalleryPage } from "@/lib/artist-queries"
-import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
+import { rateLimit } from "@/lib/rate-limit"
 import { isCrawlerUserAgent } from "@/lib/crawler"
 import { withSingleFlight } from "@/lib/single-flight"
 import { withRouteContext } from "@/lib/rpc-log"
@@ -34,8 +34,7 @@ export async function GET(
   // RPC calls (token discovery + multicall buyPrice + metadata
   // enrichment). 30/min/IP keeps a single bot from generating
   // thousands of underlying RPC calls.
-  const ip = getClientIp(req)
-  const rl = checkRateLimit("artist-tokens", ip, 60_000, 30)
+  const rl = await rateLimit(req, { namespace: "artist-tokens", windowMs: 60_000, max: 30 })
   if (!rl.ok) {
     return NextResponse.json(
       { error: "rate-limited", retryAfter: rl.retryAfter },

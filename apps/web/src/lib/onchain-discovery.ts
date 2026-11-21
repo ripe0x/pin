@@ -19,6 +19,7 @@ import { sql } from "./db"
 import { pgCache } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
 import { INDEXER_SCHEMA } from "./indexer-schema"
+import { isTokenInIndexer } from "./indexer-queries"
 
 export type TokenRef = {
   contract: `0x${string}`
@@ -183,9 +184,33 @@ export type DirectTokenMetadata = {
   burned: boolean
 }
 
+/**
+ * Whether (contract, tokenId) is a token the site already tracks: an
+ * `artist_tokens` row (worker-scanned platforms) or an indexed collection /
+ * shared-contract token.
+ */
+export async function isKnownToken(contract: string, tokenId: string): Promise<boolean> {
+  if (!sql) return false
+  const rows = (await sql`
+    SELECT 1 AS one FROM artist_tokens
+    WHERE contract = ${contract.toLowerCase()} AND token_id = ${tokenId}
+    LIMIT 1
+  `) as Array<{ one: number }>
+  if (rows.length > 0) return true
+  return (await isTokenInIndexer(contract, tokenId).catch(() => null)) === true
+}
+
+export type ResolveTokenMetadataOptions = {
+  /** Write a new `token_metadata` row only for a token isKnownToken accepts.
+   *  Unknown tokens are still resolved and returned, just not stored. An
+   *  existing row is always refreshed. */
+  persistKnownOnly?: boolean
+}
+
 export async function resolveTokenMetadataDirect(
   contract: string,
   tokenId: string,
+  opts: ResolveTokenMetadataOptions = {},
 ): Promise<DirectTokenMetadata | null> {
   if (!sql) return null
 
@@ -261,6 +286,17 @@ export async function resolveTokenMetadataDirect(
     // exists === false is a definitive burn; null is indeterminate (don't
     // assert a burn we couldn't confirm).
     const burned = exists === false
+    const result: DirectTokenMetadata = {
+      name: meta?.name ?? null,
+      description: meta?.description ?? null,
+      image: meta?.image ?? null,
+      animation_url: meta?.animation_url ?? null,
+      rawUri: meta?.uri ?? null,
+      burned,
+    }
+    if (opts.persistKnownOnly && !row && !(await isKnownToken(contract, tokenId))) {
+      return result
+    }
     await sql`
       INSERT INTO token_metadata
         (contract, token_id, name, description, image_url, animation_url, raw_uri, burned, fetched_at)
@@ -275,14 +311,7 @@ export async function resolveTokenMetadataDirect(
         raw_uri = COALESCE(EXCLUDED.raw_uri, token_metadata.raw_uri),
         burned = EXCLUDED.burned, fetched_at = NOW()
     `
-    return {
-      name: meta?.name ?? null,
-      description: meta?.description ?? null,
-      image: meta?.image ?? null,
-      animation_url: meta?.animation_url ?? null,
-      rawUri: meta?.uri ?? null,
-      burned,
-    }
+    return result
   } catch {
     return null
   }

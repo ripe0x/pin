@@ -124,9 +124,16 @@ const transports = {
 }
 
 // Chain list is order-sensitive (wallets default to the first entry). Sepolia
-// only joins the list when explicitly enabled, so the default mainnet+foundry
-// pair is untouched when the flag is off.
-const chains = useSepolia ? ([sepolia, mainnet, foundry] as const) : ([mainnet, foundry] as const)
+// only joins the list when explicitly enabled. The local Anvil chain only
+// joins it on a local-fork build (NEXT_PUBLIC_USE_LOCAL_RPC=1), so a
+// production network picker never offers it.
+const chains = useSepolia
+  ? isLocalRpc
+    ? ([sepolia, mainnet, foundry] as const)
+    : ([sepolia, mainnet] as const)
+  : isLocalRpc
+    ? ([mainnet, foundry] as const)
+    : ([mainnet] as const)
 
 /**
  * Dev impersonation: when `NEXT_PUBLIC_DEV_IMPERSONATE` is set to a 0x…

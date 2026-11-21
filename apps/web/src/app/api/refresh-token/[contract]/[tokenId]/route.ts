@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { isAddress } from "viem"
 import { readTokenMetadata } from "@/lib/token-metadata-store"
 import { refreshTokenMetadata } from "@/lib/external-indexer"
+import { rateLimitResponse } from "@/lib/rate-limit"
 
 /**
  * Per-token "Refresh metadata" endpoint. Backs the button on the token page,
@@ -23,9 +24,18 @@ const TOKEN_ID_RE = /^[0-9]+$/
 const RATE_LIMIT_MINUTES = 60
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   context: { params: Promise<{ contract: string; tokenId: string }> },
 ) {
+  // Per-IP budget on top of the per-token window below, so one client
+  // cannot walk many tokens through the worker in a burst.
+  const limited = await rateLimitResponse(req, {
+    namespace: "refresh-token",
+    windowMs: 60_000,
+    max: 20,
+  })
+  if (limited) return limited
+
   const { contract: rawContract, tokenId: rawTokenId } = await context.params
   const contract = decodeURIComponent(rawContract).toLowerCase()
   const tokenId = decodeURIComponent(rawTokenId)

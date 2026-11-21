@@ -1806,6 +1806,33 @@ export async function isCollectionInIndexer(
 }
 
 /**
+ * Whether (contract, tokenId) is a token the indexer already knows: a PND
+ * collection token, or a Foundation / SuperRare shared-contract mint. Null
+ * when the indexer is unavailable.
+ */
+export async function isTokenInIndexer(
+  contract: string,
+  tokenId: string,
+): Promise<boolean | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  if (!/^\d{1,78}$/.test(tokenId)) return false
+  const db = sql
+  const s = indexerSchema()
+  return withTimeout(async () => {
+    const rows = (await db.unsafe(
+      `SELECT 1 AS one FROM ${s}.collection_tokens WHERE collection = $1 AND token_id = $2::numeric
+       UNION ALL
+       SELECT 1 FROM ${s}.fnd_artist_tokens WHERE contract = $1 AND token_id = $2::numeric
+       UNION ALL
+       SELECT 1 FROM ${s}.srv2_artist_tokens WHERE contract = $1 AND token_id = $2::numeric
+       LIMIT 1`,
+      [contract.toLowerCase(), tokenId],
+    )) as Array<{ one: number }>
+    return rows.length > 0
+  })
+}
+
+/**
  * Live (non-burned) token ids for a collection, newest-minted first —
  * from `collection_tokens`, which Ponder keeps current per id across
  * pooled burn/re-mint cycles. Replaces the Transfer(from=0) getLogs

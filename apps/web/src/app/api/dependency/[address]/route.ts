@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
+import { rateLimit } from "@/lib/rate-limit"
 import {
   getDependencyReport,
   type DependencyReport,
@@ -26,8 +26,7 @@ export async function GET(
     return NextResponse.json({ error: "invalid address" }, { status: 400 })
   }
 
-  const ip = getClientIp(req)
-  const rl = checkRateLimit("artist-dependency", ip, 60_000, 10)
+  const rl = await rateLimit(req, { namespace: "artist-dependency", windowMs: 60_000, max: 10 })
   if (!rl.ok) {
     return NextResponse.json(
       { error: "rate-limited" },

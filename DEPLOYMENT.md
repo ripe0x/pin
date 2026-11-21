@@ -385,13 +385,16 @@ prevent.
 After deploy:
 
 ```bash
-# 1. RPC proxy is up + allowlist works
+# 1. RPC proxy is up + allowlist works. The proxy only answers its own
+#    site, so send the matching Origin; without it the reply is 403.
 curl -s -X POST https://YOUR.SITE/api/rpc \
+  -H "Origin: https://YOUR.SITE" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}'
 # Expect: {"jsonrpc":"2.0","id":1,"result":"0x..."}
 
 curl -s -X POST https://YOUR.SITE/api/rpc \
+  -H "Origin: https://YOUR.SITE" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"debug_traceCall","params":[]}'
 # Expect: -32601 Method not allowed

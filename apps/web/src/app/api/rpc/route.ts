@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getClientIp } from "@/lib/rate-limit"
+import { getClientIp, rateLimit } from "@/lib/rate-limit"
 import {
   hashIp,
   logRpcEvent,
@@ -7,10 +7,17 @@ import {
   upstreamHost,
 } from "@/lib/rpc-log"
 import {
-  getLogsValidationError,
+  attemptTimeoutMs,
+  checkRpcEntry,
+  isAllowedRpcOrigin,
   MAX_RPC_BATCH_SIZE,
+  mergeBatchResponses,
   readRpcBodyWithinLimit,
+  rpcErrorResponse,
+  selectUpstreams,
+  type JsonRpcErrorResponse,
   type JsonRpcRequest,
+  type RpcUpstream,
 } from "@/lib/rpc-request-guard"
 
 /**
@@ -25,12 +32,17 @@ import {
  * allowlist + per-IP rate limit.
  *
  * Auth model:
- *   - Public POST. Anyone can hit `/api/rpc` and have it forwarded.
- *   - Per-IP rate limit (RPS budget below) keeps casual abuse from running up
- *     the bill. Real users only need a few RPC calls per page; the limit is
- *     well above that.
- *   - Method allowlist rejects anything outside the standard read/write set
- *     viem/wagmi actually use.
+ *   - Same-origin POST. The browser's `Origin` (or, failing that, `Referer`)
+ *     must name this site's own host, so other sites cannot use their
+ *     visitors' browsers as a distributed relay. Non-browser clients can
+ *     forge the header; the per-IP limit is what bounds those.
+ *   - Per-IP rate limit (RPS budget below), shared across instances through
+ *     lib/rate-limit.ts. Real users only need a few RPC calls per page; the
+ *     limit is well above that.
+ *   - Method allowlist, eth_getLogs span limit, and an eth_call /
+ *     eth_estimateGas gas ceiling (lib/rpc-request-guard.ts).
+ *   - eth_getLogs never reaches the paid backstops, and the whole fallback
+ *     walk runs under one overall deadline.
  *
  * Out of scope: write protection. The user is going to broadcast their own
  * signed transactions via `eth_sendRawTransaction` either way; we just route
@@ -57,131 +69,53 @@ const INFURA_API_KEY = process.env.INFURA_API_KEY
 // transient failure so the proxy falls through to the next upstream — that
 // way Infura remains a useful authenticated backup for every other method
 // (eth_call, eth_estimateGas, eth_blockNumber, …) while wide log scans
-// gracefully skip past it.
+// gracefully skip past it. (eth_getLogs is now kept off both paid entries
+// entirely, see selectUpstreams in lib/rpc-request-guard.ts.)
 //
 // The publicnode endpoint accepts an optional API key; we use the anonymous
 // tier. tenderly/drpc/cloudflare/1rpc are all anonymous public mainnet RPCs.
-const UPSTREAMS = [
-  "https://gateway.tenderly.co/public/mainnet",
-  "https://ethereum-rpc.publicnode.com",
-  "https://eth.drpc.org",
-  "https://cloudflare-eth.com",
-  "https://1rpc.io/eth",
+const UPSTREAMS: RpcUpstream[] = [
+  { url: "https://gateway.tenderly.co/public/mainnet", paid: false },
+  { url: "https://ethereum-rpc.publicnode.com", paid: false },
+  { url: "https://eth.drpc.org", paid: false },
+  { url: "https://cloudflare-eth.com", paid: false },
+  { url: "https://1rpc.io/eth", paid: false },
   ALCHEMY_API_KEY
-    ? `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`
+    ? { url: `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`, paid: true }
     : null,
-  INFURA_API_KEY
-    ? `https://mainnet.infura.io/v3/${INFURA_API_KEY}`
-    : null,
-].filter((u): u is string => typeof u === "string")
+  INFURA_API_KEY ? { url: `https://mainnet.infura.io/v3/${INFURA_API_KEY}`, paid: true } : null,
+].filter((u): u is RpcUpstream => u !== null)
 
 // Per-upstream timeout. Public RPCs occasionally hang; bail fast and try the
 // next one rather than letting the wallet wait the full Vercel function
 // budget.
 const UPSTREAM_TIMEOUT_MS = 6_000
 
-// Methods we expect viem + wagmi + RainbowKit to call. Anything else gets
-// rejected. Keep this list tight; widen only when something legitimate breaks.
-const ALLOWED_METHODS = new Set([
-  // Read state
-  "eth_call",
-  "eth_getCode",
-  "eth_getStorageAt",
-  "eth_getBalance",
-  "eth_getTransactionCount",
-  "eth_getLogs",
-  // Block / chain metadata
-  "eth_blockNumber",
-  "eth_getBlockByNumber",
-  "eth_getBlockByHash",
-  "eth_chainId",
-  "net_version",
-  // Gas / fees
-  "eth_gasPrice",
-  "eth_feeHistory",
-  "eth_maxPriorityFeePerGas",
-  "eth_estimateGas",
-  // Transactions (signed bytes only — we never sign on the server)
-  "eth_sendRawTransaction",
-  "eth_getTransactionByHash",
-  "eth_getTransactionReceipt",
-])
+// Overall budget for one request across every fallback attempt, kept under
+// the serverless function timeout.
+const OVERALL_DEADLINE_MS = 20_000
+
+// Origins besides the request's own host that may call this route (the
+// canonical site and the deploy's configured URLs).
+const EXTRA_ALLOWED_ORIGINS = [
+  "https://pnd.fyi",
+  process.env.NEXT_PUBLIC_SITE_URL,
+  process.env.URL,
+  process.env.DEPLOY_PRIME_URL,
+].filter((u): u is string => typeof u === "string" && u.length > 0)
 
 // Rate limit: per-IP RPC operations per minute. A batch is charged by its
 // number of entries, so batching improves latency without multiplying quota.
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX_PER_WINDOW = 240 // 4 rps sustained
 
-// Persist counts across HMR reloads. Per-instance on Vercel; an attacker
-// rotating regions buys themselves a small amount of extra budget but can't
-// run unbounded.
-type Counter = { count: number; windowStart: number }
-const counts: Map<string, Counter> = (
-  globalThis as unknown as { __pndRpcLimiter?: Map<string, Counter> }
-).__pndRpcLimiter ??
-  ((
-    globalThis as unknown as { __pndRpcLimiter?: Map<string, Counter> }
-  ).__pndRpcLimiter = new Map())
-
-function rateLimit(
-  ip: string,
-  cost: number,
-): { ok: true } | { ok: false; retryAfter: number } {
-  const now = Date.now()
-
-  // Opportunistic cleanup so the map doesn't grow without bound.
-  if (counts.size > 5000) {
-    for (const [k, c] of counts) {
-      if (now - c.windowStart > RATE_LIMIT_WINDOW_MS) counts.delete(k)
-    }
-  }
-
-  const c = counts.get(ip)
-  if (!c || now - c.windowStart > RATE_LIMIT_WINDOW_MS) {
-    counts.set(ip, { count: cost, windowStart: now })
-    return { ok: true }
-  }
-  if (c.count + cost > RATE_LIMIT_MAX_PER_WINDOW) {
-    const retryAfter = Math.ceil(
-      (RATE_LIMIT_WINDOW_MS - (now - c.windowStart)) / 1000,
-    )
-    return { ok: false, retryAfter }
-  }
-  c.count += cost
-  return { ok: true }
-}
-
-function rejectMethod(id: number | string | null | undefined, method: string) {
-  return NextResponse.json(
-    {
-      jsonrpc: "2.0",
-      id: id ?? null,
-      error: { code: -32601, message: `Method not allowed: ${method}` },
-    },
-    { status: 200 }, // JSON-RPC errors are always 200 at the HTTP layer.
-  )
-}
-
-function rejectInvalidRequest(
-  id: number | string | null | undefined,
-  message: string,
-) {
-  return NextResponse.json(
-    {
-      jsonrpc: "2.0",
-      id: id ?? null,
-      error: { code: -32600, message },
-    },
-    { status: 200 },
-  )
-}
-
 async function tryUpstream(
   url: string,
   payload: string,
+  timeoutMs: number,
 ): Promise<{ ok: true; status: number; text: string } | { ok: false }> {
   const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), UPSTREAM_TIMEOUT_MS)
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -241,12 +175,28 @@ async function tryUpstream(
   }
 }
 
+function jsonRpc(body: unknown) {
+  // JSON-RPC errors are always 200 at the HTTP layer.
+  return NextResponse.json(body, { status: 200 })
+}
+
 export async function POST(req: NextRequest) {
   if (UPSTREAMS.length === 0) {
     return NextResponse.json(
       { error: "no upstream RPC configured on server" },
       { status: 500 },
     )
+  }
+
+  if (
+    !isAllowedRpcOrigin({
+      origin: req.headers.get("origin"),
+      referer: req.headers.get("referer"),
+      host: req.headers.get("x-forwarded-host") ?? req.headers.get("host"),
+      allowedOrigins: EXTRA_ALLOWED_ORIGINS,
+    })
+  ) {
+    return NextResponse.json({ error: "cross-origin requests are not allowed" }, { status: 403 })
   }
 
   let body: JsonRpcRequest | JsonRpcRequest[]
@@ -261,9 +211,10 @@ export async function POST(req: NextRequest) {
   }
 
   // viem batches requests as an array; check every entry.
-  const batch = Array.isArray(body) ? body : [body]
+  const isBatch = Array.isArray(body)
+  const batch: unknown[] = isBatch ? (body as unknown[]) : [body]
   if (batch.length === 0) {
-    return rejectInvalidRequest(null, "empty batches are not allowed")
+    return jsonRpc(rpcErrorResponse(null, -32600, "empty batches are not allowed"))
   }
   if (batch.length > MAX_RPC_BATCH_SIZE) {
     return NextResponse.json(
@@ -271,24 +222,28 @@ export async function POST(req: NextRequest) {
       { status: 413 },
     )
   }
-  for (const entry of batch) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-      return rejectInvalidRequest(null, "invalid JSON-RPC request")
-    }
-    const method = entry?.method
-    if (typeof method !== "string" || !ALLOWED_METHODS.has(method)) {
-      return rejectMethod(entry?.id ?? null, String(method))
-    }
-    if (method === "eth_getLogs") {
-      const error = getLogsValidationError(entry.params)
-      if (error) return rejectInvalidRequest(entry.id, error)
-    }
-  }
 
-  // A batch consumes one limiter unit per operation, closing the loophole
-  // where thousands of RPC calls could be hidden in one HTTP request.
+  // Invalid entries get their own JSON-RPC error in the response; the rest
+  // are forwarded. A single (non-batch) request answers with its error.
+  const valid: (JsonRpcRequest & { method: string })[] = []
+  const errors: JsonRpcErrorResponse[] = []
+  for (const entry of batch) {
+    const check = checkRpcEntry(entry)
+    if (check.ok) valid.push(check.entry)
+    else errors.push(check.error)
+  }
+  if (!isBatch && errors.length > 0) return jsonRpc(errors[0])
+  if (valid.length === 0) return jsonRpc(errors)
+
+  // A batch consumes one limiter unit per forwarded operation, closing the
+  // loophole where many RPC calls could be hidden in one HTTP request.
   const ip = getClientIp(req)
-  const rl = rateLimit(ip, batch.length)
+  const rl = await rateLimit(req, {
+    namespace: "rpc",
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    max: RATE_LIMIT_MAX_PER_WINDOW,
+    cost: valid.length,
+  })
   if (!rl.ok) {
     return NextResponse.json(
       { error: "rate-limited", retryAfter: rl.retryAfter },
@@ -296,24 +251,30 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Re-encode only the validated request object. JSON-RPC does not attach
+  // Re-encode only the validated request objects. JSON-RPC does not attach
   // meaning to key ordering or whitespace.
-  const payload = JSON.stringify(body)
+  const payload = JSON.stringify(isBatch ? valid : valid[0])
 
-  // Walk the public-first upstream chain for every request; paid providers are
-  // last-resort backstops when the anonymous gateways are unavailable.
-  const upstreams = UPSTREAMS
+  // Walk the public-first upstream chain; paid providers are last-resort
+  // backstops, and never serve log scans.
+  const upstreams = selectUpstreams(
+    UPSTREAMS,
+    valid.map((e) => e.method),
+  )
 
-  // Log one event per request, attributed to the first batch entry's
+  // Log one event per request, attributed to the first forwarded entry's
   // method. Batches are typically 1–2 entries; if we ever need precise
   // per-method volume in batches we'd add a `batch_size` column.
-  const logMethod = batch[0]?.method ?? "unknown"
+  const logMethod = valid[0]?.method ?? "unknown"
   const referer = refererPathname(req.headers.get("referer"))
   const ipHash = hashIp(ip)
   const t0 = Date.now()
+  const deadline = t0 + OVERALL_DEADLINE_MS
 
-  for (const url of upstreams) {
-    const result = await tryUpstream(url, payload)
+  for (const upstream of upstreams) {
+    const timeoutMs = attemptTimeoutMs(UPSTREAM_TIMEOUT_MS, deadline, Date.now())
+    if (timeoutMs === 0) break
+    const result = await tryUpstream(upstream.url, payload, timeoutMs)
     if (result.ok) {
       logRpcEvent({
         source: "proxy",
@@ -322,13 +283,21 @@ export async function POST(req: NextRequest) {
         ipHash,
         durationMs: Date.now() - t0,
         status: result.status,
-        upstream: upstreamHost(url),
+        upstream: upstreamHost(upstream.url),
         ok: true,
       })
-      return new NextResponse(result.text, {
-        status: result.status,
-        headers: { "content-type": "application/json" },
-      })
+      if (errors.length === 0) {
+        return new NextResponse(result.text, {
+          status: result.status,
+          headers: { "content-type": "application/json" },
+        })
+      }
+      const merged = mergeBatchResponses(errors, result.text)
+      if (merged) return jsonRpc(merged)
+      return jsonRpc([
+        ...errors,
+        ...valid.map((e) => rpcErrorResponse(e.id, -32603, "upstream returned an invalid batch")),
+      ])
     }
   }
 

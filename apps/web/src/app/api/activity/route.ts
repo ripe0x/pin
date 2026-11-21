@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { unstable_cache } from "next/cache"
+import { rateLimit } from "@/lib/rate-limit"
 import {
   getActivityFeed,
   IndexerUnavailable,
@@ -33,6 +34,10 @@ import {
  */
 const MAX_LIMIT = 100
 const DEFAULT_LIMIT = 50
+
+// Cursor ids are indexer event ids (hex hashes, log indexes, separators).
+// Bounding the shape keeps the per-cursor cache key space to real cursors.
+const CURSOR_ID_RE = /^[A-Za-z0-9:_.-]{1,160}$/
 
 // IMPORTANT: when `getActivityFeed` returns null (timeout / DB down /
 // kill switch), throw rather than caching a `[]` result. `unstable_cache`
@@ -69,6 +74,13 @@ const fetchPaginatedFeed = unstable_cache(
 )
 
 export async function GET(req: Request): Promise<NextResponse> {
+  const rl = await rateLimit(req, { namespace: "activity", windowMs: 60_000, max: 60 })
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "rate-limited", retryAfter: rl.retryAfter },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    )
+  }
   const url = new URL(req.url)
   const beforeRaw = url.searchParams.get("before")
   const beforeIdRaw = url.searchParams.get("beforeId")
@@ -77,8 +89,11 @@ export async function GET(req: Request): Promise<NextResponse> {
   let cursor: ActivityCursor | null = null
   if (beforeRaw && beforeIdRaw) {
     const blockTime = Number(beforeRaw)
-    if (!Number.isFinite(blockTime) || blockTime < 0) {
+    if (!Number.isSafeInteger(blockTime) || blockTime < 0) {
       return NextResponse.json({ error: "invalid before" }, { status: 400 })
+    }
+    if (!CURSOR_ID_RE.test(beforeIdRaw)) {
+      return NextResponse.json({ error: "invalid beforeId" }, { status: 400 })
     }
     cursor = { blockTime, id: beforeIdRaw }
   }

@@ -1,3 +1,4 @@
+import "server-only"
 /**
  * Server-side Mainnet RPC resolution. One source of truth so every server
  * client shares the same provider ladder.
