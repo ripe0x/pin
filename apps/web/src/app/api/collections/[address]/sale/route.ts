@@ -8,7 +8,8 @@
 
 import { NextResponse } from "next/server"
 import { isAddress, type Address } from "viem"
-import { getCollection } from "@/lib/collection-onchain"
+import { getCollection, isFactoryCollection } from "@/lib/collection-onchain"
+import { NOT_SURFACE_BODY } from "@/lib/not-surface"
 
 type Params = { params: Promise<{ address: string }> }
 
@@ -17,9 +18,14 @@ export async function GET(_req: Request, { params }: Params) {
   if (!isAddress(address)) {
     return NextResponse.json({ error: "Bad collection address." }, { status: 400 })
   }
+  // Membership first so a non-Surface address gets a clear answer instead
+  // of being conflated with a read failure on a real collection.
+  if (!(await isFactoryCollection(address as Address))) {
+    return NextResponse.json(NOT_SURFACE_BODY, { status: 404 })
+  }
   const c = await getCollection(address as Address)
   if (!c) {
-    return NextResponse.json({ error: "Not a Surface collection." }, { status: 404 })
+    return NextResponse.json({ error: "Could not read this collection." }, { status: 502 })
   }
   const s = c.sale
   return NextResponse.json({

@@ -15,7 +15,7 @@
 import { useEffect, useState } from "react"
 import { useWaitForTransactionReceipt, useWriteContract } from "wagmi"
 import { fixedPriceMinterAbi } from "@pin/abi"
-import { formatWriteError } from "@/components/tx/tx-ui"
+import { PREFERRED_CHAIN, formatWriteError } from "@/components/tx/tx-ui"
 import { BTN, BTN_SECONDARY, ERROR, INPUT } from "@/components/studio/create/wizard-ui"
 import { type DerivedGate, ZERO_ROOT } from "./gate-api"
 
@@ -159,6 +159,7 @@ export function ActivationQueue({
         onRun={() => {
           if (!publishedRoot) return
           activate.writeContract({
+            chainId: PREFERRED_CHAIN.id,
             address: minter,
             abi: fixedPriceMinterAbi,
             functionName: "setAllowlistRoot",
@@ -194,6 +195,7 @@ export function ActivationQueue({
             type="button"
             onClick={() =>
               setCapWrite.writeContract({
+                chainId: PREFERRED_CHAIN.id,
                 address: minter,
                 abi: fixedPriceMinterAbi,
                 functionName: "setWalletCap",
@@ -232,6 +234,7 @@ export function ActivationQueue({
                 return
               }
               clear.writeContract({
+                chainId: PREFERRED_CHAIN.id,
                 address: minter,
                 abi: fixedPriceMinterAbi,
                 functionName: "setAllowlistRoot",

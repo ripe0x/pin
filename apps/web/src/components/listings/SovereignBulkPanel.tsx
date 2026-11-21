@@ -520,12 +520,6 @@ function BulkCancelSection({
   const router = useRouter()
   const [load, setLoad] = useState<CancelLoadState>({ kind: "loading" })
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  // Snapshot of which tokens the in-flight tx is cancelling. Captured at
-  // submission time so we can fire revalidation requests after the receipt
-  // confirms — `selected` may change between submit and confirmation.
-  const [pendingCancels, setPendingCancels] = useState<
-    Array<{ contract: string; tokenId: string }>
-  >([])
 
   // V1: one bulkCancelAuctions tx for every selected id.
   const {
@@ -569,7 +563,6 @@ function BulkCancelSection({
   // removed in the v2 rebuild — the calls 404'd silently.)
   useEffect(() => {
     if (!isSuccess) return
-    setPendingCancels([])
     router.refresh()
     refresh()
     resetWrite()
@@ -621,12 +614,6 @@ function BulkCancelSection({
     if (load.kind !== "loaded") return
     const targets = load.auctions.filter((a) => selected.has(a.auctionId))
     if (targets.length === 0) return
-    // Capture (contract, tokenId) pairs now so the post-confirm revalidation
-    // can target them, `selected` may change while the cancel(s) are mining.
-    setPendingCancels(
-      targets.map((a) => ({ contract: a.contract, tokenId: a.tokenId })),
-    )
-
     if (houseVersion === 2) {
       const calls: PreparedCall[] = targets.map((a) => ({
         id: a.auctionId,
@@ -644,7 +631,6 @@ function BulkCancelSection({
         },
       }))
       await v2Cancel.run(calls)
-      setPendingCancels([])
       router.refresh()
       await refresh()
       return

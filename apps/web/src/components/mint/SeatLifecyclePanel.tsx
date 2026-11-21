@@ -16,10 +16,12 @@ import { formatEther } from "viem"
 import {
   useAccount,
   useChainId,
+  useConfig,
   useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi"
+import { simulateContract } from "wagmi/actions"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import {
   Countdown,
@@ -30,6 +32,7 @@ import {
   useChainNowSec,
 } from "@/components/tx/tx-ui"
 import { resolveMintCollection } from "@/lib/mint-collections"
+import { usePreflight } from "@/lib/use-preflight"
 
 function trimEth(s: string): string {
   return s.includes(".") ? s.replace(/\.?0+$/, "") : s
@@ -76,7 +79,9 @@ export function SeatLifecyclePanel({
     isSuccess,
     error: receiptError,
   } = useWaitForTransactionReceipt({ hash: txHash, query: { retry: false } })
-  const isPending = isWritePending || isTxPending
+  const config = useConfig()
+  const preflight = usePreflight()
+  const isPending = isWritePending || isTxPending || preflight.checking
 
   const life = desc?.lifecycle
   if (!desc || !life) return null
@@ -88,6 +93,7 @@ export function SeatLifecyclePanel({
   function handleRenew() {
     if (!desc || !life) return
     writeContract({
+      chainId: PREFERRED_CHAIN.id,
       address: desc.address,
       abi: desc.abi,
       functionName: life.renewFn,
@@ -96,13 +102,22 @@ export function SeatLifecyclePanel({
   }
 
   function handleClaim() {
-    if (!desc || !life) return
-    writeContract({
-      address: desc.address,
-      abi: desc.abi,
-      functionName: life.claimFn,
-      args: [BigInt(tokenId)],
-      value: price,
+    if (!desc || !life || !address) return
+    const claimFn = life.claimFn
+    // Value-bearing: simulate from the connected account on PREFERRED_CHAIN
+    // first, then sign the simulated request (chainId pinned).
+    reset()
+    void preflight.run(async () => {
+      const { request } = await simulateContract(config, {
+        account: address,
+        chainId: PREFERRED_CHAIN.id,
+        address: desc.address,
+        abi: desc.abi,
+        functionName: claimFn,
+        args: [BigInt(tokenId)],
+        value: price,
+      })
+      writeContract(request)
     })
   }
 
@@ -209,9 +224,9 @@ export function SeatLifecyclePanel({
                 </button>
               )}
 
-              {(writeError || receiptError) && (
+              {(writeError || receiptError || preflight.error != null) && (
                 <p className="text-[11px] font-mono text-red-500 break-words">
-                  {formatWriteError(writeError ?? receiptError, active ? "Renew" : "Claim")}
+                  {formatWriteError(writeError ?? receiptError ?? preflight.error, active ? "Renew" : "Claim")}
                 </p>
               )}
             </>

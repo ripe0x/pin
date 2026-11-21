@@ -11,13 +11,16 @@
  *   active onchain RIGHT NOW: { gated, eligible, proof?, root, cap }.
  *   `eligible: null` means the gate is active but no list is published
  *   for its root (the UI says so instead of guessing).
- * GET (no wallet) — gate summary { gated, root, cap, count }.
+ * GET (no wallet) — gate summary { gated, root, cap, count }. When no
+ *   canonical minter is on record and the address is not a factory child,
+ *   404 { notSurface: true } so the studio mint gate can say so plainly.
  */
 
 import { NextResponse } from "next/server"
 import { isAddress, type Address } from "viem"
 import { allowlistCount, eligibilityFor, publishAllowlist } from "@/lib/allowlist"
-import { getMinterGate } from "@/lib/collection-onchain"
+import { getMinterGate, isFactoryCollection } from "@/lib/collection-onchain"
+import { NOT_SURFACE_BODY } from "@/lib/not-surface"
 
 const ZERO_ROOT = "0x" + "0".repeat(64)
 
@@ -55,6 +58,12 @@ export async function GET(req: Request, { params }: Params) {
   const wallet = url.searchParams.get("wallet")
 
   if (!gated) {
+    // Studio summary only (no wallet): a pasted address with no canonical
+    // minter on record is usually not a Surface at all. One membership
+    // check, indexed set first (isFactoryCollection), and only on that path.
+    if (!wallet && !gate && !(await isFactoryCollection(address as Address))) {
+      return NextResponse.json(NOT_SURFACE_BODY, { status: 404 })
+    }
     return NextResponse.json({
       gated: false,
       minter: gate?.minter ?? null,

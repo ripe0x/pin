@@ -8,11 +8,13 @@
 
 import {useEffect, useState} from "react"
 import {formatEther, type Address} from "viem"
-import {useAccount, useChainId, useReadContract, useSwitchChain, useWaitForTransactionReceipt, useWriteContract} from "wagmi"
+import {useAccount, useChainId, useConfig, useReadContract, useSwitchChain, useWaitForTransactionReceipt, useWriteContract} from "wagmi"
+import {simulateContract} from "wagmi/actions"
 import {ConnectButton} from "@rainbow-me/rainbowkit"
 import {PREFERRED_CHAIN, PREFERRED_CHAIN_LABEL, TxSuccessBanner, formatWriteError} from "@/components/tx/tx-ui"
 import {homageFlows, homageMinterAbi} from "@/lib/homage/contracts"
 import {formatLocalTime, formatTokenAmount, useHomageRedeemStatus} from "@/lib/homage/redeem-status"
+import {usePreflight} from "@/lib/use-preflight"
 
 const btn =
   "text-[10px] font-mono font-medium uppercase tracking-wider px-3 py-1.5 border border-gray-300 text-fg hover:bg-surface-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -70,7 +72,9 @@ export function HomageRedeem({minter}: {minter: Address}) {
 
   const {writeContract, data: txHash, isPending: isWritePending, error: writeError, reset} = useWriteContract()
   const {isLoading: isTxPending, isSuccess} = useWaitForTransactionReceipt({hash: txHash})
-  const isPending = isWritePending || isTxPending
+  const config = useConfig()
+  const preflight = usePreflight()
+  const isPending = isWritePending || isTxPending || preflight.checking
   const [pendingId, setPendingId] = useState<number | null>(null)
   // Ids redeemed in this session. The indexer lags the redeem by a few blocks, so a
   // refetch right after success can still list the burned id; this hides it until the
@@ -141,8 +145,19 @@ export function HomageRedeem({minter}: {minter: Address}) {
               <span className="text-[11px] font-mono text-fg">Punk {id}</span>
               <button
                 onClick={() => {
+                  if (!address) return
                   setPendingId(id)
-                  writeContract({...flows.redeem(BigInt(id), exitFee), chainId: PREFERRED_CHAIN.id})
+                  // Value-bearing (exit fee): simulate from the connected account
+                  // on the pinned chain first, then sign the simulated request.
+                  reset()
+                  void preflight.run(async () => {
+                    const {request} = await simulateContract(config, {
+                      ...flows.redeem(BigInt(id), exitFee),
+                      account: address,
+                      chainId: PREFERRED_CHAIN.id,
+                    })
+                    writeContract(request)
+                  })
                 }}
                 disabled={isPending}
                 className={btn}
@@ -154,7 +169,9 @@ export function HomageRedeem({minter}: {minter: Address}) {
         </ul>
       )}
 
-      {writeError && <p className="text-[10px] font-mono text-status-sold leading-relaxed">{formatWriteError(writeError, "redeem")}</p>}
+      {(writeError || preflight.error != null) && (
+        <p className="text-[10px] font-mono text-status-sold leading-relaxed">{formatWriteError(writeError ?? preflight.error, "redeem")}</p>
+      )}
     </div>
   )
 }

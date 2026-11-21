@@ -17,7 +17,7 @@ import { pgCacheInvalidate } from "@/lib/pg-cache"
  * artists currently looking at their migrate panel) and drop this seller's
  * Postgres row so cross-sandbox readers also see fresh state.
  *
- * Auth model: open POST. Same risk profile as `/api/auction/revalidate` —
+ * Auth model: open POST. Same risk profile as the other revalidate routes —
  * worst case is forced cache miss, which costs one extra RPC fan-out per
  * affected seller. IP rate limit is sufficient.
  */

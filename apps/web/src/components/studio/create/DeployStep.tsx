@@ -28,7 +28,7 @@ import {
   useWaitForTransactionReceipt,
 } from "wagmi"
 import { surfaceFactoryAbi, surfaceFactoryV2Abi, renderAssetsAbi } from "@pin/abi"
-import { formatWriteError } from "@/components/tx/tx-ui"
+import { PREFERRED_CHAIN, formatWriteError } from "@/components/tx/tx-ui"
 import {
   ZERO_ADDRESS,
   surfaceFactory,
@@ -114,6 +114,7 @@ export function DeployStep({
     if (firedFor.current === deployedAddress) return
     firedFor.current = deployedAddress
     coverWrite.writeContract({
+      chainId: PREFERRED_CHAIN.id,
       address: renderAssets,
       abi: renderAssetsAbi,
       functionName: "setCover",
@@ -173,6 +174,7 @@ export function DeployStep({
       // docs/pnd-surface-v2-plan.md): every wizard-deployed v2 collection
       // derives its own seeds.
       deploy.writeContract({
+        chainId: PREFERRED_CHAIN.id,
         address: factoryV2,
         abi: surfaceFactoryV2Abi,
         functionName: "createSurface",
@@ -181,6 +183,7 @@ export function DeployStep({
       return
     }
     deploy.writeContract({
+      chainId: PREFERRED_CHAIN.id,
       address: factory,
       abi: surfaceFactoryAbi,
       functionName: "createSurface",
@@ -212,6 +215,7 @@ export function DeployStep({
             disabled={coverMining || coverWrite.isPending}
             onClick={() =>
               coverWrite.writeContract({
+                chainId: PREFERRED_CHAIN.id,
                 address: renderAssets,
                 abi: renderAssetsAbi,
                 functionName: "setCover",
