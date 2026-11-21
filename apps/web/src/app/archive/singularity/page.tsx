@@ -7,11 +7,11 @@ const token = "https://basescan.org/token/0x86A484FaC6642Bb86cd45DB2bc24f20d21E2
 export const metadata: Metadata = {
   title: "Singularity by ripe",
   description: "Singularity, exhibited in Minimal, curated by ranxdeer.",
-  alternates: { canonical: "/archive/singularity" },
+  alternates: { canonical: "https://pnd.fyi/archive/singularity" },
   openGraph: {
     title: "Singularity by ripe",
     description: "Exhibited in Minimal, curated by ranxdeer.",
-    images: [{ url: artwork, alt: "Singularity by ripe" }],
+    images: [{ url: `https://pnd.fyi${artwork}`, alt: "Singularity by ripe" }],
   },
 }
 
