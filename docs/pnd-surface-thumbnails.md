@@ -1,5 +1,11 @@
 # PND Surface System: thumbnails and cover images
 
+> **HISTORICAL (v1).** Superseded by `docs/pnd-surface-v2-thumbnails.md`
+> (issue #365). This note assumes the v1 core: admins, a PND-deployed
+> RenderAssets read by `DefaultRenderer`, and client-side-only capture.
+> #353 removed all of that from the repo. The capture-spec ideas carry
+> forward into the v2 note §5; the mechanics below do not.
+
 > **Status: design current as of 2026-07-13; contract mechanics shipped,
 > offchain capture tooling not yet built.** Companion to
 > `docs/pnd-surface-system.md` (§5.4, the capture worker) and

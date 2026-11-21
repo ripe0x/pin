@@ -23,6 +23,9 @@
 
 ## First HTML-generative drop (gates that drop, not the SVG launch)
 
+> **Superseded for v2** by `pnd-surface-v2-thumbnails.md` (#365), whose
+> §7 build plan replaces the checklist below. Kept for history.
+
 Design: `pnd-surface-thumbnails.md`. The contract side (RenderAssets
 cover/captures/template/capturer) is shipped; this is the offchain half.
 
@@ -41,7 +44,9 @@ cover/captures/template/capturer) is shipped; this is the offchain half.
 
 ## Preservation
 
-- [ ] **MURI operator adapter** (`ripe0x/pin#138`). Registration is
+- [ ] **MURI operator adapter** (`ripe0x/pin#138`; folded into #365, which
+  keeps MURI as an optional overlay, not the thumbnail path, and confirms a
+  v2 owner passes `registerContract` through MURI's `owner()` fallback). Registration is
   proven against live MURI (`MuriIntegrationFork.t.sol`: the owner
   passes the `isAdmin` gate directly); what remains is the small adapter
   contract MURI calls as operator (supportsInterface + isTokenOwner via
