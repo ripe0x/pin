@@ -13,7 +13,7 @@
     "check:config-parity": "tsx scripts/check-config-parity.ts"
   },
   "dependencies": {
-    "hono": "^4.12.34",
+    "hono": "^4.13.16",
     "ponder": "^0.16.6",
     "viem": "^2.21.0"
   },
