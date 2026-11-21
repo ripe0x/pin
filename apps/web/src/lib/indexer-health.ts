@@ -64,6 +64,18 @@ async function readAuctionActivityFreshness(): Promise<{ block: number; time: nu
 // not something to re-announce on every request.
 let warnedStale = false
 
+// A failed read is cached as null for the TTL and served as a 503, so the
+// cause has to be logged here or it is lost. Message only: postgres.js
+// errors name the host and user, never the password.
+function logReadFailure(query: string) {
+  return (err: unknown) => {
+    console.warn(
+      `[indexer] freshness ${query} read failed on ${INDEXER_SCHEMA}: ${err instanceof Error ? err.message : String(err)}`,
+    )
+    return null
+  }
+}
+
 /**
  * Freshness of the schema `INDEXER_SCHEMA` points at, pgCache-wrapped
  * (60s TTL) and timeboxed so a slow/unreachable Postgres never adds
@@ -79,11 +91,13 @@ export async function getIndexerFreshness(): Promise<IndexerFreshness | null> {
   const freshness = await pgCache(
     `indexer-freshness:${INDEXER_SCHEMA}`,
     FRESHNESS_CACHE_TTL_SEC,
-    () =>
-      withTimeout(async () => {
+    async () => {
+      let settled = false
+      const fresh = await withTimeout(async () => {
         const result =
-          (await readCheckpointFreshness().catch(() => null)) ??
-          (await readAuctionActivityFreshness().catch(() => null))
+          (await readCheckpointFreshness().catch(logReadFailure("checkpoint"))) ??
+          (await readAuctionActivityFreshness().catch(logReadFailure("auction-activity")))
+        settled = true
         if (!result) return null
         const freshness: IndexerFreshness = {
           schema: INDEXER_SCHEMA,
@@ -92,7 +106,12 @@ export async function getIndexerFreshness(): Promise<IndexerFreshness | null> {
           ageSeconds: Math.max(0, Math.floor(Date.now() / 1000) - result.time),
         }
         return freshness
-      }, FRESHNESS_TIMEOUT_MS),
+      }, FRESHNESS_TIMEOUT_MS)
+      if (!settled) {
+        console.warn(`[indexer] freshness read on ${INDEXER_SCHEMA} timed out after ${FRESHNESS_TIMEOUT_MS}ms`)
+      }
+      return fresh
+    },
   )
 
   if (freshness && isFreshnessStale(freshness.ageSeconds) && !warnedStale) {
