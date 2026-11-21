@@ -5,6 +5,7 @@ Your own auction page, on your own domain — pulling live and past auction data
 - **Live auction state**: current bid, time remaining, bid history, all live on-chain
 - **Past auctions**: every settled or cancelled auction you've ever run
 - **Bidding in-page**: visitors connect their wallet and bid without leaving your site
+- **Optional mint embed**: sell your PND Surface collection from your own page, and keep the referral share
 - **Link previews**: Twitter / Farcaster / Discord / iMessage all unfurl with the artwork and current bid
 - **No backend, no database, no signup**: works out of the box on the free public RPCs
 
@@ -50,7 +51,7 @@ The deploy form asks for two things:
 |---|---|---|
 | `NEXT_PUBLIC_ARTIST_ADDRESS` | **Yes** | Your Ethereum wallet address (`0x…`). The page surfaces auctions from this wallet's SovereignAuctionHouse (checks both the V1 and V2 factories, and shows both if you've migrated). It does not mirror the wallet's NFT holdings or PND catalog grid. |
 | `NEXT_PUBLIC_RPC_URL` | No, but recommended | Your own RPC URL (Alchemy, Infura, etc). Makes the page noticeably faster. Leave blank to use the bundled defaults. See [Add your own RPC key](#add-your-own-rpc-key-recommended) below. |
-| `NEXT_PUBLIC_COLLECTION_ADDRESS` | No | Optional PND Surface collection address. When set, the homepage adds a live mint card and recent-mints grid. |
+| `NEXT_PUBLIC_COLLECTION_ADDRESS` | No | Optional PND Surface collection address (v1 or v2). When set, the homepage adds a live mint card and recent-mints grid. See [Sell your collection from your site](#sell-your-collection-from-your-site). |
 
 That's the whole form. Your display name, avatar, bio, and social links come from your ENS profile automatically — no configuration needed if you've set those up there. (If you haven't, the page falls back to a shortened address. You can override anything later — see [Customize](#customize).)
 
@@ -123,9 +124,35 @@ Most artists won't need to change anything beyond the wallet address — ENS han
 | `NEXT_PUBLIC_ARTIST_LINKS` | Comma-separated social URLs (otherwise: ENS `url` / `com.twitter` / `org.farcaster` / `com.github` text records → empty). |
 | `NEXT_PUBLIC_RPC_URLS` | Comma-separated RPC URL chain. Use this if you want to specify your own multi-endpoint failover. |
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | Set this to enable WalletConnect mobile QR connections (Rainbow, Trust, MetaMask Mobile, etc). Free, takes 2 min: register at [cloud.reown.com](https://cloud.reown.com), copy the project ID, paste it here. Without this, the connect modal still shows MetaMask, Rabby, Coinbase Wallet, Safe, and other browser-extension wallets. |
-| `NEXT_PUBLIC_COLLECTION_ADDRESS` | Adds minting for an optional PND Surface collection. The live on-chain quote is sent as the transaction value. |
+| `NEXT_PUBLIC_COLLECTION_ADDRESS` | Adds a mint card for your PND Surface collection (v1 or v2). See [Sell your collection from your site](#sell-your-collection-from-your-site). |
+| `NEXT_PUBLIC_MINT_REFERRER` | Who gets the referral share of mints from your page. Default: your collection's owner (or `NEXT_PUBLIC_ARTIST_ADDRESS` if you renounced ownership). Set the zero address to pass no referrer. |
 
 To customize the look itself: this is a regular Next.js codebase. Fork it, edit the components, redeploy. See **What's where** at the bottom for the file map.
+
+---
+
+## Sell your collection from your site
+
+Set `NEXT_PUBLIC_COLLECTION_ADDRESS` to a collection you launched on PND and the homepage gains a mint card (price, minted count, sale status, quantity, mint button) and a grid of the most recent mints. Everything is read straight from the chain through the same RPCs as the rest of the page; no PND server is involved in a mint.
+
+**How a mint works.** The page reads your collection, finds its sale contract, and when a collector clicks Mint it reads the exact price from the sale, simulates the transaction (so a mint that would fail shows a reason instead of costing gas), then asks their wallet to send it on Ethereum mainnet.
+
+**Who gets paid.** Every PND sale splits each mint between the artist's payout address and a *referrer*: whoever hosted the mint. When someone mints on pnd.fyi, PND is the referrer. When they mint on your page, this template passes **you** as the referrer, so you keep that share as well. Proceeds are held in the sale contract until withdrawn (anyone can call `withdraw(yourAddress)`; the funds only ever go to you).
+
+| Collection | Sale contract | Referral share | Mint call |
+|---|---|---|---|
+| Surface v2 | `FixedPriceSale` (the collection's `minter()`) | 5%, fixed in the contract | `mintWithReferral(to, quantity, referrer, data)` |
+| Surface v1 | `FixedPriceMinter` (the collection's `primaryMinter()`) | The minter's `referralShareBps()` (10% at launch, never more) | `mint(to, quantity, referrer, data)` |
+
+By default the referrer is your collection's owner address (falling back to `NEXT_PUBLIC_ARTIST_ADDRESS` if you renounced ownership). Set `NEXT_PUBLIC_MINT_REFERRER` to send it to another wallet you control, or to `0x0000000000000000000000000000000000000000` to pass no referrer at all (the whole price then goes to your payout address directly).
+
+**Supported.** Surface v1 collections with their canonical `FixedPriceMinter`, and Surface v2 collections whose minter is a `FixedPriceSale`: fixed price (and v1 price strategies), mint windows, sale and supply caps, per-wallet caps, and closed sales. The card shows the sale's state and disables minting when it isn't open.
+
+**Not minted here.**
+- **Allowlist sales.** Minting needs a proof built from your published list, and that list lives with PND, so the card says "Allowlist mint — use the collection page on pnd.fyi" and links there.
+- **Bespoke minters** (any minter that isn't PND's standard sale) and older pre-Surface collections: the card links to the collection on pnd.fyi instead of guessing.
+
+The recent-mints grid shows each token through its own `tokenURI`, so onchain art (including HTML/generative works) renders in a sandboxed frame exactly as the contract returns it.
 
 ---
 
@@ -198,6 +225,10 @@ NEXT_PUBLIC_ARTIST_ADDRESS=0x0000000000000000000000000000000000000001 npm run bu
 
 **An auction's image isn't loading** — the page reads `tokenURI` directly from the NFT contract and races public IPFS gateways for IPFS-hosted images. For brand-new pieces, gateways may be slow on first request. The image will appear once one responds.
 
+**The mint card says "Allowlist mint"**: your sale is gated. Collectors mint on your collection's pnd.fyi page, where their allowlist proof is available. Remove the gate (v2: `setGate(0)` on the sale; v1: `setAllowlistRoot(0)` on the minter) if you want minting on your own page.
+
+**The mint card isn't showing**: check `NEXT_PUBLIC_COLLECTION_ADDRESS` is your collection (the token contract), not the sale contract, and redeploy after changing it.
+
 **A bid shows the wrong amount or is stuck** — the page polls on-chain state every block (~12 seconds). If your transaction confirmed but the page hasn't updated, refresh.
 
 **Link previews show stale info** — Twitter, Farcaster, etc. cache unfurl images aggressively. A new bid won't show up in social previews until their cache expires (a few minutes to a few hours).
@@ -222,7 +253,8 @@ components/
   TokenMedia.tsx                 # Sticky-column media for detail page
   BidForm.tsx                    # Live bid + settle controls (client)
   DeferredLotCard.tsx            # V2 deferred-delivery / unwind claim controls (client)
-  CollectionMintCard.tsx         # Optional Surface mint transaction UI
+  CollectionMintCard.tsx         # Optional Surface mint card (v1 + v2 sales, referral)
+  CollectionTokenGrid.tsx        # Recent mints of the optional collection
   BidHistory.tsx
   SettledSummary.tsx             # Past-auction summary panel
   Footer.tsx
@@ -238,7 +270,12 @@ lib/
   safe-fetch.ts                  # Size-bounded, SSRF-guarded metadata fetches
   format.ts                      # ETH / address / time / display formatting
   wagmi-config.ts                # Browser-side wagmi + RainbowKit config
-  abi/                           # Vendored ABIs (SovereignAuctionHouse + Factory, V1 and V2, ERC721)
+  surface.ts                     # Collection/sale types + pure sale-state helpers (client-safe)
+  surface-reads.ts               # Collection + sale detection and reads (v1 and v2)
+  collection.ts                  # Server-side cached collection read
+  mint-transaction.ts            # Mint call builder + revert messages
+  collection-render/             # Vendored parity render library (docs/injection-convention.md)
+  abi/                           # Vendored ABIs (auction houses V1/V2, ERC721, Surface v1 + FixedPriceMinter, Surface v2 + FixedPriceSale)
 ```
 
 ---

@@ -94,6 +94,24 @@ function readCollectionAddress(): Address | null {
   return raw as Address
 }
 
+/**
+ * Optional override for the address credited the sale's referral share when
+ * someone mints from this site. Unset: the collection's owner, falling back
+ * to NEXT_PUBLIC_ARTIST_ADDRESS once ownership is renounced (see
+ * resolveReferrer in lib/surface.ts). Set it to a different wallet you
+ * control, or to the zero address to pass no referrer at all (the whole
+ * payment then accrues to the sale's payout recipient). Read literally so
+ * Next.js inlines it into the client bundle.
+ */
+function readMintReferrer(): Address | null {
+  const raw = process.env.NEXT_PUBLIC_MINT_REFERRER?.trim()
+  if (!raw) return null
+  if (!isAddress(raw)) {
+    throw new Error(`NEXT_PUBLIC_MINT_REFERRER is not a valid Ethereum address: ${raw}`)
+  }
+  return raw as Address
+}
+
 function readRpcUrls(): string[] | null {
   // Plural takes priority — power users specifying a chain.
   const plural = process.env.NEXT_PUBLIC_RPC_URLS?.trim()
@@ -140,6 +158,8 @@ export type AppConfig = {
    * template behaves exactly as it did before collection support existed.
    */
   collectionAddress: Address | null
+  /** NEXT_PUBLIC_MINT_REFERRER, or null to use the default (see readMintReferrer). */
+  mintReferrer: Address | null
 }
 
 /**
@@ -185,6 +205,7 @@ export function getConfig(): AppConfig {
     v2FactoryAddress: SOVEREIGN_V2_FACTORY_ADDRESS,
     v2FactoryDeployBlock: SOVEREIGN_V2_FACTORY_DEPLOY_BLOCK,
     collectionAddress: readCollectionAddress(),
+    mintReferrer: readMintReferrer(),
   }
   return _config
 }

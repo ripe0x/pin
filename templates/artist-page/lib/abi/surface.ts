@@ -1,26 +1,8 @@
-// Vendored from the foundation monorepo (packages/abi/src/surface.ts).
-// Auto-extracted upstream from contracts/out/Surface.sol/Surface.json.
-// Update by re-running the upstream `node scripts/emit-collection-abi.mjs` and copying the file here.
-// Re-run: node scripts/emit-collection-abi.mjs
+// Surface v1 token (SurfaceCore + Surface, sequential).
+// VENDORED verbatim from the PND monorepo's packages/abi/src/surface.ts
+// (itself emitted from the forge artifacts by scripts/emit-surface-abi.mjs).
+// Do not hand-edit: re-run the upstream emitter and copy the file over this one.
 export const surfaceAbi = [
-  {
-    "type": "constructor",
-    "inputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "SURFACE_SHARE_BPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
   {
     "type": "function",
     "name": "acceptOwnership",
@@ -30,84 +12,12 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "acknowledgeEdge",
+    "name": "addAdmin",
     "inputs": [
       {
-        "name": "edgeType",
-        "type": "uint8",
-        "internalType": "enum EdgeType"
-      },
-      {
-        "name": "source",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "ack",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "addEdge",
-    "inputs": [
-      {
-        "name": "edgeType",
-        "type": "uint8",
-        "internalType": "enum EdgeType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -130,19 +40,6 @@ export const surfaceAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "artwork",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -178,38 +75,31 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
+    "name": "catalog",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "config",
     "inputs": [],
     "outputs": [
       {
         "name": "cfg",
         "type": "tuple",
-        "internalType": "struct CollectionConfig",
+        "internalType": "struct SurfaceConfig",
         "components": [
-          {
-            "name": "artworkURI",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "price",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
           {
             "name": "supplyCap",
             "type": "uint256",
             "internalType": "uint256"
-          },
-          {
-            "name": "mintStart",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "mintEnd",
-            "type": "uint64",
-            "internalType": "uint64"
           },
           {
             "name": "royaltyBps",
@@ -222,41 +112,21 @@ export const surfaceAbi = [
             "internalType": "address"
           },
           {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum CollectionKind"
-          },
-          {
-            "name": "payoutAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
             "name": "renderer",
             "type": "address",
             "internalType": "address"
           },
           {
-            "name": "mintHook",
-            "type": "address",
-            "internalType": "address"
+            "name": "rendererLocked",
+            "type": "bool",
+            "internalType": "bool"
           },
           {
-            "name": "priceStrategy",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "idMode",
-            "type": "uint8",
-            "internalType": "enum IdMode"
+            "name": "supplyLocked",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
-      },
-      {
-        "name": "status",
-        "type": "uint8",
-        "internalType": "enum CollectionStatus"
       },
       {
         "name": "minted",
@@ -278,102 +148,6 @@ export const surfaceAbi = [
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "currentPrice",
-    "inputs": [
-      {
-        "name": "minter",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "quantity",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "data",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "defaultRenderer",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "edges",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple[]",
-        "internalType": "struct Edge[]",
-        "components": [
-          {
-            "name": "edgeType",
-            "type": "uint8",
-            "internalType": "enum EdgeType"
-          },
-          {
-            "name": "target",
-            "type": "tuple",
-            "internalType": "struct Ref",
-            "components": [
-              {
-                "name": "chainId",
-                "type": "uint64",
-                "internalType": "uint64"
-              },
-              {
-                "name": "contractAddress",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "id",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum RefKind"
-              }
-            ]
-          }
-        ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "freezeMetadata",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -405,7 +179,7 @@ export const surfaceAbi = [
         "internalType": "enum IdMode"
       }
     ],
-    "stateMutability": "view"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -434,32 +208,12 @@ export const surfaceAbi = [
           {
             "name": "cfg",
             "type": "tuple",
-            "internalType": "struct CollectionConfig",
+            "internalType": "struct SurfaceConfig",
             "components": [
-              {
-                "name": "artworkURI",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "price",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
               {
                 "name": "supplyCap",
                 "type": "uint256",
                 "internalType": "uint256"
-              },
-              {
-                "name": "mintStart",
-                "type": "uint64",
-                "internalType": "uint64"
-              },
-              {
-                "name": "mintEnd",
-                "type": "uint64",
-                "internalType": "uint64"
               },
               {
                 "name": "royaltyBps",
@@ -472,110 +226,19 @@ export const surfaceAbi = [
                 "internalType": "address"
               },
               {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum CollectionKind"
-              },
-              {
-                "name": "payoutAddress",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
                 "name": "renderer",
                 "type": "address",
                 "internalType": "address"
               },
               {
-                "name": "mintHook",
-                "type": "address",
-                "internalType": "address"
+                "name": "rendererLocked",
+                "type": "bool",
+                "internalType": "bool"
               },
               {
-                "name": "priceStrategy",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "idMode",
-                "type": "uint8",
-                "internalType": "enum IdMode"
-              }
-            ]
-          },
-          {
-            "name": "work",
-            "type": "tuple",
-            "internalType": "struct WorkConfig",
-            "components": [
-              {
-                "name": "code",
-                "type": "tuple[]",
-                "internalType": "struct CodeRef[]",
-                "components": [
-                  {
-                    "name": "store",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "name",
-                    "type": "string",
-                    "internalType": "string"
-                  },
-                  {
-                    "name": "kind",
-                    "type": "uint8",
-                    "internalType": "enum CodeKind"
-                  }
-                ]
-              },
-              {
-                "name": "deps",
-                "type": "tuple[]",
-                "internalType": "struct CodeRef[]",
-                "components": [
-                  {
-                    "name": "store",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "name",
-                    "type": "string",
-                    "internalType": "string"
-                  },
-                  {
-                    "name": "kind",
-                    "type": "uint8",
-                    "internalType": "enum CodeKind"
-                  }
-                ]
-              },
-              {
-                "name": "codeURI",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "codeHash",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "liveness",
-                "type": "uint8",
-                "internalType": "enum Liveness"
-              },
-              {
-                "name": "injectionVersion",
-                "type": "uint8",
-                "internalType": "uint8"
-              },
-              {
-                "name": "renderParams",
-                "type": "string",
-                "internalType": "string"
+                "name": "supplyLocked",
+                "type": "bool",
+                "internalType": "bool"
               }
             ]
           },
@@ -590,12 +253,17 @@ export const surfaceAbi = [
             "internalType": "address[]"
           },
           {
-            "name": "attribution",
+            "name": "primaryMinter",
             "type": "address",
             "internalType": "address"
           },
           {
-            "name": "artists",
+            "name": "catalog",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "creators",
             "type": "address[]",
             "internalType": "address[]"
           }
@@ -604,6 +272,25 @@ export const surfaceAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "isAdmin",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -631,39 +318,12 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "isEdgeAcknowledged",
+    "name": "isConfirmedCreator",
     "inputs": [
       {
-        "name": "edgeType",
-        "type": "uint8",
-        "internalType": "enum EdgeType"
-      },
-      {
-        "name": "source",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
+        "name": "who",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [
@@ -677,8 +337,14 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "isMetadataFrozen",
-    "inputs": [],
+    "name": "isListedCreator",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
     "outputs": [
       {
         "name": "",
@@ -709,7 +375,7 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "isPermanent",
+    "name": "isMinterLocked",
     "inputs": [],
     "outputs": [
       {
@@ -722,7 +388,7 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "isWorkLocked",
+    "name": "isRendererLocked",
     "inputs": [],
     "outputs": [
       {
@@ -735,87 +401,37 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "lockWork",
+    "name": "isSupplyLocked",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "lockMinter",
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "mint",
-    "inputs": [
-      {
-        "name": "quantity",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "mintHook",
+    "name": "lockRenderer",
     "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "mintMarkOf",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "m",
-        "type": "tuple",
-        "internalType": "struct MintMark",
-        "components": [
-          {
-            "name": "mintIndex",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "mintBlock",
-            "type": "uint48",
-            "internalType": "uint48"
-          },
-          {
-            "name": "statusAtMint",
-            "type": "uint8",
-            "internalType": "enum CollectionStatus"
-          },
-          {
-            "name": "surface",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "isFirst",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "isFinal",
-            "type": "bool",
-            "internalType": "bool"
-          }
-        ]
-      }
-    ],
-    "stateMutability": "view"
+    "name": "lockSupply",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -827,75 +443,19 @@ export const surfaceAbi = [
         "internalType": "address"
       },
       {
-        "name": "surface",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "hookData",
-        "type": "bytes",
-        "internalType": "bytes"
+        "name": "quantity",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
       {
-        "name": "tokenId",
+        "name": "firstTokenId",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "mintToAt",
-    "inputs": [
-      {
-        "name": "to",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "surface",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "hookData",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "mintWithRewards",
-    "inputs": [
-      {
-        "name": "quantity",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "surface",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "hookData",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "payable"
   },
   {
     "type": "function",
@@ -909,6 +469,24 @@ export const surfaceAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "notifyMetadataUpdate",
+    "inputs": [
+      {
+        "name": "fromTokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "toTokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -944,64 +522,6 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "pathOf",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct Path",
-        "components": [
-          {
-            "name": "pathType",
-            "type": "uint8",
-            "internalType": "enum PathType"
-          },
-          {
-            "name": "target",
-            "type": "tuple",
-            "internalType": "struct Ref",
-            "components": [
-              {
-                "name": "chainId",
-                "type": "uint64",
-                "internalType": "uint64"
-              },
-              {
-                "name": "contractAddress",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "id",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum RefKind"
-              }
-            ]
-          },
-          {
-            "name": "data",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          }
-        ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "pendingOwner",
     "inputs": [],
     "outputs": [
@@ -1015,26 +535,7 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "pendingWithdrawal",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "priceStrategy",
+    "name": "primaryMinter",
     "inputs": [],
     "outputs": [
       {
@@ -1044,6 +545,19 @@ export const surfaceAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "removeAdmin",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -1063,7 +577,7 @@ export const surfaceAbi = [
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
-    "stateMutability": "pure"
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -1178,70 +692,17 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "setClosing",
+    "name": "setCreators",
     "inputs": [
       {
-        "name": "closing",
+        "name": "list",
+        "type": "address[]",
+        "internalType": "address[]"
+      },
+      {
+        "name": "listed",
         "type": "bool",
         "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setDefaultPath",
-    "inputs": [
-      {
-        "name": "pathType",
-        "type": "uint8",
-        "internalType": "enum PathType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "data",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setMintHook",
-    "inputs": [
-      {
-        "name": "hook",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -1267,73 +728,10 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "setPath",
+    "name": "setPrimaryMinter",
     "inputs": [
       {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "pathType",
-        "type": "uint8",
-        "internalType": "enum PathType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "data",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setPayoutAddress",
-    "inputs": [
-      {
-        "name": "payoutAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setPriceStrategy",
-    "inputs": [
-      {
-        "name": "strategy",
+        "name": "minter",
         "type": "address",
         "internalType": "address"
       }
@@ -1356,17 +754,17 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "setTokenArtwork",
+    "name": "setRoyalty",
     "inputs": [
       {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "royaltyBps",
+        "type": "uint16",
+        "internalType": "uint16"
       },
       {
-        "name": "cid",
-        "type": "string",
-        "internalType": "string"
+        "name": "royaltyReceiver",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -1374,17 +772,12 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "setTokenArtworkBatch",
+    "name": "setSupplyCap",
     "inputs": [
       {
-        "name": "tokenIds",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "cids",
-        "type": "string[]",
-        "internalType": "string[]"
+        "name": "supplyCap",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -1411,40 +804,8 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "surfaceShareBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "pure"
-  },
-  {
-    "type": "function",
     "name": "symbol",
     "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "tokenArtwork",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
     "outputs": [
       {
         "name": "",
@@ -1543,100 +904,35 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "withdraw",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "workConfig",
+    "name": "version",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "tuple",
-        "internalType": "struct WorkConfig",
-        "components": [
-          {
-            "name": "code",
-            "type": "tuple[]",
-            "internalType": "struct CodeRef[]",
-            "components": [
-              {
-                "name": "store",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "name",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum CodeKind"
-              }
-            ]
-          },
-          {
-            "name": "deps",
-            "type": "tuple[]",
-            "internalType": "struct CodeRef[]",
-            "components": [
-              {
-                "name": "store",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "name",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum CodeKind"
-              }
-            ]
-          },
-          {
-            "name": "codeURI",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "codeHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "liveness",
-            "type": "uint8",
-            "internalType": "enum Liveness"
-          },
-          {
-            "name": "injectionVersion",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "renderParams",
-            "type": "string",
-            "internalType": "string"
-          }
-        ]
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "AdminSet",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -1690,6 +986,25 @@ export const surfaceAbi = [
   },
   {
     "type": "event",
+    "name": "BatchMetadataUpdate",
+    "inputs": [
+      {
+        "name": "_fromTokenId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "_toTokenId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Burned",
     "inputs": [
       {
@@ -1703,197 +1018,25 @@ export const surfaceAbi = [
   },
   {
     "type": "event",
-    "name": "ClosingSet",
+    "name": "ContractURIUpdated",
+    "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "CreatorListed",
     "inputs": [
       {
-        "name": "closing",
+        "name": "creator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "listed",
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "CollectionConfigured",
-    "inputs": [
-      {
-        "name": "kind",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "enum CollectionKind"
-      },
-      {
-        "name": "idMode",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "enum IdMode"
-      },
-      {
-        "name": "price",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "supplyCap",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "mintStart",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "mintEnd",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "artworkURI",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "DefaultPathSet",
-    "inputs": [
-      {
-        "name": "pathType",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum PathType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "data",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "EdgeAcknowledged",
-    "inputs": [
-      {
-        "name": "edgeType",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum EdgeType"
-      },
-      {
-        "name": "source",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "ack",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "EdgeAdded",
-    "inputs": [
-      {
-        "name": "edgeType",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum EdgeType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
       }
     ],
     "anonymous": false
@@ -1913,19 +1056,13 @@ export const surfaceAbi = [
   },
   {
     "type": "event",
-    "name": "MetadataFrozen",
-    "inputs": [],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "MintHookSet",
+    "name": "MetadataUpdate",
     "inputs": [
       {
-        "name": "hook",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
+        "name": "_tokenId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -1935,13 +1072,13 @@ export const surfaceAbi = [
     "name": "Minted",
     "inputs": [
       {
-        "name": "to",
+        "name": "minter",
         "type": "address",
         "indexed": true,
         "internalType": "address"
       },
       {
-        "name": "surface",
+        "name": "to",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -1963,20 +1100,14 @@ export const surfaceAbi = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      },
-      {
-        "name": "mintBlock",
-        "type": "uint48",
-        "indexed": false,
-        "internalType": "uint48"
-      },
-      {
-        "name": "statusAtMint",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "enum CollectionStatus"
       }
     ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MinterLocked",
+    "inputs": [],
     "anonymous": false
   },
   {
@@ -2038,63 +1169,10 @@ export const surfaceAbi = [
   },
   {
     "type": "event",
-    "name": "PathSet",
+    "name": "PrimaryMinterSet",
     "inputs": [
       {
-        "name": "tokenId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "pathType",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum PathType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "data",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "PayoutAddressSet",
-    "inputs": [
-      {
-        "name": "payoutAddress",
+        "name": "minter",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -2104,15 +1182,8 @@ export const surfaceAbi = [
   },
   {
     "type": "event",
-    "name": "PriceStrategySet",
-    "inputs": [
-      {
-        "name": "strategy",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
+    "name": "RendererLocked",
+    "inputs": [],
     "anonymous": false
   },
   {
@@ -2121,6 +1192,25 @@ export const surfaceAbi = [
     "inputs": [
       {
         "name": "renderer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RoyaltySet",
+    "inputs": [
+      {
+        "name": "royaltyBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "royaltyReceiver",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -2149,16 +1239,10 @@ export const surfaceAbi = [
   },
   {
     "type": "event",
-    "name": "SurfacePaid",
+    "name": "SupplyCapSet",
     "inputs": [
       {
-        "name": "surface",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
+        "name": "supplyCap",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -2168,19 +1252,25 @@ export const surfaceAbi = [
   },
   {
     "type": "event",
-    "name": "TokenArtworkSet",
+    "name": "SupplyLocked",
+    "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SurfaceConfigured",
     "inputs": [
       {
-        "name": "tokenId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
+        "name": "idMode",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum IdMode"
       },
       {
-        "name": "cid",
-        "type": "string",
+        "name": "supplyCap",
+        "type": "uint256",
         "indexed": false,
-        "internalType": "string"
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -2211,39 +1301,25 @@ export const surfaceAbi = [
     "anonymous": false
   },
   {
-    "type": "event",
-    "name": "Withdrawn",
+    "type": "error",
+    "name": "AlreadyAdmin",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadSupplyCap",
     "inputs": [
       {
-        "name": "account",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
+        "name": "floor",
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
-        "name": "amount",
+        "name": "requested",
         "type": "uint256",
-        "indexed": false,
         "internalType": "uint256"
       }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "WorkLocked",
-    "inputs": [],
-    "anonymous": false
-  },
-  {
-    "type": "error",
-    "name": "AlreadyFrozen",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "BadMintWindow",
-    "inputs": []
+    ]
   },
   {
     "type": "error",
@@ -2351,12 +1427,18 @@ export const surfaceAbi = [
   {
     "type": "error",
     "name": "ExceedsCap",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "HookRejected",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "cap",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "attempted",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -2365,22 +1447,7 @@ export const surfaceAbi = [
   },
   {
     "type": "error",
-    "name": "LengthMismatch",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MetadataIsFrozen",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MintEnded",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MintNotStarted",
+    "name": "MinterIsLocked",
     "inputs": []
   },
   {
@@ -2395,6 +1462,22 @@ export const surfaceAbi = [
   },
   {
     "type": "error",
+    "name": "NotAContract",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotAnAdmin",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotAuthorized",
     "inputs": []
   },
@@ -2405,17 +1488,12 @@ export const surfaceAbi = [
   },
   {
     "type": "error",
-    "name": "NotMinted",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "NotMinter",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "NothingToWithdraw",
+    "name": "OnlySequential",
     "inputs": []
   },
   {
@@ -2447,12 +1525,7 @@ export const surfaceAbi = [
   },
   {
     "type": "error",
-    "name": "PooledNeedsMintToAt",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "PooledSellsViaMinter",
+    "name": "PrimaryMinterNotAuthorized",
     "inputs": []
   },
   {
@@ -2462,12 +1535,23 @@ export const surfaceAbi = [
   },
   {
     "type": "error",
-    "name": "RendererRequired",
+    "name": "RendererIsLocked",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "RenounceDisabled",
+    "name": "RendererNotContract",
+    "inputs": [
+      {
+        "name": "renderer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "RendererRequired",
     "inputs": []
   },
   {
@@ -2482,27 +1566,12 @@ export const surfaceAbi = [
   },
   {
     "type": "error",
-    "name": "SequentialAssignsIds",
+    "name": "SupplyIsLocked",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "Underpayment",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "WithdrawFailed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "WorkAlreadyLocked",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "WrongPayment",
+    "name": "TooManyMinters",
     "inputs": []
   },
   {

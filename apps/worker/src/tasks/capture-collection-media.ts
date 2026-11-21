@@ -153,8 +153,8 @@ async function captureOne(c: Candidate): Promise<{ rpc: number; wrote: boolean }
   let tokenUri: string
   try {
     await throttleRpc()
-    // Explicit gas ceiling: onchain-HTML tokenURIs (GenerativeRenderer over
-    // gzipped libs) measure 60-120M gas, beyond the default eth_call cap.
+    // Explicit gas ceiling: onchain-HTML tokenURIs (a scripty-style renderer
+    // over gzipped libs) measure 60-120M gas, beyond the default eth_call cap.
     const uriCall = await client.call({
       to: c.collection as Address,
       data: encodeFunctionData({

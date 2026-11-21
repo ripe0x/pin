@@ -5,10 +5,13 @@
  * gets the same untrusted-iframe treatment as any auctioned token's
  * animation_url.
  *
- * Sequential id-mode only — see `recentTokenIds` in lib/collection.ts for why
- * Pooled collections can't use this "ids are 1..minted" shortcut. Pooled
- * collections render no grid at all (see the guard in the caller) rather
- * than a misleading one.
+ * The art comes from the collection's own `tokenURI` (its renderer), so any
+ * renderer works, onchain HTML included, with no PND service in the loop.
+ *
+ * Sequential ids only (every v2 collection, v1 Sequential) — see
+ * `recentTokenIds` in lib/surface.ts for why pooled collections can't use
+ * this "ids are 1..minted" shortcut. Those render no grid at all (see the
+ * guard in the caller) rather than a misleading one.
  */
 import type { Address } from "viem"
 import { TokenMedia } from "./TokenMedia"

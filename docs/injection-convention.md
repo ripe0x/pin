@@ -1,10 +1,18 @@
 # Token context injection convention (v1)
 
 How a generative work's code receives its token context, onchain and off.
-This is the load-bearing parity contract of the collection system: the
-onchain `GenerativeRenderer`, the studio previewer, the mint surface, and
-the artist-site embed MUST inject the identical object, so a preview is
+This is the load-bearing parity contract of the collection system: any
+onchain renderer that follows it, the studio previewer, the mint surface,
+and the artist-site embed MUST inject the identical object, so a preview is
 the render.
+
+This document is the spec. The reference implementation is the parity
+render library, `apps/web/src/lib/collection-render/` (its `build.test.ts`
+pins the injection line byte for byte); `templates/artist-page/lib/collection-render/`
+is a vendored copy of it. PND's own onchain reference renderers
+(`GenerativeRenderer`, then the `ScriptyRenderer` template) are removed
+from the repo (v2 design doc section 5: the artist brings a renderer), so
+mentions of them below are historical.
 
 ## The context object
 
@@ -45,7 +53,7 @@ Code SHOULD read only documented fields and tolerate additions.
 Previews are also an onchain capability: renderers that can render
 faithfully from `(tokenId, seed)` alone implement the OPTIONAL
 `IPreviewRenderer.previewURI(collection, tokenId, seed)` extension (the
-ScriptyRenderer template does; a bespoke `IRenderer` — a Solidity SVG
+removed ScriptyRenderer template did; a bespoke `IRenderer` — a Solidity SVG
 work, Homage's renderer — implements it directly when its art is a pure
 function of the seed). Renderers whose output depends on state a preview
 cannot fake (sibling tokens, companion contracts, hook-recorded
@@ -77,22 +85,27 @@ Convention: read through any EIP-1193 provider the host page exposes as
 `window.ethereum`, else fall back to a public RPC of the viewer's choice;
 never hardcode a single provider as load-bearing. The work MUST render a
 coherent fallback state when no provider is reachable. Declared reads
-belong in `WorkConfig.renderParams` so tooling and archives know what a
-faithful render requires.
+belong in the work's render parameters (published by its renderer; the
+removed shared registry called them `WorkConfig.renderParams`) so tooling
+and archives know what a faithful render requires.
 
 
 honest about that fragility: the archival form of any live work is
 "code plus inputs at time T".
 
-## Onchain assembly (the ScriptyRenderer template)
+## Onchain assembly (scripty-style renderers)
+
+The document shape a renderer that assembles the work onchain through
+ScriptyBuilderV2 emits, and that the parity library builds offchain (the
+removed ScriptyRenderer template was the onchain reference).
 
 Body tag order in the assembled HTML:
 
-1. dependencies (`WorkConfig.deps`, each per its `CodeKind`).
+1. dependencies (the work's `deps`, each per its `CodeKind`).
    Dependencies are libraries: they MUST NOT read `tokenData`.
 2. the context injection tag (inline `tagContent`, exactly the object
    above)
-3. the artist's code (`WorkConfig.code`, each per its `CodeKind`)
+3. the artist's code (the work's `code`, each per its `CodeKind`)
 4. gunzip helper (plain script, from onchain storage), LAST, present
    only when any tag is gzipped. The helper decompresses at its own
    parse time by scanning the gzip tags that PRECEDE it and replacing
@@ -124,7 +137,7 @@ differ. Offchain renders of real minted tokens inject
 
 ## Versioning
 
-`WorkConfig.injectionVersion` pins which revision of this document a
+The work's `injectionVersion` pins which revision of this document a
 work was authored against; the renderer echoes it as
 `tokenData.version`. Additive changes bump the minor conventions here
 without a version bump; breaking changes (renamed fields, changed
@@ -137,13 +150,18 @@ Every token's canonical entropy is stored once, at mint, on the collection
 core, and read via `tokenSeed(tokenId)`:
 
 ```solidity
+// Surface v1 (SurfaceCore)
 seed = keccak256(abi.encode(block.prevrandao, collectionAddress, tokenId, mintIndex))
+// Surface v2 (contracts/src/surface/v2/Surface.sol: ids are mint order, no pooled re-mint)
+seed = keccak256(abi.encode(block.prevrandao, collectionAddress, tokenId))
 ```
 
 Each input earns its place: `prevrandao` gives block-level freshness;
 `collectionAddress` prevents cross-collection reuse; `tokenId` + `mintIndex`
 give per-token and per-instance uniqueness (the index is what re-rolls a
-pooled re-mint of the same id). The recipient is deliberately NOT mixed in:
+pooled re-mint of the same id; v2 has no pooled mode, so it drops it).
+Either way, offchain renderers read the stored value through
+`tokenSeed(tokenId)` and never re-derive it. The recipient is deliberately NOT mixed in:
 it adds no unpredictability and would bake a minter-identity opinion into
 every work.
 

@@ -600,8 +600,8 @@ export type CollectionTokenView = {
    *  that doesn't emit metadata JSON still has something to show. */
   image: string
   /** Decoded from tokenURI. Present when the active renderer emits an
-   *  animation_url (e.g. GenerativeRenderer's built HTML document); null for
-   *  a static-image renderer (e.g. DefaultRenderer). */
+   *  animation_url (e.g. an onchain HTML document assembled per
+   *  docs/injection-convention.md); null for a static-image renderer. */
   animationUrl: string | null
 }
 
@@ -667,8 +667,8 @@ export async function getCollectionToken(
       }
 
       // tokenURI gets its own call with an explicit gas ceiling, NEVER the
-      // multicall: assembling a full onchain HTML document (GenerativeRenderer
-      // over a gzipped p5) measures 60-120M gas, far beyond the ~30M default
+      // multicall: assembling a full onchain HTML document (a scripty-style
+      // renderer over a gzipped p5) measures 60-120M gas, far beyond the ~30M default
       // eth_call cap and any multicall budget. Elevated-gas eth_call is the
       // standard way heavyweight onchain-HTML tokenURIs are served; consumers
       // with lower caps use the capture worker's static image instead.
@@ -696,7 +696,7 @@ export async function getCollectionToken(
       // Decode the already-fetched tokenURI (no extra RPC call) to recover
       // `image` / `animation_url` the same way every other token page on
       // this site does — see @pin/token-metadata's doc comment. A renderer
-      // that emits an animation_url (GenerativeRenderer) needs this to show
+      // that emits an animation_url (onchain HTML) needs this to show
       // the live/generative work rather than just its poster image.
       let image = artwork
       let animationUrl: string | null = null
