@@ -9,6 +9,7 @@ import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { useResolvedArtistHouse } from "@/components/auction/useResolvedArtistHouse"
 import { AuctionTermsForm } from "@/components/auction/AuctionTermsForm"
 import { TokenPreview } from "@/components/auction/TokenPreview"
+import { ListingBlockedNotice } from "@/components/auction/ListingBlockedNotice"
 import type { GalleryItem, GalleryPage } from "@/lib/artist-queries"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
@@ -37,8 +38,7 @@ function PageShell({ children }: { children?: React.ReactNode }) {
           Start an auction
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          List any ERC-721 or ERC-1155 you own through your sovereign auction
-          house.
+          List any ERC-721 you own through your sovereign auction house.
         </p>
       </div>
       {children}
@@ -98,6 +98,18 @@ function Inner() {
           >
             Go to your profile to deploy →
           </Link>
+        </div>
+      </PageShell>
+    )
+  }
+
+  // New listings go to V2 houses only (lib/auction-policy.ts). An owner who
+  // still has only a V1 house is pointed at the upgrade flow.
+  if (version !== 2) {
+    return (
+      <PageShell>
+        <div className="rounded border border-gray-200 bg-surface p-5">
+          <ListingBlockedNotice reason="v1-house" ownerAddress={address} />
         </div>
       </PageShell>
     )
@@ -180,7 +192,7 @@ function ListForm({
           </h2>
           <p className="text-sm text-gray-500 mt-1">
             Paste the NFT contract address and token ID. Works for any ERC-721
-            or ERC-1155 on Ethereum mainnet.
+            on Ethereum mainnet. ERC-1155 lots aren&rsquo;t available yet.
           </p>
         </div>
         <div className="grid grid-cols-1 gap-3">

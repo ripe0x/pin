@@ -55,6 +55,12 @@ function Banner({ artistAddress }: { artistAddress: string }) {
             ? "Your V2 house is deployed. Move your remaining V1 listings over."
             : "Move your open listings to a V2 house. Same reserves and durations, one guided run."}
         </p>
+        {v1ListingCount != null && v1ListingCount > 0 && (
+          <p className="text-xs text-gray-500 mt-1">
+            New bids on V1 listings are paused on PND. The upgrade cancels
+            them on your V1 house and relists them on a V2 house.
+          </p>
+        )}
       </div>
       <Link
         href={`/studio/${artistAddress}/migrate`}

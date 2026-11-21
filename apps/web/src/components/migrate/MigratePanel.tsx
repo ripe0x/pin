@@ -10,7 +10,6 @@ import {
   useConfig,
   useSwitchChain,
 } from "wagmi"
-import { foundry, mainnet } from "wagmi/chains"
 import {
   readContract,
   waitForTransactionReceipt,
@@ -37,6 +36,12 @@ import {
 } from "@/lib/platforms/migration-savings"
 import type { PlatformId } from "@/lib/platforms/types"
 import { useResolvedArtistHouse } from "@/components/auction/useResolvedArtistHouse"
+import { canListStandard } from "@/lib/auction-policy"
+import {
+  FORK_MODE,
+  PREFERRED_CHAIN,
+  PREFERRED_CHAIN_LABEL,
+} from "@/components/tx/tx-ui"
 import {
   SOVEREIGN_AUCTION_HOUSE_V2_FACTORY,
   MAINNET_CHAIN_ID,
@@ -55,16 +60,12 @@ const PLATFORM_LABELS: Record<PlatformId, string> = {
   sovereign: "Sovereign Auction House",
 }
 
-// In dev/fork mode (NEXT_PUBLIC_USE_LOCAL_RPC=1), the preferred
-// wallet chain is the local Anvil chain (31337) — sending real txs
-// to mainnet during a fork test would skip the fork entirely. In
-// production this flag is unset and the wrong-network banner
-// effectively never shows. `NEXT_PUBLIC_*` is statically inlined
-// at build time, so the flag stays a boolean string — never an
-// Alchemy URL — so nothing scrapeable lands in the bundle.
-const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
-const PREFERRED_CHAIN = FORK_MODE ? foundry : mainnet
-const PREFERRED_CHAIN_LABEL = FORK_MODE ? "Foundry (local fork)" : "Ethereum"
+// In dev/fork mode (NEXT_PUBLIC_USE_LOCAL_RPC=1) the preferred wallet
+// chain is the local Anvil fork chain the wagmi config registers; in
+// production it is mainnet. Shared with every other write surface via
+// tx-ui, so the wrong-network check and the chainId pinned on each write
+// agree with the configured chain (upstream `foundry` is 31337, which the
+// wagmi config does not register).
 
 // Stable display order for platform sections — Foundation first since
 // that's the most common source today, SR second, others appended in
@@ -213,6 +214,10 @@ function Inner({
     getAddressOrNull(SOVEREIGN_AUCTION_HOUSE_V2_FACTORY, MAINNET_CHAIN_ID) !==
     null
   const targetVersion: 1 | 2 = houseVersion ?? (v2FactoryLive ? 2 : 1)
+  // PND no longer creates listings on V1 houses (lib/auction-policy.ts): an
+  // owner whose resolved house is still V1 upgrades first (HouseUpgradePanel,
+  // rendered above this panel on the migrate page), then relists here.
+  const relistBlocked = !canListStandard(targetVersion, "erc721")
 
   const [load, setLoad] = useState<LoadState>({ kind: "idle" })
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -352,6 +357,7 @@ function Inner({
       throw new Error("Factory not deployed on this network")
     }
     const txHash = await writeContractAction(config, {
+      chainId: PREFERRED_CHAIN.id,
       address: factoryAddress,
       abi: v2FactoryLive
         ? sovereignAuctionHouseV2FactoryAbi
@@ -388,6 +394,7 @@ function Inner({
     })) as boolean
     if (approved) return
     const txHash = await writeContractAction(config, {
+      chainId: PREFERRED_CHAIN.id,
       address: contract,
       abi: erc721Abi,
       functionName: "setApprovalForAll",
@@ -397,6 +404,7 @@ function Inner({
   }
 
   async function migrateOne(row: Row): Promise<void> {
+    if (relistBlocked) return
     const parsed = parseRowReserve(row)
     if (!parsed.ok) {
       updateRowState(row.id, { step: "failed", error: parsed.reason })
@@ -411,6 +419,7 @@ function Inner({
       updateRowState(row.id, { step: "cancelling" })
       const cancelCall = buildCancelCall(row.source)
       const cancelHash = await writeContractAction(config, {
+        chainId: PREFERRED_CHAIN.id,
         address: cancelCall.address,
         abi: cancelCall.abi,
         functionName: cancelCall.functionName,
@@ -435,6 +444,7 @@ function Inner({
       // listingExpiry: 0n (no expiry), there is no UI for it yet. V2-only
       // arg; V1's bulkCreateAuctions has no fifth parameter.
       const createHash = await writeContractAction(config, {
+        chainId: PREFERRED_CHAIN.id,
         address: house,
         abi:
           targetVersion === 2
@@ -594,8 +604,7 @@ function Inner({
             {FORK_MODE && (
               <>
                 {" "}If your wallet has never seen this network, accept the
-                prompt to add it (RPC <code>http://127.0.0.1:8545</code>,
-                chain id <code>31337</code>).
+                prompt to add it (chain id <code>{PREFERRED_CHAIN.id}</code>).
               </>
             )}
           </p>
@@ -606,6 +615,16 @@ function Inner({
           >
             {switchPending ? "Switching…" : `Switch to ${PREFERRED_CHAIN_LABEL}`}
           </button>
+        </div>
+      )}
+
+      {relistBlocked && (
+        <div className="mb-4 rounded-md border border-gray-200 bg-surface-muted px-4 py-3">
+          <p className="text-xs text-gray-600 leading-relaxed">
+            Your auction house is a first-version house, and PND no longer
+            creates listings on those. Upgrade to a V2 house above first, then
+            migrate these listings to it.
+          </p>
         </div>
       )}
 
@@ -639,7 +658,7 @@ function Inner({
           </button>
           <button
             onClick={handleMigrateSelected}
-            disabled={running || selectedCount === 0}
+            disabled={running || relistBlocked || selectedCount === 0}
             className="text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {running
@@ -664,7 +683,7 @@ function Inner({
                   setRowField(row.id, { durationSec: s as DurationSec })
                 }
                 state={rowState.get(row.id)}
-                disabled={running}
+                disabled={running || relistBlocked}
                 onMigrate={() => handleMigrateOne(row)}
               />
             ))}

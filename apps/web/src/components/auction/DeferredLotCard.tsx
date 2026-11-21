@@ -4,7 +4,8 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
 import { sovereignAuctionHouseV2Abi } from "@pin/abi"
-import { formatWriteError, useChainNowSec } from "@/components/tx/tx-ui"
+import { PREFERRED_CHAIN, formatWriteError, useChainNowSec } from "@/components/tx/tx-ui"
+import { winnerCodeNote, type AccountCodeKind } from "@/lib/auction-policy"
 import { formatEthAmount } from "@/lib/format-eth"
 import { TxLink } from "./tx"
 
@@ -31,6 +32,7 @@ export function DeferredLotCard({
   sellerDisplay,
   deferredAtTime,
   refundAmount,
+  winnerCodeKind = null,
 }: {
   houseAddress: `0x${string}`
   auctionId: string
@@ -40,6 +42,13 @@ export function DeferredLotCard({
   sellerDisplay: string
   deferredAtTime: number | null
   refundAmount: bigint | null
+  /**
+   * Whether the winner address has code (a contract, or an EIP-7702
+   * delegated account), read once server-side for deferred lots. Such an
+   * account runs its own code on delivery, which is the usual reason a
+   * delivery fails. Null when unknown or not read.
+   */
+  winnerCodeKind?: AccountCodeKind | null
 }) {
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
@@ -109,12 +118,19 @@ export function DeferredLotCard({
         </p>
       )}
 
+      {status === "deferred" && winnerCodeNote(winnerCodeKind) && (
+        <p className="text-[11px] font-mono text-gray-500">
+          {winnerCodeNote(winnerCodeKind)}
+        </p>
+      )}
+
       {mounted && (
         <>
           {status === "deferred" && (
             <button
               onClick={() =>
                 writeContract({
+                  chainId: PREFERRED_CHAIN.id,
                   address: houseAddress,
                   abi: sovereignAuctionHouseV2Abi,
                   functionName: "claimLot",
@@ -150,6 +166,7 @@ export function DeferredLotCard({
                 <button
                   onClick={() =>
                     writeContract({
+                      chainId: PREFERRED_CHAIN.id,
                       address: houseAddress,
                       abi: sovereignAuctionHouseV2Abi,
                       functionName: "claimLot",
@@ -171,6 +188,7 @@ export function DeferredLotCard({
             <button
               onClick={() =>
                 writeContract({
+                  chainId: PREFERRED_CHAIN.id,
                   address: houseAddress,
                   abi: sovereignAuctionHouseV2Abi,
                   functionName: "unwindStuckLot",
@@ -193,6 +211,7 @@ export function DeferredLotCard({
             <button
               onClick={() =>
                 writeContract({
+                  chainId: PREFERRED_CHAIN.id,
                   address: houseAddress,
                   abi: sovereignAuctionHouseV2Abi,
                   functionName: "returnUnwoundLot",

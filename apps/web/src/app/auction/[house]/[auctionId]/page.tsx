@@ -12,6 +12,7 @@ import { getAuctionDetail } from "@/lib/auctions"
 import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
 import { formatEthAmount } from "@/lib/format-eth"
 import { isCrawler } from "@/lib/crawler"
+import { getAccountCodeKind } from "@/lib/onchain"
 
 export const revalidate = 60
 
@@ -99,6 +100,13 @@ export default async function AuctionPage({ params }: { params: Params }) {
   if (!data) notFound()
 
   const { detail, meta } = data
+  // Deferred V2 lots only: one getCode on the winner, so the card can say
+  // when the winning bidder is a contract account (its own code runs on
+  // delivery). Skipped for every other status.
+  const winnerCodeKind =
+    detail.status === "deferred" && detail.winner
+      ? await getAccountCodeKind(detail.winner).catch(() => null)
+      : null
   const imageUrl = meta?.image
     ? ipfsToHttp(meta.image)
     : "https://placehold.co/1200x1500/F2F2F2/999999?text=Artwork"
@@ -166,6 +174,7 @@ export default async function AuctionPage({ params }: { params: Params }) {
                 sellerDisplay={detail.sellerDisplay}
                 deferredAtTime={detail.deferredAtTime}
                 refundAmount={detail.refundAmount}
+                winnerCodeKind={winnerCodeKind}
               />
             ) : (
               <div className="rounded-lg border border-gray-200 bg-surface p-5 space-y-2">

@@ -33,6 +33,12 @@ import {
   writeContract,
 } from "@wagmi/core"
 import type { Abi, Address } from "viem"
+import { PREFERRED_CHAIN } from "@/components/tx/tx-ui"
+
+// Every call in a run targets this chain. Pinning it on each write makes
+// wagmi refuse (chain mismatch) instead of sending to the same address on
+// whatever network the wallet happens to be on.
+const WRITE_CHAIN_ID = PREFERRED_CHAIN.id
 
 export type CallMode = "loading" | "batched" | "sequential"
 
@@ -182,6 +188,7 @@ export function useBatchedCalls() {
       if (item.skipPreflight) return "live"
       try {
         await estimateGas(config, {
+          chainId: WRITE_CHAIN_ID,
           account: address,
           to: item.to,
           data: item.data,
@@ -217,6 +224,7 @@ export function useBatchedCalls() {
         try {
           const txHash = item.write
             ? await writeContract(config, {
+                chainId: WRITE_CHAIN_ID,
                 address: item.write.address,
                 abi: item.write.abi,
                 functionName: item.write.functionName,
@@ -224,6 +232,7 @@ export function useBatchedCalls() {
                 value: item.write.value,
               })
             : await sendTransaction(config, {
+                chainId: WRITE_CHAIN_ID,
                 to: item.to,
                 data: item.data,
                 value: item.value,
@@ -291,7 +300,7 @@ export function useBatchedCalls() {
             data: c.data,
             value: c.value,
           }))
-          const result = await sendCalls(config, { calls })
+          const result = await sendCalls(config, { calls, chainId: WRITE_CHAIN_ID })
           bundleId = result.id
         } catch (err) {
           const reason = friendlyError(err)
