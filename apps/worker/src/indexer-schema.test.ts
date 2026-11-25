@@ -3,7 +3,7 @@ import { test } from "node:test"
 import { DEFAULT_INDEXER_SCHEMA, sanitizeSchemaName } from "./indexer-schema.ts"
 
 test("default schema is the live schema, not a dead one", () => {
-  assert.equal(DEFAULT_INDEXER_SCHEMA, "ponder_v3")
+  assert.equal(DEFAULT_INDEXER_SCHEMA, "ponder_v4")
   assert.notEqual(DEFAULT_INDEXER_SCHEMA, "ponder_v1")
   assert.notEqual(DEFAULT_INDEXER_SCHEMA, "ponder_v2")
 })
