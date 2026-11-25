@@ -9,12 +9,17 @@
  * discontinued (returns nothing), nftstorage.link is retired (302 to
  * ipfs.io) and w3s.link only redirects to dweb.link, so none is listed.
  * Public gateways rate-limit per client IP, so the list needs entries
- * from different operators for rotation to find one that answers. */
+ * from different operators for rotation to find one that answers.
+ *
+ * Since 2026-11 dweb.link and ipfs.io answer 429 "switching to a service
+ * worker gateway only" to path requests, so they sit last. Filebase leads
+ * because it also serves images.weserv.nl (the grid-tile proxy); Pinata
+ * 429s weserv's shared IP. */
 export const IPFS_GATEWAYS = [
+  "https://ipfs.filebase.io",
+  "https://gateway.pinata.cloud",
   "https://dweb.link",
   "https://ipfs.io",
-  "https://gateway.pinata.cloud",
-  "https://ipfs.filebase.io",
 ] as const
 
 const DEFAULT_GATEWAY = IPFS_GATEWAYS[0]
