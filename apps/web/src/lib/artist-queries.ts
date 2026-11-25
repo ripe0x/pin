@@ -33,6 +33,7 @@ import {
   type SovereignAuctionLite,
 } from "./auctions"
 import { getMuriUriCounts } from "./reads"
+import { getMediaDeliveries, type MediaDelivery } from "./media-delivery"
 import { extractCid, ipfsToHttp } from "@pin/shared"
 
 // Module-level singleton used for ENS lookups + a multicall in
@@ -552,7 +553,7 @@ export async function getArtistGalleryPage(
     return { tokens: [], total, page, pageSize, hasMore: false }
   }
 
-  const [enriched, prices, auctionMap, fndAuctionMap, muriCounts] = await Promise.all([
+  const [enriched, prices, auctionMap, fndAuctionMap, muriCounts, deliveries] = await Promise.all([
     // `getCachedEnrichedPage` throws `EnrichmentEmpty` when every token
     // in the slice enriches to null (transient RPC/IPFS hiccup, not a
     // real empty gallery) — the throw stops `unstable_cache` from
@@ -573,13 +574,23 @@ export async function getArtistGalleryPage(
     getMuriUriCounts(slice.map((r) => ({ contract: r.contract, tokenId: r.tokenId }))).catch(
       (): Map<string, number> => new Map(),
     ),
+    // Outside the 24h enrichment cache on purpose: a thumbnail derived
+    // after the page was cached still shows on the next render, and a
+    // token with no delivery row is queued for derivation here.
+    getMediaDeliveries(slice).catch((): Map<string, MediaDelivery> => new Map()),
   ])
 
   const tokens: GalleryItem[] = enriched.map((token) => {
     const display = tokenToDisplayData(token)
     const key = `${token.contract.toLowerCase()}:${token.tokenId}`
+    const delivery = deliveries.get(key)
+    // Images only: a video token's tile plays the source, so a poster
+    // must not replace it.
+    const thumbnail =
+      delivery?.status === "ready" && delivery.kind === "image" ? delivery.thumbnailUrl : null
     return {
       ...display,
+      imageUrl: thumbnail ?? display.imageUrl,
       buyPrice: prices.get(key) ?? null,
       // Sovereign (PND's own house) takes precedence; a token is escrowed
       // in at most one auction contract, so both maps won't hold the same

@@ -96,7 +96,7 @@ const tasks: Task[] = [
   // is ready. Generous interval: capture is not time-sensitive, and each
   // run is bounded by CAPTURE_BATCH_SIZE.
   { name: "capture-collection-media", intervalMs: 10 * MIN, fn: captureCollectionMedia, dependsOnPonder: true },
-  { name: "derive-token-media", intervalMs: 5 * MIN, fn: deriveTokenMedia, dependsOnPonder: true },
+  { name: "derive-token-media", intervalMs: MIN, fn: deriveTokenMedia, dependsOnPonder: true },
 ]
 
 const runState = new Map<TaskName, { running: boolean; lastRun: Date | null }>()
