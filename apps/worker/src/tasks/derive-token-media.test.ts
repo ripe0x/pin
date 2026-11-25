@@ -3,6 +3,7 @@
 // because CI has no database:
 //   TEST_DATABASE_URL=postgres://... node --experimental-strip-types --test src/tasks/derive-token-media.test.ts
 import { strict as assert } from "node:assert"
+import { randomBytes } from "node:crypto"
 import { test } from "node:test"
 
 const url = process.env.TEST_DATABASE_URL
@@ -48,5 +49,19 @@ test("derive-token-media only picks requested tokens", { skip: !url }, async (t)
   await meta("4", "ipfs://bafy-new-art/4.png")
   const rederive = (await findCandidates()).filter((c) => c.contract === C).map((c) => c.tokenId).sort()
   assert.deepEqual(rederive, ["2", "4"])
+
+  // A large inline source (real tokens carry 100 KB+ data: URIs) must be
+  // storable: a btree on source_url rejected it and stalled the queue.
+  // Random bytes: Postgres compresses index entries, so a repetitive
+  // string would fit and hide the bug.
+  const inline = `data:image/png;base64,${randomBytes(110_000).toString("base64")}`
+  await meta("5", inline)
+  await request("5")
+  await sql`
+    INSERT INTO token_media_delivery (contract, token_id, source_url, status)
+    VALUES (${C}, '5', ${inline}, 'pending')
+  `
+  const reuse = await sql`SELECT count(*)::int AS n FROM token_media_delivery WHERE source_url = ${inline}`
+  assert.equal(reuse[0].n, 1)
 })
 

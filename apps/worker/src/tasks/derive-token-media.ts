@@ -214,7 +214,12 @@ export async function deriveTokenMedia(): Promise<TaskResult> {
   const store = s3Store(storageConfig)
   const candidates = await findCandidates()
   for (const candidate of candidates) {
-    await processCandidate(candidate, storageConfig, store)
+    // One token's database error must not stall the queue behind it.
+    try {
+      await processCandidate(candidate, storageConfig, store)
+    } catch (error) {
+      console.error(`[${TASK}] ${candidate.contract}/${candidate.tokenId}: ${(error as Error).message}`)
+    }
   }
   return { scopeCount: candidates.length, rpcCalls: 0, rowsWritten: candidates.length }
 }
