@@ -21,7 +21,7 @@ test("activity feed never serializes inline media without a safe route", () => {
 
 test("activity feed keeps remote images and identifies remote video", () => {
   assert.deepEqual(mediaForActivityFeed("ipfs://bafy-image"), {
-    mediaUrl: "https://dweb.link/ipfs/bafy-image",
+    mediaUrl: "https://ipfs.filebase.io/ipfs/bafy-image",
     isVideo: false,
   })
   assert.deepEqual(mediaForActivityFeed("https://cdn.example/work.webm?x=1"), {
