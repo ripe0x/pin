@@ -35,8 +35,10 @@ export type DeriveOptions = {
 type ResolvedDeriveOptions = Required<DeriveOptions>
 
 const DEFAULTS: ResolvedDeriveOptions = {
-  maxInputBytes: 25 * 1024 * 1024,
-  maxPixels: 60_000_000,
+  maxInputBytes: 50 * 1024 * 1024,
+  // Artists upload 100MP+ photographs. JPEG decodes with shrink-on-load at
+  // this resize ratio, so peak memory stays far below width*height*4.
+  maxPixels: 150_000_000,
   outputWidth: 800,
   fetchTimeoutMs: 20_000,
   decodeTimeoutMs: 25_000,
@@ -44,7 +46,7 @@ const DEFAULTS: ResolvedDeriveOptions = {
 
 const HARD_CEILINGS: ResolvedDeriveOptions = {
   maxInputBytes: 50 * 1024 * 1024,
-  maxPixels: 100_000_000,
+  maxPixels: 200_000_000,
   outputWidth: 1600,
   fetchTimeoutMs: 20_000,
   decodeTimeoutMs: 25_000,
@@ -200,9 +202,11 @@ export async function deriveImageThumbnail(
   const resolved = resolveOptions(opts)
   const pipeline = sharp(source, { limitInputPixels: resolved.maxPixels, animated: false })
     .rotate()
+    // Width is the tile's limit; portraits may run to twice as tall so a
+    // 5:8 work isn't squeezed to 500px wide.
     .resize({
       width: resolved.outputWidth,
-      height: resolved.outputWidth,
+      height: resolved.outputWidth * 2,
       fit: "inside",
       withoutEnlargement: true,
     })

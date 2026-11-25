@@ -27,12 +27,12 @@ const TASK = "derive-token-media"
 const BATCH_SIZE = Math.min(Number(process.env.MEDIA_DERIVE_BATCH_SIZE ?? "12"), 50)
 const MAX_ATTEMPTS = Math.min(Number(process.env.MEDIA_DERIVE_MAX_ATTEMPTS ?? "4"), 10)
 const MAX_INPUT_BYTES = Math.min(
-  Number(process.env.MEDIA_DERIVE_MAX_INPUT_BYTES ?? String(25 * 1024 * 1024)),
+  Number(process.env.MEDIA_DERIVE_MAX_INPUT_BYTES ?? String(50 * 1024 * 1024)),
   50 * 1024 * 1024,
 )
 const MAX_PIXELS = Math.min(
-  Number(process.env.MEDIA_DERIVE_MAX_PIXELS ?? String(60_000_000)),
-  100_000_000,
+  Number(process.env.MEDIA_DERIVE_MAX_PIXELS ?? String(150_000_000)),
+  200_000_000,
 )
 const OUTPUT_WIDTH = Math.min(Number(process.env.MEDIA_DERIVE_WIDTH ?? "800"), 1600)
 const DERIVE_OPTIONS = {
