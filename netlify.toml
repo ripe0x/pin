@@ -64,6 +64,16 @@
   status = 200
   force = true
 
+# Thumbnails are content-addressed (sha256 in the path), so they never
+# change: cache them at Netlify's edge and in browsers for a year. Without
+# this Netlify serves proxied responses as no-store and every view would
+# reach r2.dev, which Cloudflare rate-limits.
+[[headers]]
+  for = "/cdn/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    Netlify-CDN-Cache-Control = "public, durable, max-age=31536000, immutable"
+
 # Next.js runtime plugin — Netlify auto-installs this for Next.js
 # projects, but we pin it explicitly so build behavior is reproducible.
 [[plugins]]
