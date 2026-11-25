@@ -54,6 +54,16 @@
   status = 301
   force = true
 
+# Token thumbnails (derive-token-media worker -> R2 bucket pnd-media).
+# pnd.fyi DNS lives on Netlify, so R2 can't take a custom domain; this
+# proxies its r2.dev URL instead and Netlify's CDN caches the immutable,
+# content-addressed objects, so r2.dev only sees first requests.
+[[redirects]]
+  from = "/cdn/*"
+  to = "https://pub-4ca5712c0d1e4d86b59034e2c41c245e.r2.dev/:splat"
+  status = 200
+  force = true
+
 # Next.js runtime plugin — Netlify auto-installs this for Next.js
 # projects, but we pin it explicitly so build behavior is reproducible.
 [[plugins]]
