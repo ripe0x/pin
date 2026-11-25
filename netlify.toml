@@ -72,7 +72,7 @@
   for = "/cdn/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
-    Netlify-CDN-Cache-Control = "public, max-age=31536000, immutable"
+    Netlify-CDN-Cache-Control = "public, durable, max-age=31536000, immutable"
 
 # Next.js runtime plugin — Netlify auto-installs this for Next.js
 # projects, but we pin it explicitly so build behavior is reproducible.
