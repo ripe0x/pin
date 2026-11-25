@@ -27,9 +27,14 @@ const DEFAULT_GATEWAY = IPFS_GATEWAYS[0]
 // IPNS (mutable name → CID pointer) needs a gateway that resolves the
 // name, not just pins a CID. nftstorage.link / w3s.link are CID-scoped
 // and 404 on arbitrary IPNS names, so IPNS uses its own gateway list.
-// ipfs.io serves IPNS path-style (`/ipns/<name>`); dweb.link 301-redirects
-// to a subdomain, which `fetch` follows automatically.
+// Filebase resolves DNSLink names path-style (checked 2026-11-25; k51 keys
+// were unconfirmed, every one tried was unresolvable on all gateways) and
+// answers misses fast. Pinata's public gateway answers 403 "IPNS not
+// supported". ipfs.io and dweb.link
+// sit last for the same 429 reason as IPFS_GATEWAYS above (dweb.link
+// 301-redirects IPNS to a subdomain, which `fetch` follows).
 export const IPNS_GATEWAYS = [
+  "https://ipfs.filebase.io",
   "https://ipfs.io",
   "https://dweb.link",
 ] as const
