@@ -185,16 +185,9 @@ accidentally staged; delete the directory if you see it.
 - Tracked in `public._migrations` (one row per applied filename). The
   runner globs `*.sql`, sorts, and applies any not already recorded — so
   a gap gets filled on the next run regardless of numeric order.
-- **FLAGGED prod drift (verify before relying on it):** as of 2026-05-21,
-  maglev `_migrations` records `001`–`015` and `017`, but **`016`
-  (`016_log_index_bigint.sql`) is missing** — `017` was applied while
-  `016` was skipped. `016` only widens two columns INTEGER→BIGINT
-  (`artist_tokens.mint_log_index`, `token_transfers.log_index`) to stop a
-  scan-mint-clones overflow crash. A future `pnpm db:migrate` will apply
-  `016` after `017`; the column widening is order-independent, so this is
-  low-risk, but **prod migration tracking is genuinely out of sync** —
-  run `db:migrate` (with the maglev `DATABASE_URL`) to reconcile when
-  you're ready. (Don't do it as a side effect of unrelated work.)
+- **Prod tracking is in sync** (checked 2026-11-25): maglev `_migrations`
+  records `001` through `028` with no gaps. The earlier missing-`016` drift
+  was reconciled.
 
 ## Deploy topology
 
