@@ -134,7 +134,7 @@ test("ipfs:// metadata resolves to a gateway URL", () => {
     opts,
   )
   assert.equal(media.kind, "image")
-  assert.equal((media as { src: string }).src, "https://dweb.link/ipfs/bafy-image")
+  assert.equal((media as { src: string }).src, "https://ipfs.filebase.io/ipfs/bafy-image")
 })
 
 test("a remote video URL is classified by extension", () => {
