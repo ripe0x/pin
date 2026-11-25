@@ -5,6 +5,33 @@ import type { MediaRecord } from "@pnd/media"
 /** Kept as an alias so existing call sites don't have to rename their type import. */
 export type MediaDelivery = MediaRecord
 
+/**
+ * Thumbnails are derived on demand: every token a page renders without a
+ * delivery row is queued for the worker. One batched insert per render,
+ * only for misses; a failure here never blocks the page.
+ */
+async function requestMissing(
+  refs: readonly { contract: string; tokenId: string }[],
+  present: Set<string>,
+): Promise<void> {
+  const missing = refs.filter((ref) => !present.has(`${ref.contract.toLowerCase()}:${ref.tokenId}`))
+  if (!sql || missing.length === 0) return
+  try {
+    await sql`
+      INSERT INTO token_media_requests (contract, token_id)
+      SELECT * FROM unnest(
+        ${missing.map((ref) => ref.contract.toLowerCase())}::text[],
+        ${missing.map((ref) => ref.tokenId)}::text[]
+      )
+      ON CONFLICT DO NOTHING
+    `
+  } catch (error) {
+    // Migration 028 may not be applied yet on this database.
+    console.warn("[media-delivery] could not queue thumbnail requests:", error)
+  }
+}
+
+/** Reads delivery rows for `refs` and queues any token that has none. */
 export async function getMediaDeliveries(
   refs: readonly { contract: string; tokenId: string }[],
 ): Promise<Map<string, MediaDelivery>> {
@@ -49,6 +76,7 @@ export async function getMediaDeliveries(
       last_success_at: Date | null
       next_attempt_at: Date | null
     }>
+    await requestMissing(refs, new Set(rows.map((row) => `${row.contract.toLowerCase()}:${row.token_id}`)))
     return new Map(
       rows.map((row) => [
         `${row.contract.toLowerCase()}:${row.token_id}`,
