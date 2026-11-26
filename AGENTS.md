@@ -90,8 +90,10 @@ Full notes: `docs/muri-integration.md`.
   maglev today: `public` + `ponder_sync` + `ponder_v1` + `ponder_v2` +
   `ponder_v3` + `ponder_v4`, with **`INDEXER_SCHEMA=ponder_v4`** (current
   as of 2026-10-11, mainnet only). The live indexer is the `indexer-v4`
-  service in the `pnd-v2` Railway project. `ponder_v3` and `indexer-v3`
-  are kept as the rollback pair.
+  service in the `pnd-v2` Railway project. The `indexer-v3` service was
+  deleted 2026-11-26 (crashed since October); the `ponder_v3` schema stays
+  as the data rollback. The `pnd-v2` project now holds only Postgres,
+  worker and indexer-v4.
 - `apps/web/.env.local` should point at maglev with `INDEXER_SCHEMA=ponder_v4`.
 - **`ponder_v1` is dead.** It stopped receiving new blocks around
   2026-07-15 (`_ponder_checkpoint.latest_checkpoint` decodes to block
@@ -186,7 +188,7 @@ accidentally staged; delete the directory if you see it.
   runner globs `*.sql`, sorts, and applies any not already recorded — so
   a gap gets filled on the next run regardless of numeric order.
 - **Prod tracking is in sync** (checked 2026-11-25): maglev `_migrations`
-  records `001` through `028` with no gaps. The earlier missing-`016` drift
+  records `001` through `030` with no gaps (2026-11-26). The earlier missing-`016` drift
   was reconciled.
 
 ## Deploy topology
@@ -199,7 +201,7 @@ accidentally staged; delete the directory if you see it.
   project," but `netlify.toml`, `apps/web/.netlify/`, and `DEPLOYMENT.md`
   all show the web app on Netlify. The Netlify config is the live one;
   the all-Railway README line is aspirational/stale. `apps/web/railway.json`
-  appears vestigial from the original plan. Treat netlify.toml as
+  is vestigial: the Railway `web` service was deleted 2026-11-26. Treat netlify.toml as
   authoritative for where web actually deploys.
 
 ## Don't revive the pre-rebuild branches
