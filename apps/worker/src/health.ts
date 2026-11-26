@@ -62,7 +62,12 @@ function health(res: ServerResponse): void {
   const ok = since < 30 * 60 * 1000
   res.statusCode = ok ? 200 : 503
   res.setHeader("content-type", "application/json")
-  res.end(JSON.stringify({ ok, lastTickAt: last?.toISOString() ?? null }))
+  // MB, so heap (JS) and external (sharp/libvips buffers) can be told apart
+  // from the container total Railway bills.
+  const mb = (n: number) => Math.round(n / 1048576)
+  const m = process.memoryUsage()
+  const memoryMb = { rss: mb(m.rss), heapUsed: mb(m.heapUsed), heapTotal: mb(m.heapTotal), external: mb(m.external) }
+  res.end(JSON.stringify({ ok, lastTickAt: last?.toISOString() ?? null, memoryMb }))
 }
 
 async function metrics(res: ServerResponse): Promise<void> {

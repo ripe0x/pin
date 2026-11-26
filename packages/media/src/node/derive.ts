@@ -19,6 +19,12 @@ import {
   safeFetch,
 } from "./fetch.ts"
 
+// libvips keeps up to 50MB of decoded images cached across calls by
+// default; this worker never re-reads an image, so the cache only holds
+// RSS. One thread per image keeps peak native memory to one decode.
+sharp.cache(false)
+sharp.concurrency(1)
+
 export type DeriveOptions = {
   /** Ceiling on the fetched source, in bytes. Default 25MB, hard cap 50MB. */
   maxInputBytes?: number

@@ -36,9 +36,10 @@ export async function scanFndCollections(): Promise<TaskResult> {
   )) as Array<{ artist: string; contract: string; deploy_block: string }>
 
   let totalScope = 0
-  let totalRpc = 0
+  let totalRpc = 1 // the shared head read below
   let totalRows = 0
 
+  const head = await client.getBlockNumber()
   for (const t of targets) {
     const r = await scanArtistTokensViaTransferFromZero({
       sql,
@@ -47,6 +48,7 @@ export async function scanFndCollections(): Promise<TaskResult> {
       platform: PLATFORM,
       artist: t.artist,
       contract: t.contract,
+      head,
       contractDeployBlock: BigInt(t.deploy_block),
     }).catch((err) => {
       console.error(`[scan-fnd-collections] ${t.artist}/${t.contract}:`, err)
