@@ -212,9 +212,16 @@ async function findCandidates(): Promise<Candidate[]> {
            JOIN known_artists k ON k.address = t.artist
        )`
 
+  // Inline data: URIs never carry a probeable CID or Arweave id (the
+  // extractors only read ipfs://, ar:// and http(s) URLs), and they are
+  // ~98% of token_metadata's bytes. Blank them in SQL so the worker
+  // doesn't pull ~460 MB into its heap every run just to discard it.
   const rows = (await sql.unsafe(
     `${cte}
-     SELECT m.raw_uri, m.image_url, m.animation_url
+     SELECT
+       CASE WHEN m.raw_uri       LIKE 'data:%' THEN NULL ELSE m.raw_uri       END AS raw_uri,
+       CASE WHEN m.image_url     LIKE 'data:%' THEN NULL ELSE m.image_url     END AS image_url,
+       CASE WHEN m.animation_url LIKE 'data:%' THEN NULL ELSE m.animation_url END AS animation_url
      FROM refs r
      JOIN token_metadata m
        ON m.contract = r.contract AND m.token_id = r.token_id
