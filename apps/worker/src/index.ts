@@ -15,6 +15,7 @@
 import { startHealthServer } from "./health.ts"
 import { startScheduler } from "./scheduler.ts"
 import { sql } from "./db.ts"
+import { rebuildKnownArtistsView } from "./known-artists.ts"
 
 const PORT = Number(process.env.PORT ?? "8080")
 
@@ -27,6 +28,7 @@ async function main(): Promise<void> {
   }
 
   await startHealthServer(PORT)
+  await rebuildKnownArtistsView()
   await startScheduler()
 
   // Graceful shutdown — Railway sends SIGTERM on redeploy.

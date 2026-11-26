@@ -27,9 +27,10 @@ export async function scanTlClones(): Promise<TaskResult> {
      WHERE c.c_type LIKE 'ERC721%'`,
   )) as Array<{ artist: string; contract: string; deploy_block: string }>
 
-  let totalRpc = 0
+  let totalRpc = 1 // the shared head read below
   let totalRows = 0
 
+  const head = await client.getBlockNumber()
   for (const t of targets) {
     const r = await scanArtistTokensViaTransferFromZero({
       sql,
@@ -38,6 +39,7 @@ export async function scanTlClones(): Promise<TaskResult> {
       platform: PLATFORM,
       artist: t.artist,
       contract: t.contract,
+      head,
       contractDeployBlock: BigInt(t.deploy_block),
     }).catch((err) => {
       console.error(`[scan-tl-clones] ${t.artist}/${t.contract}:`, err)

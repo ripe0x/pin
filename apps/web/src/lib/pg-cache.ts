@@ -156,22 +156,3 @@ export async function pgCacheHas(key: string): Promise<boolean> {
     return false
   }
 }
-
-/**
- * Garbage-collect rows whose TTL elapsed more than `graceDays` ago.
- * Called by a scheduled Netlify function (or run manually). Stale entries
- * are also overwritten on the next miss for their key, so this is purely
- * for storage hygiene — runs daily, not hot path.
- */
-export async function pgCacheCleanup(graceDays = 1): Promise<number> {
-  if (!sql) return 0
-  try {
-    const result = await sql`
-      DELETE FROM cache_entries
-      WHERE expires_at < NOW() - (${graceDays} || ' days')::interval
-    `
-    return result.count
-  } catch {
-    return 0
-  }
-}

@@ -166,6 +166,14 @@ async function pruneIterations(): Promise<void> {
     if (result.count > 0) {
       console.log(`[worker.audit] pruned ${result.count} iterations older than ${RETENTION_DAYS}d`)
     }
+    // The web's L2 cache overwrites a stale row only when the same key is
+    // read again, so keys nobody revisits would otherwise stay forever.
+    const cache = await sql.unsafe(
+      `DELETE FROM cache_entries WHERE expires_at < NOW() - INTERVAL '1 day'`,
+    )
+    if (cache.count > 0) {
+      console.log(`[worker.audit] pruned ${cache.count} expired cache_entries`)
+    }
   } catch (err) {
     console.error("[worker.audit] prune failed:", err)
   }

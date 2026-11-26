@@ -39,6 +39,8 @@ export type ScanArgs = {
   artist: string
   contract: string
   contractDeployBlock: bigint
+  /** Chain head fetched once by a caller looping many contracts. */
+  head?: bigint
 }
 
 export type ScanResult = {
@@ -52,8 +54,8 @@ export async function scanArtistTokensViaTransferFromZero(
   const { sql, client, taskName, platform, artist, contract, contractDeployBlock } = args
 
   const scope = `${artist}:${contract}`
-  const head = await client.getBlockNumber()
-  let rpcCalls = 1
+  const head = args.head ?? (await client.getBlockNumber())
+  let rpcCalls = args.head === undefined ? 1 : 0
   let rowsWritten = 0
 
   const cursorRow = (await sql`
