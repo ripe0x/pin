@@ -289,6 +289,25 @@ export async function resolveTokenMetadataDirect(
 }
 
 /**
+ * Live tokens in Surface collections (v1 and v2) that belong to the artist:
+ * the current owner, or the launching owner once renounced. A v2 owner a
+ * third party named without consent (owner_confirmed = false) is excluded,
+ * so nobody can push works into another artist's gallery. v1 rows carry
+ * a null owner_confirmed and pass.
+ */
+export const SURFACE_ARTIST_TOKENS_SQL = (schema: string) =>
+  `SELECT lower(t.collection) AS contract, t.token_id::text AS token_id,
+          'surface' AS platform, t.updated_at_block AS mint_block,
+          0 AS mint_log_index
+   FROM ${schema}.collections c
+   JOIN ${schema}.collection_tokens t ON t.collection = c.collection
+   WHERE c.owner_confirmed IS NOT FALSE
+     AND (lower(c.owner) = $1
+          OR (c.owner = '0x0000000000000000000000000000000000000000'
+              AND lower(c.launch_owner) = $1))
+     AND t.owner <> '0x0000000000000000000000000000000000000000'`
+
+/**
  * Legacy shim. v1's `discoverArtistTokenRefs` fanned out to every
  * platform adapter on cache miss. v2 reads from a single Postgres table.
  *
@@ -326,6 +345,14 @@ export async function discoverArtistTokenRefs(
     mint_block: string
     mint_log_index: number
   }>
+
+  // Surface collections are a separate read so a schema without the
+  // ponder_v5 columns (launch_owner, owner_confirmed) degrades to "no
+  // Surface works" instead of failing the whole gallery.
+  const surfaceRows = await sql
+    .unsafe(SURFACE_ARTIST_TOKENS_SQL(INDEXER_SCHEMA), [artist])
+    .catch(() => [])
+  rows.push(...(surfaceRows as typeof rows))
 
   const indexed = rows.map((r) => ({
     contract: r.contract as `0x${string}`,

@@ -30,6 +30,7 @@ import { useChainNowSec } from "@/components/tx/tx-ui"
 import { parseListingExpiry } from "@/lib/listing-expiry"
 import { TxLink, StatusChip } from "@/components/auction/tx"
 import { useBatchedCalls, type PreparedCall } from "@/lib/useBatchedCalls"
+import { batches } from "@/lib/bulk-auction"
 
 const DURATION_OPTIONS = [
   { label: "24 hours", seconds: 24 * 60 * 60 },
@@ -277,7 +278,9 @@ function BulkListSection({
       byContract.set(key, arr)
     }
 
-    const groups = Array.from(byContract.entries())
+    const groups = Array.from(byContract.entries()).flatMap(([contract, items]) =>
+      batches(items).map((batch) => [contract, batch] as const),
+    )
     const reserveWei = reserve.wei
 
     setBatchError(null)
@@ -290,7 +293,7 @@ function BulkListSection({
       // multicall. Was N sequential RPC reads inside the loop; now one
       // batched call before the loop starts. Lookup map keyed by lowercase
       // contract.
-      const contractAddresses = groups.map(([c]) => c)
+      const contractAddresses = Array.from(byContract.keys())
       const approvalResults = await client.multicall({
         contracts: contractAddresses.map((c) => ({
           address: c,
@@ -330,6 +333,8 @@ function BulkListSection({
             args: [houseAddress, true],
           })
           await waitForTransactionReceipt(wagmiConfig, { hash: approveHash })
+          // Later batches of the same collection skip the approval.
+          approvalByContract.set(contract.toLowerCase(), true)
         }
 
         setRunning({
