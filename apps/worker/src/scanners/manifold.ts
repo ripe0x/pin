@@ -68,6 +68,10 @@ const TRACE_CHUNK = 50_000n
 // cursors by 200K blocks at a time.
 const MAX_LOG_CHUNKS_PER_TICK = 100
 const MAX_TRACE_CHUNKS_PER_TICK = 200
+// drpc load-balances across nodes, and the node serving trace_filter can
+// lag the node that answered eth_blockNumber ("block range extends beyond
+// current head block"). Trail the head so the newest chunk is indexed.
+const TRACE_HEAD_LAG = 12n
 const TASK_NAME = "scan-manifold"
 
 const erc165Abi = [{
@@ -260,7 +264,7 @@ async function discoverDeployedContracts(
     ? BigInt(cursorRow[0].last_block) + 1n
     : MANIFOLD_FIRST_BLOCK
 
-  const head = await client.getBlockNumber()
+  const head = (await client.getBlockNumber()) - TRACE_HEAD_LAG
   let rpcCalls = 1
   if (cursor > head) {
     return { contracts: [], rpcCalls }
@@ -286,7 +290,12 @@ async function discoverDeployedContracts(
         }] as never,
       })) as TraceRow[]
     } catch (err) {
-      console.error(`[${TASK_NAME}.trace] ${artist} ${cursor}-${toBlock}:`, err)
+      // Stop without advancing: the cursor stays on this chunk so the next
+      // tick retries it. Advancing past a failed chunk lost its blocks for
+      // good, and with them any contract the artist deployed there.
+      console.error(`[${TASK_NAME}.trace] ${artist} ${cursor}-${toBlock}:`, (err as Error).message.split("\n")[0])
+      rpcCalls += 1
+      break
     }
     rpcCalls += 1
 
