@@ -188,7 +188,7 @@ accidentally staged; delete the directory if you see it.
   runner globs `*.sql`, sorts, and applies any not already recorded — so
   a gap gets filled on the next run regardless of numeric order.
 - **Prod tracking is in sync** (checked 2026-11-25): maglev `_migrations`
-  records `001` through `030` with no gaps (2026-11-26). The earlier missing-`016` drift
+  records `001` through `031` with no gaps (2026-11-26). The earlier missing-`016` drift
   was reconciled.
 
 ## Deploy topology
