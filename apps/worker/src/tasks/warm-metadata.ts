@@ -6,8 +6,10 @@
  * content (any of name/description/image_url/animation_url). A content-less
  * row is a failed fetch — a brand-new mint that hadn't propagated yet, or a
  * gateway error/garbage 200 (which the resolver may have stamped with a
- * bogus `raw_uri`) — so we retry it on a short cadence (RETRY_AFTER, default
- * 5 min) until it resolves. Rows with content are final and never re-fetched,
+ * bogus `raw_uri`) — so we retry it, starting at RETRY_AFTER (default 5 min)
+ * and doubling per consecutive empty fetch (`fetch_attempts`) up to 7 days, so
+ * a new mint resolves within minutes while a token that never resolves (no
+ * contract code, tokenURI reverts) costs ~1 fetch a week. Rows with content are final and never re-fetched,
  * so good metadata is fetched exactly once. (We deliberately do NOT trust
  * `raw_uri` as the success signal — it gets set on non-metadata responses.)
  */
@@ -115,7 +117,10 @@ async function findCandidates(): Promise<Candidate[]> {
           AND m.image_url IS NULL AND m.animation_url IS NULL
           -- Burned/nonexistent is permanent — never re-attempt it.
           AND NOT m.burned
-          AND m.fetched_at < NOW() - INTERVAL '${RETRY_AFTER.replace(/'/g, "''")}'
+          -- Backoff doubles per consecutive empty fetch, capped at 7 days.
+          AND m.fetched_at < NOW() - LEAST(
+            INTERVAL '${RETRY_AFTER.replace(/'/g, "''")}' * power(2, LEAST(m.fetch_attempts, 20)),
+            INTERVAL '7 days')
         )
      LIMIT ${BATCH_SIZE}`,
   )) as Array<Candidate>
@@ -132,29 +137,32 @@ async function processOne(c: Candidate): Promise<"resolved" | "empty"> {
     // exists === false is a definitive burn; null is indeterminate (leave the
     // flag at its default false so we don't hide a token we couldn't confirm).
     const burned = exists === false
+    const hasContent = Boolean(meta && (meta.name || meta.description || meta.image || meta.animation_url))
+    const attempts = hasContent ? 0 : 1
     await sql`
       INSERT INTO token_metadata
-        (contract, token_id, name, description, image_url, animation_url, raw_uri, burned, fetched_at)
+        (contract, token_id, name, description, image_url, animation_url, raw_uri, burned, fetched_at, fetch_attempts)
       VALUES
         (${c.contract}, ${c.tokenId},
          ${meta?.name ?? null}, ${meta?.description ?? null},
          ${meta?.image ?? null}, ${meta?.animation_url ?? null},
-         ${meta?.uri ?? null}, ${burned}, NOW())
+         ${meta?.uri ?? null}, ${burned}, NOW(), ${attempts})
       ON CONFLICT (contract, token_id) DO UPDATE SET
         name = EXCLUDED.name, description = EXCLUDED.description,
         image_url = EXCLUDED.image_url, animation_url = EXCLUDED.animation_url,
-        raw_uri = EXCLUDED.raw_uri, burned = EXCLUDED.burned, fetched_at = NOW()
+        raw_uri = EXCLUDED.raw_uri, burned = EXCLUDED.burned, fetched_at = NOW(),
+        fetch_attempts = CASE WHEN ${hasContent} THEN 0 ELSE token_metadata.fetch_attempts + 1 END
     `
-    const hasContent = meta && (meta.name || meta.description || meta.image || meta.animation_url)
     return hasContent ? "resolved" : "empty"
   } catch (err) {
     console.error(`[warm-metadata] ${c.contract}/${c.tokenId}:`, err)
     // Write the empty sentinel so we don't retry on every tick.
     await sql`
       INSERT INTO token_metadata
-        (contract, token_id, name, description, image_url, animation_url, raw_uri, fetched_at)
-      VALUES (${c.contract}, ${c.tokenId}, NULL, NULL, NULL, NULL, NULL, NOW())
-      ON CONFLICT (contract, token_id) DO UPDATE SET fetched_at = NOW()
+        (contract, token_id, name, description, image_url, animation_url, raw_uri, fetched_at, fetch_attempts)
+      VALUES (${c.contract}, ${c.tokenId}, NULL, NULL, NULL, NULL, NULL, NOW(), 1)
+      ON CONFLICT (contract, token_id) DO UPDATE SET
+        fetched_at = NOW(), fetch_attempts = token_metadata.fetch_attempts + 1
     `.catch(() => {})
     return "empty"
   }
